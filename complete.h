@@ -44,6 +44,7 @@ public:
   
   FileListT *findfirst(){ return findptr=get_top(); }
   FileListT *findnext(){  return findptr=findptr->next; }
+  FileListT *findprev(){  return findptr=findptr->prev; }
   int get_max_name_length() const { return max_length; }
   
   static int directory_split_char;

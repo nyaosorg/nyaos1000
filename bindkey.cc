@@ -45,23 +45,15 @@ static struct bind_t{
   { CTRL('H') , Shell::backspace ,
     "CTRL_H"  , "backward_delete_char  (default)"},
   { KEY(UP),Shell::vz_prev_history, "UP","vz_prev_history (default)" },
-  { KEY(DOWN) , Shell::vz_next_history,
-    "DOWN","vz_next_history  (default)" },
-  { KEY(RIGHT), Shell::forward,
-    "RIGHT","forward_char  (default)" },
+  { KEY(DOWN) , Shell::vz_next_history, "DOWN","vz_next_history  (default)" },
+  { KEY(RIGHT), Shell::forward, "RIGHT","forward_char  (default)" },
   { KEY(LEFT) , Shell::backward,"LEFT","backward_char  (default)" },
-#if 0
-  /* option +ctrl_d_eofモードで、うっかり、行頭でDeleteキーを押した時に、
-   * nyaosを抜けてしまう。ファイル名補完候補一覧が表示されるのも違和感がある。
-   * (bindkeyを使って対処できるが、あえてソースコード側にて修正)
-   */
-  { KEY(DEL)  , Shell::tcshlike_ctrl_d,"DEL","delete_char_or_list  (default)"},
-#else
   { KEY(DEL)  , Shell::simple_delete,"DEL","delete_char  (default)"},
-#endif
   { KEY(INS)  , Shell::flip_over,"INS","flip_overwrite  (default)"},
   { CTRL('Z') , Shell::bye ,"CTRL_Z","bye  (default)"},
   { '\t'      , Shell::tcshlike_complete,"TAB","complete  (default)" },
+  { KEY(CTRL_TAB),Shell::yaoslike_complete,"CTRL_TAB","complete2  (default)" },
+  {KEY(ALT_RETURN),Shell::yaoslike_complete,"CTRL_TAB","complete2  (default)"},
   { '\r'      , Shell::input_terminate,"ENTER","newline  (default)" },
   { CTRL('J') , Shell::input_terminate,"ENTER","newline  (default)" },
   { CTRL('L') , Shell::repaint,"CTRL_L","clear_screen  (default)" },
@@ -70,12 +62,14 @@ static struct bind_t{
   { CTRL('U') , Shell::cancel,"CTRL_U","kill_whole_line  (default)" },
   { '\x1B'    , Shell::cancel,"ESC","kill_whole_line  (default)" },
   { CTRL('C') , Shell::abort, "CTRL_C","abort (default)" },
+  { KEY(F1)   , Shell::complete_to_fullpath , "F1","complete_to_fullpath" },
+  { KEY(F2)   , Shell::complete_to_url , "F2","complete_to_url" },
 }, nyaos_bind_table[]={
   { CTRL('P') , Shell::vz_prev_history,"CTRL_P","vz_prev_history  (nyaos)"},
   { CTRL('N') , Shell::vz_next_history,"CTRL_N","vz_next_history  (nyaos)" },
   { CTRL('F') , Shell::forward,"CTRL_F","forward_char  (nyaos)" },
   { CTRL('B') , Shell::backward,"CTRL_B","backward_char  (nyaos)" },
-  { CTRL('D') , Shell::tcshlike_ctrl_d,"CTRL_D","delete_char_or_list  (nyaos)" },
+  { CTRL('D'),Shell::tcshlike_ctrl_d,"CTRL_D","delete_char_or_list  (nyaos)"},
   { CTRL('K') , Shell::eraseline,"CTRL_K","kill_line  (nyaos)" },
   { CTRL('A') , Shell::go_ahead,"CTRL_A","beginning_of_line  (nyaos)" },
   { KEY(ALT_F), Shell::forward_word,"ALT_F","forward_word  (nyaos)" },
@@ -270,6 +264,7 @@ Shell::Status Shell::tcshlike_ctrl_d()
   }
   return CONTINUE;
 }
+
 Shell::Status Shell::backspace()
 {
   backward();
@@ -283,11 +278,30 @@ Shell::Status Shell::tcshlike_complete()
     if( ed.length() != 0 )
       ed.complete_list();
   }else{
-    prev_complete_num = ed.complete();
+    prev_complete_num = ed.complete1();
     changed = 1;
   }
   return CONTINUE;
 }
+Shell::Status Shell::yaoslike_complete()
+{
+  prev_complete_num = ed.complete2();
+  return CONTINUE;
+}
+
+Shell::Status Shell::complete_to_fullpath()
+{
+  prev_complete_num = ed.complete_to_fullpath(NULL);
+  return CONTINUE;
+}
+
+Shell::Status Shell::complete_to_url()
+{
+  prev_complete_num = ed.complete_to_fullpath("file:///");
+  return CONTINUE;
+}
+
+
 Shell::Status Shell::input_terminate()
 {
   int len=ed.length();
@@ -327,13 +341,18 @@ int Shell::replace_last_history(const char *s)
     return -1;
   
   strcpy( tmp->buffer , s );
-  tmp->next = NULL;
-  if( history != NULL )
-    tmp->prev = history->prev;
-  else
+  if( history != NULL ){
+    tmp->next = history->next;
+    if( history->next != NULL )
+      history->next->prev = tmp;
+    tmp->prev = history->prev;    
+    if( history->prev != NULL )
+      history->prev->next = tmp;
+    free( history );
+  }else{
+    tmp->next = NULL;
     tmp->prev = NULL;
-  
-  free( history );
+  }
   history = tmp;
 
   return 0;

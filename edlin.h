@@ -35,7 +35,6 @@ public:
   void right(int n=1);                    /* 右へスクロール             */
   void left(int n=1);                     /* 左へスクロール             */
   int  seek_word_top();
-  int complete_core(int fntop,int basesize);
 
   virtual void putchr(int c)=0; /* 一文字出力               */
   virtual void putel()=0;       /* カーソル位置以降をクリア */
@@ -79,7 +78,11 @@ public:
   virtual void cls(){};       /* ^L 画面クリア(何もしない) */
 
   /* これらは、導出クラスへ移項すべきもの */
-  virtual int complete();           /* ^I ファイル名補完 : 帰り値は候補数 */
+  virtual int complete1();	/* TCSH型の補完 */
+  virtual int complete2();	/* 変換型の補完 */
+  virtual int complete_to_fullpath(const char *header=0);
+  /* フルパスへの補完 */
+
   virtual void complete_list(){}    /* ^D ファイル名リスト   */
   virtual int complete_hook(Complete &){ return 0; }
   /* ↑ ファイル名の他に加える候補があれば、このフック関数を導出する。*/
@@ -96,13 +99,6 @@ public:
 
   void locate(int x);
 
-#if 0
-  /* 単語単位のヒストリ参照用だが、未完成 */
-  char *get_current_word(int *flag=0);
-  void replace_current_word(char char *s);
-  int get_current_char(){ return pos==len ? 0 : strbuf[pos]; }
-#endif
-
   /* リポート関数 */
   int length() const { return len; }    /* 現在入力されている文字列のbytes */
   int position() const { return pos; }  /* カーソルの位置(bytes) */
@@ -113,49 +109,8 @@ public:
   const char *getbuffer() const { return strbuf; }
 
   static int complete_tail_char;
-  static int option_conversion_complete;
   
   int simple_line_input();
-
-#if 0 /* 現在、クラス構造改変中につき..本ブロック未使用 */
-  enum Status{
-    CONTINUE,
-    TERMINATE,
-    QUIT = -1,
-    ABORT = -2,
-    FATAL = -3,
-  };
-
-  /* キーバインド用関数 */
-  Status bind_self_insert(int);
-  Status bind_forward(int){ forward(); return CONTINUE; }
-  Status bind_backward(int){ backward(); return CONTINUE; }
-  Status bind_simple_delete(int){ erase(); return CONTINUE; }
-  Status bind_backspace(int);
-
-  /* 未実装 */
-  Status bind_i_search(int);
-  Status bind_rev_i_search(int);
-  Status bind_previous_history(int);
-  Status bind_next_history(int);
-  Status bind_bye(int);
-  Status tcshlike_ctrl_d(int);
-
-  Status tcshlike_complete(int);
-  Status input_terminate(int);
-  Status repaint(int);
-  Status go_ahead(int);
-  Status go_forward(int);
-  Status go_tail(int);
-  Status cancel(int);
-  Status erasebol();
-  Status eraseline();
-  Status forward_word(int);
-  Status backward_word(int);
-
-  Status abort(int){ return ABORT; }
-  Status swapchars(int){ swapchars(); return CONTINUE; }
-#endif
 };
 
 /* ANSI エスケープシーケンス/かんな 版 Edlin */
@@ -271,6 +226,9 @@ public:
   Status tcshlike_ctrl_d();
   Status backspace();
   Status tcshlike_complete();
+  Status yaoslike_complete();
+  Status complete_to_fullpath();
+  Status complete_to_url();
   Status input_terminate();
   Status repaint();
   Status go_ahead();

@@ -1,6 +1,8 @@
 #include <ctype.h>
 #include <string.h>
+#include <stdlib.h>
 #include <stdarg.h>
+#include <sys/kbdscan.h>
 
 #define INCL_VIO
 #include <os2.h>
@@ -8,6 +10,9 @@
 #include "Edlin.h"
 #include "complete.h"
 #include "macros.h"
+
+#define KEY(x)	(0x100 | K_##x )
+#define CTRL(x)	((x) & 0x1F )
 
 int Edlin::complete_tail_char='\\';
 void Edlin::swapchars()  /* DOSモード未対応メソッド */
@@ -86,10 +91,10 @@ void Edlin::right(int n)
 void Edlin::left(int n)
 {
   /* 左へtopを移動する ---> 右へ全体が動く */
-
+  
   /* 最初にカーソルを戻しておく */
   putbs( pos-top );
-
+  
   /* n 文字分 top を後退させる */
   while( n > 0  &&  top > 0 ){
     if( atrbuf[top-1] == SBC ){
@@ -116,7 +121,7 @@ void Edlin::insert(int ch)
 
   if( len >= max )
     return;
-
+  
   int i;
   for(i=len ; i>pos ; i-- ){
     strbuf[ i ] = strbuf[i-1];
@@ -126,7 +131,7 @@ void Edlin::insert(int ch)
   atrbuf[ i ] = SBC;
   strbuf[++len] = '\0';
   atrbuf[  len] = SBC;
-
+  
   after_repaint(0);  /* 挿入したときは、右へ動くので末端のクリアはいらない */
 }
 
@@ -157,7 +162,7 @@ int Edlin::seek_word_top()
 {
   int wrdtop=0;
   int p=0;
-
+  
   for(;;){
     while( isspace(strbuf[p] & 255) ){
       if( p >= pos ){
@@ -197,10 +202,16 @@ int Edlin::seek_word_top()
   }
 }
 
-int Edlin::option_conversion_complete=0;
+// int Edlin::option_conversion_complete=0;
 
-int Edlin::complete_core(int fntop,int basesize)
+/* 変換型の補完
+ * return 0:補完しなかった 1:補完した
+ */
+int Edlin::complete2()
 {
+  int fntop=seek_word_top();
+  int basesize=pos-fntop;
+
   Complete com;
 
   char *buffer=(char*)alloca(basesize+1);
@@ -229,72 +240,111 @@ int Edlin::complete_core(int fntop,int basesize)
     return 0;
   }
 
-  if( option_conversion_complete ){
-    /* いわゆる、変換式の補完モードだったら... */
+  for(;;){
+    struct filelist *cur=com.findfirst();
+    while( cur != NULL ){
+      if( cur->attr & A_DIR ){
+	message(  "%s%c"
+		, cur->name+com.get_fname_common_length()
+		, com.get_split_char() ?: complete_tail_char );
+      }else{
+	message("%s",cur->name+com.get_fname_common_length() );
+      }
+      int key;
+      
+      switch( key=::getkey() ){
+      case '\007':
+      case '\033':
+      case KEY(LEFT):
+	cleanmsg();
+	return 0;
 
-    for(;;){
-      struct filelist *cur=com.findfirst();
-      while( cur != NULL ){
-	if( cur->attr & A_DIR ){
-	  message(  "%s%c"
-		  , cur->name+com.get_fname_common_length()
-		  , com.get_split_char() ?: complete_tail_char );
-	}else{
-	  message("%s",cur->name+com.get_fname_common_length() );
-	}
-	int key;
-	
-	switch( key=::getkey() ){
-	case '\007':
-	case '\033':
-	  cleanmsg();
-	  return 0;
+      case KEY(UP):
+      case KEY(ALT_BACKSPACE):
+	cur = com.findprev();
+	break;
 
-	case '\t':
-	  break;
-	  
-	default:
-	  ::ungetkey(key);
-	  /* continue to next case */
-	  
-	case '\r':
-	case '\n':
-	  cleanmsg();
-	  for(int i=0;i<basesize;)
-	    i += backward();
-
-	  if( !quoted && strpbrk( cur->name , " ^!") != NULL ){
-	    insert('"');
-	    quoted = 1;
-	    forward();
-	  }
-	  for(int i=0;i<basesize-com.get_fname_common_length(); )
-	    i += forward();
-
-	  /* 補完のベース文字列も、大文字・小文字を合わせるために
-	   * 上書きを行う */
-	  const char *sp=cur->name;
-	  for(int i=0;i<com.get_fname_common_length();i++ )
-	    putchr( strbuf[pos++] = *sp++ );
-
-	  insert_and_forward( sp );
-
-	  if( cur->attr & A_DIR ){
-	    insert( com.get_split_char() ?: complete_tail_char );
-	    forward();
-	  }
-	  if( quoted ){
-	    insert('"');
-	    forward();
-	  }
-	  return 1;
-	} /* end-switch */
+      case KEY(DOWN):
+      case KEY(CTRL_TAB):
+      case KEY(ALT_RETURN):
+      case '\t':
 	cur = com.findnext();
-      }/* end-while */
-    }/* end-for */
-  }/* end-if */
+	break;
+	
+      default:
+	::ungetkey(key);
+	/* continue to next case */
+	
+      case KEY(RIGHT):
+      case '\r':
+      case '\n':
+	cleanmsg();
+	for(int i=0;i<basesize;)
+	  i += backward();
 
-  /* tcsh型の補完モード */
+	if( !quoted && strpbrk( cur->name , " ^!") != NULL ){
+	  insert('"');
+	  quoted = 1;
+	  forward();
+	}
+	for(int i=0;i<basesize-com.get_fname_common_length(); )
+	  i += forward();
+	
+	/* 補完のベース文字列も、大文字・小文字を合わせるために
+	 * 上書きを行う */
+	const char *sp=cur->name;
+	for(int i=0;i<com.get_fname_common_length();i++ )
+	  putchr( strbuf[pos++] = *sp++ );
+	
+	insert_and_forward( sp );
+	
+	if( cur->attr & A_DIR ){
+	  insert( com.get_split_char() ?: complete_tail_char );
+	  forward();
+	}
+	if( quoted ){
+	  insert('"');
+	  forward();
+	}
+	return 1;
+      } /* end-switch */
+
+    }/* end-while */
+  }/* end-for */
+}
+
+int Edlin::complete1()
+{
+  int fntop=seek_word_top();
+  int basesize=pos-fntop;
+
+  Complete com;
+
+  char *buffer=(char*)alloca(basesize+1);
+  int  command_complete = (fntop <= 1);
+  int  quoted=false;
+  
+  if( strbuf[fntop] == '"' ){
+    fntop++;
+    basesize--;
+    quoted = 1;
+  }
+  
+  char *bp=buffer;
+  while( fntop < pos )
+    *bp++ = strbuf[fntop++];
+  *bp = '\0';
+
+  int nfiles = ( command_complete
+		? com.makelist_with_path( buffer ) 
+		: com.makelist( buffer ) );
+
+  nfiles += complete_hook(com);
+
+  if( nfiles <= 0 ){
+    alert();
+    return 0;
+  }
 
   for(int i=0 ; i<basesize ;  )
     i += backward();
@@ -331,12 +381,113 @@ int Edlin::complete_core(int fntop,int basesize)
   return nfiles;
 }
 
-int Edlin::complete()
+int Edlin::complete_to_fullpath(const char *header)
 {
+  /* 「nyaos ■」のように間に空白がある場合に、
+   * この空白を無視する処理。
+   */
+  int spaces=0;
+  if( strbuf[pos-1] == ' ' )
+    spaces=backward();
+
   int fntop=seek_word_top();
   int basesize=pos-fntop;
-  return complete_core(fntop,basesize);
+  int  quoted=false;
+  
+  char *buffer=(char*)alloca(basesize+1);
+  if( strbuf[fntop] == '"' ){
+    fntop++;
+    basesize--;
+    quoted = 1;
+  }
+  char *bp=buffer;
+  while( fntop < pos )
+    *bp++ = strbuf[fntop++];
+  *bp = '\0';
+
+  // フルパスを得る。得られなかったら、終了
+  char fullpath[ FILENAME_MAX ];
+  if( _fullpath( fullpath , buffer , sizeof(fullpath) ) != 0 ){
+    while( spaces > 0 )
+      spaces -= forward();
+    return 0;
+  }
+
+  int len_fullpath = strlen(fullpath);
+  int delta = len_fullpath-basesize;
+
+  // フルパスの長さがバッファに収まらない場合も終了
+  if( max-len <= delta-3 ){
+    while( spaces > 0 )
+      spaces -= forward();
+    return 0;
+  }
+  
+  // 変換後に、全体長が伸びる場合
+  if( delta > 0 ){
+    for(int i=len ; i>=pos ; i-- ){
+      strbuf[ i+delta ] = strbuf[ i ];
+      atrbuf[ i+delta ] = atrbuf[ i ];
+    }
+    len += delta ;
+  }
+  
+  // カーソルを単語先頭へ移動
+  for(int i=0 ; i<basesize ; )
+    i += backward();
+
+  // 変換後に、全体長が縮む場合
+  if( delta < 0 ){
+    for(int i=pos ; i<len+delta ; i++ ){
+      strbuf[ i ] = strbuf[ i - delta ];
+      atrbuf[ i ] = atrbuf[ i - delta ];
+    }
+    len += delta;
+  }
+  
+  // 単語先頭に「”」が無いけれども「”」で囲まなくてはいけない文字がある
+  // 場合、ここで「”」を加える。
+  // header が NULL で無い場合は、| が : の代わりに入ってくるので必須となる。
+  if( !quoted && (strpbrk(fullpath," ^!") != NULL || header != NULL ) ){
+    insert('"');
+    quoted = 1;
+    forward();
+  }
+
+  // URL 型にする場合などの処理
+  if( header != NULL )
+    insert_and_forward(header);
+  
+  // 新しいパスを書き書き
+  for(int i=0 ; i<len_fullpath ; i++ ){
+    if( is_kanji(fullpath[ i ] ) ){
+      putchr(strbuf[pos  ] = fullpath[ i ]);
+      atrbuf[pos++] = DBC1ST;
+      putchr(strbuf[pos  ] = fullpath[ i ]);
+      atrbuf[pos++] = DBC2ND;
+      i++;
+    }else{
+      if( fullpath[i] == ':' && header != NULL )
+	putchar(strbuf[pos ] = '|' );
+      else
+	putchr(strbuf[pos  ] = fullpath[ i ]);
+      atrbuf[pos++] = SBC;
+    }
+  }
+
+  // 新しいパス以降の文字列をここで表示
+  after_repaint(delta >= 0 ? 0 : -delta );
+  
+  if( header != NULL ){
+    insert('"');
+    forward();
+  }
+
+  while( spaces > 0 )
+    spaces -= forward();
+  return 1;
 }
+
 
 void Edlin::insert(int ch1,int ch2)
 {

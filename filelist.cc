@@ -32,6 +32,7 @@ static FileListT *new_filelist_sub(FILESTATUS4 &buffer,const char *fname)
   
   node->easize = buffer.cbList;
   node->next = NULL;
+  node->prev = NULL;
   
   return node;
 }
@@ -93,6 +94,7 @@ FileListT *new_filelist(Dir &dir)
   
   node->easize = dir.get_easize();
   node->next = NULL;
+  node->prev = NULL;
   
   return node;
 }
@@ -105,6 +107,7 @@ FileListT *dup_filelist(FileListT *org)
 
   memcpy( tmp , org , sizeof(FileListT)+org->length );
   tmp->next = NULL;
+  tmp->prev = NULL;
   return tmp;
 }
 
@@ -228,6 +231,9 @@ FileListT *fsort_and_insert(FileListT *first , FileListT *tmp ,
     if( nfiles != NULL )
       ++ *nfiles;
     tmp->next = first;
+    if( first != NULL )
+      first->prev = tmp;
+    tmp->prev = NULL;
     return tmp;
   }
   if( diff == 0 )
@@ -238,6 +244,7 @@ FileListT *fsort_and_insert(FileListT *first , FileListT *tmp ,
     if( cur == NULL ){
       prev->next = tmp;
       tmp->next  = NULL;
+      tmp->prev  = prev;
       break;
     }
     int diff=compare(tmp,cur,method);
@@ -246,7 +253,9 @@ FileListT *fsort_and_insert(FileListT *first , FileListT *tmp ,
       return first;
     }else if( diff < 0 ){
       prev->next = tmp;
+      tmp ->prev = prev;
       tmp ->next = cur;
+      cur ->prev = tmp;
       break;
     }
     prev = cur;

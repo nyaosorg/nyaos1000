@@ -93,7 +93,7 @@ int strnumcmp(const char *s1,const char *s2); /* complete.cc */
 /* filelist.cc */
 
 typedef struct filelist{
-  struct filelist *next;
+  struct filelist *next,*prev;
   long size,easize;
   unsigned short attr;
   struct DirDateTime{

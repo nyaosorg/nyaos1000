@@ -1,0 +1,49 @@
+Nihongo Yet Another Os/2 Shell(NYAOS) 1.47 をお届けします。
+
+今回は、バグフィクスの為の緊急リリースです。と言いつつ、これだけでは
+飽き足らず、また機能追加をしてしまいました。これでは、いつまで経って
+も安定しないなぁ。
+
+[虫繕]
+・Ctrl-N でヒストリを参照していると、変な文字を表示したり、Segmentation Fault
+　を出したり、OS を落としたりしてしまう。
+	すみません。ヒストリのリストをつなぐポインタで、初心者のようなミス
+	をしていました。m(_ _)m
+
+・Enter のみの入力で、exitvalue が 0 にならない。
+
+
+[変更]
+・変換型ファイル名補完を、TCSH型補完と共存できるようにした。
+	デフォルトでは、CTRL-TAB,ALT-RETURN で変換型の補完ができます。
+	その後のキー操作は、今のところ
+		↓ TAB CTRL-TAB ALT-RETURN	次候補
+		↑ ALT-BACKSPACE		前候補
+		← CTRL-G ESC			キャンセル
+		→ RETURN			確定
+	と*固定*となっています。最初の変換キーについては
+		bindkey TAB complete2
+		bindkey ALT-I complete2
+	などのように変更することができます。TCSH型の補完は従来通りに使えます。
+
+[新規]
+・Ｆ１キー(complete_to_fullpath)：ファイル名を絶対パスへ変換。
+・Ｆ２キー(complete_to_url)：ファイル名をＵＲＬ("file:///x|/～")に変換。
+	キーは適当に決めてしまったので、bindkey で好みのキーへ割り当てて
+	ください。しかし、後者は Navigator の起動以外に使い道がない...
+
+[廃止]
+・option conv_complete
+	代わりに「bindkey TAB complete2」を使ってください。
+
+
+NYAOS に対して、要望・提案・アドバイス・苦情などがありましたら、
+	hayama@karl.tis.co.jp
+へメイルください。変更差分も歓迎です。また、最新版については
+	http://hp.vector.co.jp/authors/VA009797/warp/nyaos.html
+より提供させていただいてます。
+
+
+サ ｜ サ ----- はやまかおる (HAYAMA,Kaoru) -----
+世 ｜ 千 ♪ mailto:hayama@karl.tis.co.jp
+木 山 黒 ★ http://hp.vector.co.jp/authors/VA009797/

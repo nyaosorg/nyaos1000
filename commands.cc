@@ -194,7 +194,7 @@ struct Option{
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
   { "complete_tilda"       , &Complete::complete_tail_tilda    , 1  , 0 },
   { "complete_etc"         , &option_complete_etc              , 1  , 0 },
-  { "conv_complete"        , &Edlin::option_conversion_complete, 1  , 0 },
+// { "conv_complete"        , &Edlin::option_conversion_complete, 1  , 0 },
   { "ctrl_d_eof"           , &Shell::ctrl_d_eof                , 1  , 0 },
   { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },

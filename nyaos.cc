@@ -26,10 +26,10 @@ char *cursor_off_color_str=NULL;
 int option_nyaos_rc=1;
 int option_cmdlike_crlf=0;
 
-int execute_result=0;
-
 char comspec[128]="COMSPEC=";
 char *cmdexe_path=comspec+8;
+
+int execute_result=0;
 
 int cmd_ver( FILE *source , Parse &argv )
 {
@@ -55,7 +55,7 @@ void get_scrsize(int *wh,FILE *f)
 {
   if( f==0 )
     f=stdout;
-
+  
   if( !isatty(fileno(f)) ){
     /* ファイル出力ならば、環境変数だけを頼りにする */
     get_scrsize_with_env(wh);
@@ -441,6 +441,8 @@ int main(int argc, char **argv)
 	}
 	if( option_cmdlike_crlf )
 	  putchar('\n');
+      }else{
+	execute_result = 0;
       }
     }else{
       switch( rc ){
@@ -448,13 +450,15 @@ int main(int argc, char **argv)
 	// ---- CTRL-Z などによる終了 ----
 	fputs("\nGood bye!\n",stdout);
 	return 0;
+
       case RC_ABORT:
       case Shell::ABORT:
 	fputs("^C\n",stdout);
 	break;
+
       defalt:
 	fputs("\nUnknown error occuerd.\n"
-	      "Please mail to kaoru@cheme.kyoto-u.ac.jp\n"
+	      "Please mail to hayama@karl.tis.co.jp\n"
 	      , stdout );
 	break;
       }
