@@ -10,6 +10,7 @@
 #define INCL_DOSFILEMGR
 #define INCL_RXSUBCOM
 #include <os2.h>
+#include <os2thunk.h>
 
 #include "edlin.h"
 #include "nyaos.h"
@@ -82,6 +83,23 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   return dp;
 }
 
+#ifdef USE_SET_WIN_TITLE
+/* フラグ : FCF_TASKLIST が VIO ウインドウで立っている場合、
+ * 「NYAOS.EXE」の代わりに set_win_title の引数がウインドウタイトルになる。
+ * あいにく「start nyaos.exe」で起動した時か、アイコンにタイトルが無い
+ * 時しか、FCF_TASKLIST は立たない。
+ */
+extern "C" {
+  void _THUNK_C_FUNCTION (WinSetTitle) (PSZ szTITLE);
+}
+void set_win_title( const char *title )
+{
+  _THUNK_C_PROLOG ( 4 );
+  _THUNK_C_FLAT ( title );
+  _THUNK_C_CALL ( WinSetTitle );
+}
+#endif
+
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
@@ -89,8 +107,10 @@ int main(int argc, char **argv)
 	  , stderr );
     return -1;
   }
-
-
+#ifdef USE_SET_WIN_TITLE
+  set_win_title( "Nihongo Yet Another Os/2 Shell "VERSION );
+#endif
+  
   char directory[FILENAME_MAX];
   char thename[FILENAME_MAX];
 

@@ -2,6 +2,8 @@
 #include <string.h>
 #include <sys/kbdscan.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <io.h>	/* for access() */
 
 #include <canna/jrkanji.h>
 
@@ -15,6 +17,31 @@
 
 #define TOP_CLEAN_STR "\x1b[s\x1b[H\x1b[K\x1b[u"
 #define KEY(x) (0x100 | K_##x )
+
+/* ~/.canna が存在すれば 0 さもなければ 1 */
+static int access_home_canna()
+{
+  char fname[ FILENAME_MAX ];
+  const char *home=getenv("HOME");
+  if( home == NULL  || *home=='\0' )
+    return 1;
+  sprintf( fname , "%s/.canna" , home );
+  return access( fname, 0);
+}
+
+/* %SCRIPTDRIVE%:/usr/local/canna/lib/default.canna が存在すれば 0 */
+static int access_script_canna()
+{
+  static char fname[] = "?:/usr/local/canna/lib/default.canna";
+  const char *drv=getenv("SCRIPTDRIVE");
+  if( drv == NULL || *drv == '\0' )
+    return -1;
+  fname[ 0 ] = *drv;
+  if( access( fname , 0 )==0 )
+    return *drv;
+  else
+    return -1;
+}
 
 static void euc2sjis(const char *sp , char *dp )
 {
@@ -114,11 +141,40 @@ int canna_init()
   fputs("canna.dll loaded.\n",stdout);  
   canna_loaded = 1;  
 
-  /* ------ CANNA initialize ------- */
+  /* ------ CANNA customize file ----- */
 
   char **warning;
+  char buffer[FILENAME_MAX];
+
+  { /* -- かんな初期化の際に /usr/local/canna/lib のあるドライブに移動する--
+     * set cannya=ドライブ[,初期化ファイル]
+     * --------------------------------------------------------------------*/
+    
+    char *dotcanna=getenv("CANNYA");
+    int orgdrv = _getdrive();
+    int drv;
+
+    if( dotcanna != NULL  &&  *dotcanna != '\0' ){
+      if( *dotcanna != ',' ){
+	_chdrive( *dotcanna++ );
+	if( *dotcanna == ':' )
+	  ++dotcanna;
+      }
+      if( *dotcanna == ',' )
+	(*DLL_jrKanjiControl)(0 , KC_SETINITFILENAME , ++dotcanna);
+      
+    }else if( access_home_canna() != 0 && (drv=access_script_canna()) != -1 ){
+      /* ホームディレクトリに .canna が無くて、
+       * %SCRIPTDRIVE%:/usr/local/canna/lib/default.canna
+       * が存在する場合、ドライブを一次的に変更する。ああ、こそく...
+       */
+      
+      _chdrive(drv);
+    }
+    (*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
+    _chdrive(orgdrv);
+  }
   
-  (*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
   if( warning != NULL ){
     for( ; *warning != NULL ; warning ++ ){
       char buffer[256];
@@ -331,7 +387,7 @@ int Edlin2::getkey()
   char localbuf[256]="\0";
 
   if(   mode_string != NULL  &&  mode_string[0] != '\0'
-     && ! are_spaces(mode_string) )
+     && ! are_spaces((const char*)mode_string) )
     bottom_message( "%s",mode_string );
   
   /* 「かんな」の変換ループ */

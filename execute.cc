@@ -6,6 +6,7 @@
 #include <process.h>
 #include <signal.h>
 #include <io.h>
+#include <os2.h>
 
 #include "hash.h"
 #include "parse.h"
@@ -310,10 +311,10 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 
   if( cmdline[0]=='\0' )
     return 0;
-
+  
   if( option_debug_echo )
     printf("PASS-0:{%s}\n",cmdline);
-
+  
   /* ŠÂ‹«•Ï”‚Ì’uŠ·ˆ— */
   char buffer[2][4096];
   int curbuf=0;
@@ -347,7 +348,7 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
       return 0;
 
     Command *cmd;
-
+    
     if( option_ignore_cases )
       cmd = command_hash.lookup_tolower( params[0] );
     else
@@ -390,6 +391,6 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   
   if( echoflag )
     puts( buffer[curbuf] );
-  
+
   return spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",buffer[curbuf],NULL);
 }

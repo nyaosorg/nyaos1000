@@ -4,7 +4,7 @@
 
 #include "macros.h"
 
-#define VERSION "1.41"
+#define VERSION "1.42"
 
 /**** "callcmd.cc" ****/
 
@@ -17,6 +17,8 @@ enum{
 int query_filesystem(int drivenum);
 extern int screen_width , screen_height ;
 int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
+void set_win_title( const char *title );
+
 int eadir(int argc, char **argv,FILE *fout);
 char *fgets_chop(char *dp,int max,FILE *fp);
 class ShellEdlin;

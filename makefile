@@ -12,6 +12,7 @@ NYAOS=	nyaos.o edlin.o complete.o eadir.o shell.o foreach.o script.o \
 	alias.o parse.o execute.o chdirs.o commands.o prepro.o bindkey.o \
 	open.o source.o search.o finds.o getkey.o dbcs.o hash.o command2.o \
 	prompt.o edlin2.o wordseek.o suffix.o filelist.o
+# wstitle93.a
 
 nyaos.exe : $(NYAOS)
 	$(CC) $(NYAOS) -o nyaos.exe -lvideo -lwrap -Zcrtdll -lsocket
@@ -24,6 +25,9 @@ rmclone.o : rmclone.cc
 
 edlin2.o : edlin2.cc edlin.h
 	$(CC) -DWITH_CANNA -c $< -o edlin2.o
+
+# wstitle93.a : wstitle.imp
+#	emximp -o wstitle93.a wstitle.imp
 
 filelist.o : filelist.cc finds.h
 suffix.o : suffix.cc parse.h hash.h
@@ -62,6 +66,9 @@ command2.o : command2.cc
 prepro.o : prepro.cc
 open.o : open.cc
 search.o : search.cc
+
+nyaos.doc : nyaosdoc.html
+	lynx -dump nyaosdoc.html >nyaos.doc
 
 clean :
 	rm -f *.o *~
