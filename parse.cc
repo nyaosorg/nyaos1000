@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include <ctype.h>
 #include <process.h>
@@ -12,27 +13,12 @@
 
 int Parse::option_semicolon_terminate=1;
 
-char *Substr::dup() const
-{
-  if( len > 0 && ptr != NULL ){
-    char *s=(char*)malloc(len+1);
-    
-    char *p=s;
-    for(int i=0;i<len;i++)
-      *p++ = ptr[i];
-    *p = '\0';
-    return s;
-  }
-  return NULL;
-}
-
-void Substr::operator >> (SmartPtr dp) const
-{
-  for(int i=0;i<len;i++)
-    *dp++ = ptr[i];
-  *dp = '\0';
-}
-
+/* char配列へ、コピーする。
+ *	・単一の二重引用符は無視する。
+ *	・二つの連続する二重引用符は、一つの二重引用符へ変換する。
+ * return
+ *	コピー先の '\0' の位置。
+ */
 char *Substr::quote(char *dp) const
 {
   const char *tail=ptr+len;
@@ -55,58 +41,28 @@ char *Substr::quote(char *dp) const
   return dp;
 }
 
-extern volatile int ctrl_c;
-
-static int pid_to_be_killed;
-static void ctrl_c_to_kill_pipe(int sig)
+void Substr::operator >> (SmartPtr dp) const
 {
-  ctrl_c = 1;
-  kill( SIGINT , pid_to_be_killed );
-  kill( SIGBREAK , pid_to_be_killed );
-  kill( SIGPIPE  , pid_to_be_killed );
-  signal(sig,SIG_ACK);
+  for(int i=0;i<len;i++)
+    *dp++ = ptr[i];
+  *dp = '\0';
 }
+
+extern volatile int ctrl_c;
 
 Parse::~Parse()
 {
-  /* パイプの後始末 */
+  /*
+   * ---- パイプの後始末 ----
+   */
+
+  /* 標準入力 */
   if( input_fp != NULL  &&  input_fp != stdin )
     fclose(input_fp);
-  if( output_fp != NULL  &&  output_fp != stdout ){
-    if( pipemode == REDIRECT ){
-      fclose(output_fp);
-    }else{
-      if( ctrl_c ){
-	fputs("///\a",stderr);
-	kill( output_fp->_pid , SIGBREAK );
-      }
-      fflush( output_fp );
 
-      pid_to_be_killed = output_fp->_pid;
+  /* 標準出力 */
+  close_stdout();
 
-      void (*prev_handler)(int) 
-	= signal(SIGINT,ctrl_c_to_kill_pipe);
-      fputc('\a',stderr);
-      fflush(stderr);
-
-      while( waitpid(output_fp->_pid, NULL ,WNOHANG) != -1 ){
-	if( ctrl_c ){
-	  kill(pid_to_be_killed , SIGBREAK);
-	  break;
-	}
-	sleep(0);
-      }
-      fputc('\a',stderr);
-      fflush(stderr);
-
-      pclose(output_fp);
-
-      if( prev_handler != SIG_ERR )
-	signal( SIGINT , prev_handler );
-
-      // wait(NULL);
-    }
-  }
   /* 引数の後始末 */
   if( args != argbase  &&  args != NULL )
     delete args;
@@ -207,13 +163,17 @@ int Parse::tailcheck ()
   return terminal=NOT_TERMINAL;
 }
 
+/* コマンドラインの１コマンドを、単語ごとに Substr 型へ分割する。
+ *
+ * return コマンドの終結文字 '\0','&'…
+ */
 int Parse::check ()
 {
   argc = 0;
 
-  redirect[0].clean(); appendflag[0] = 0;
-  redirect[1].clean(); appendflag[1] = 0;
-  redirect[2].clean(); appendflag[2] = 0;
+  redirect[0].reset(); appendflag[0] = 0;
+  redirect[1].reset(); appendflag[1] = 0;
+  redirect[2].reset(); appendflag[2] = 0;
 
   terminal = NOT_TERMINAL;
 
@@ -240,8 +200,7 @@ int Parse::check ()
       ++sp;
 
     if( tailcheck() != 0 ){
-      args[ argc ].ptr = NULL;
-      args[ argc ].len = 0;
+      args[ argc ].reset();
       return terminal;
     }
 
@@ -305,6 +264,17 @@ int Parse::check ()
   return terminal;
 }
 
+#if 0
+static FILE *pp_kill_popen;
+static void kill_popen(int sig)
+{
+  fputs("\a\a\a",stderr);
+  fflush(stderr);
+  kill( pp_kill_popen->_pid , sig );
+  signal( sig , SIG_ACK );
+}
+#endif
+
 FILE *Parse::open_stdout()
 {
   if( redirect[1] != NULL ){
@@ -321,46 +291,39 @@ FILE *Parse::open_stdout()
     redirect[1].quote(fname);
     pipemode = REDIRECT;
     return output_fp = fopen( fname , appendflag[1] ? "a" : "w" );
-
+    
   }else if( terminal==PIPE_TERMINAL || terminal==PIPEALL_TERMINAL ){
     
     pipemode = PIPE;
-    return output_fp = popen( nextcmds , "w" );
+    // void (*prev_sig)(int)=signal(SIGINT,&kill_popen);
+    // pp_kill_popen = 
+    output_fp = popen( nextcmds , "w" );
+    // signal(SIGINT,prev_sig);
+    return output_fp;
 
-  }else
+  }else{
     return stdout;
-}
-
-FILE *Parse::open_stdin()
-{
-  if( redirect[0] != NULL ){
-    char *fname = (char*)alloca( redirect[0].len+1 ); /* ! */
-    redirect[0].quote(fname);
-    return input_fp = fopen( fname , "r" );
-  }else 
-    return stdin;
-}
-
-int Parse::call_as_main(int (*routine)(int argc,char **argv) )
-{
-  /* 一般の引数 */
-  int i;
-  char **argv=(char**)alloca(sizeof(char*)*(argc+3));
-  for(i=0;i<argc;i++){
-    argv[i]=(char *)alloca(args[i].len+5);
-    SmartPtr smartptr(argv[i],args[i].len+5);
-    try{
-      copy(i,smartptr);
-    }catch( SmartPtr::BorderOut ){
-      smartptr.terminate();
-    }
   }
-  argv[i] = NULL;
-  
-  return (*routine)(argc,argv);
 }
 
-int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
+void Parse::close_stdout()
+{
+  if( output_fp != NULL  &&  output_fp != stdout ){
+    if( pipemode == PIPE ){
+      // pp_kill_popen = output_fp;
+      // void (*prev_sig)(int) = signal(SIGINT,&kill_popen);
+      pclose( output_fp );
+      // wait(NULL);
+      // signal(SIGINT,prev_sig);
+    }else{
+      fclose( output_fp );
+    }
+    output_fp = stdout;
+  }
+}
+
+int Parse::call_as_main(int (*routine)(int argc,char **argv
+				       ,FILE *fout,Parse &parser))
 {
   int i;
   char **argv=(char**)alloca(sizeof(char*)*(argc+5));
@@ -369,15 +332,13 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
     copy(i,SmartPtr(argv[i],args[i].len+5));
   }
   argv[i] = NULL;
-  if( _osmode != OS2_MODE )
-    return (*routine)(argc,argv,stdout);
 
   FILE *fout=open_stdout();
   if( fout==NULL ){
     fputs("nyaos : cannot make file or pipe.\n",stderr);
     return -1;
   }
-  return (*routine)(argc,argv,fout);
+  return (*routine)(argc,argv,fout,*this);
 }
 
 SmartPtr Parse::copy(int n, SmartPtr dp, int flag ) throw()

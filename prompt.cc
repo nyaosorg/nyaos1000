@@ -62,7 +62,7 @@ static char *to_tilda_name(char *p,int &size)
 static char *paste_true_name(char *dp,const char *cwd)
 {
   Dir dir;
-  if( dir._findfirst( cwd ) != 0 )
+  if( dir.dosfindfirst( cwd ) != 0 )
     return NULL;
 
   return strcpytail(dp,dir.get_name());

@@ -4,7 +4,7 @@
 
 char *StrBuffer::finish() throw()
 {
-  if( is_null() )
+  if( isNull() )
     return 0;
 
   char *rc=(char*)realloc(buffer,length+1);
@@ -19,7 +19,7 @@ char *StrBuffer::finish() throw()
 
 void StrBuffer::grow(int newSize) throw(MallocError)
 {
-  if( is_null() ){
+  if( isNull() ){
     /* 新規取得 */
     buffer = (char*)malloc( newSize+1 );
     if( buffer == 0 )
@@ -37,9 +37,10 @@ void StrBuffer::grow(int newSize) throw(MallocError)
 
 StrBuffer &StrBuffer::operator << (const char *s) throw(MallocError)
 {
+  /* 引数が NULL の時は何もしない。呼び出し元の NULL チェックを省略する為 */
   if( s == NULL )
     return *this;
-  
+
   int len=strlen(s);
   if( length+len >= max )
     grow( length+len+inc );
@@ -48,11 +49,12 @@ StrBuffer &StrBuffer::operator << (const char *s) throw(MallocError)
   return *this;
 }
 
-StrBuffer &StrBuffer::add(const char *s , int size) throw(MallocError)
+StrBuffer &StrBuffer::paste(const void *s , int size) throw(MallocError)
 {
+  /* 引数が NULL の時は何もしない。呼び出し元の NULL チェックを省略する為 */
   if( s == NULL || size <= 0 )
     return *this;
-  
+
   if( length+size >= max )
     grow( length+size+inc );
   memcpy( buffer+length , s , size );

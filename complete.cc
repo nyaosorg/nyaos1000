@@ -7,6 +7,7 @@
 #include "macros.h"
 #include "finds.h"
 #include "nyaos.h"
+#include "strtok.h"
 
 extern int option_tilda_without_root;
 
@@ -226,7 +227,7 @@ void Complete::make_command_cache()
   if( envpath != NULL ){
     char *env=(char*)alloca(strlen(envpath)+1);
     strcpy(env,envpath);
-    
+
     for(  const char *dirname=strtok(env,";")
 	; dirname != NULL
 	; dirname = strtok(NULL,";") ){

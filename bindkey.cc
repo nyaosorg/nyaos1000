@@ -695,11 +695,15 @@ void Shell::bindlist(FILE *fout)
   for(unsigned int i=0;i<numof(bindmap);i++){
     if( bindmap_usage_key[i] != NULL &&  bindmap_usage_func[i] != NULL ){
       if( bindmap[i] == &hotkey ){
-	fprintf(fout,"%-8s : hotkey to call \"%s\".\n",
-		bindmap_usage_key[i] , bindmap_usage_func[i] );
+	fprintf(  fout
+		, "%-8s : hotkey to call \"%s\".\n"
+		, bindmap_usage_key[i]
+		, bindmap_usage_func[i] );
       }else{
-	fprintf(fout,"%-8s : %s\n",
-		bindmap_usage_key[i],bindmap_usage_func[i] );
+	fprintf(  fout
+		, "%-8s : %s\n"
+		, bindmap_usage_key[i]
+		, bindmap_usage_func[i] );
       }
     }
   }

@@ -1,10 +1,13 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "finds.h"
 
 FileListT *new_filelist(Dir &dir)
 {
+  assert( dir != NULL );
+
   FileListT *node=
     (FileListT*)malloc( sizeof(FileListT) + dir.get_name_length() );
   
@@ -31,53 +34,83 @@ FileListT *new_filelist(Dir &dir)
 
 FileListT *new_filelist(const char *fname)
 {
-  Dir dir;
+  assert(fname != NULL);
+  
   char path[256],*p=path;
   int size=sizeof(path);
   try{
     int lastchar = convroot(p,size,fname);
-    if( lastchar=='\\' || lastchar==':' )
+    assert( size > 0 );
+    if( lastchar=='\\' || lastchar == ':' )
       *p++ = '.';
     *p = '\0';
   }catch(...){
     return NULL;
   }
-  if( dir._findfirst( path ) != 0 )
-    return NULL;
 
-  /* ここで、return new_filelist(Dir &); を呼べばよさそうだが、
-   * そうすると、パス名のディレクトリ部が消えてしまうので、
-   * 自前で FileListT を作成してやらなくてはいけない。
+  FileListT *node;
+  int length;
+  Dir dir;
+  FILESTATUS4 statbuf;
+
+  /* FindFirst系 → FATドライブのルートディレクトリ自身の情報を取得できない。
+   * PathInfo系  → 作成途中のファイルの情報を取得できない。
+   *
+   * という欠点がある。そこで、まず FindFirst系を試し、だめな場合、
+   * PathInfo系を試みるようにしている。
    */
-  int length=strlen(fname);
-  
-  FileListT *node = (FileListT*)malloc( sizeof(FileListT*) + length );
-  if( node == NULL )
+  if( dir.dosfindfirst( path ) == 0 ){
+    /* FindFirst系成功 */
+    
+    length=strlen(fname);
+    if( (node = (FileListT*)malloc( sizeof(FileListT) + length ))== NULL )
+      return NULL;
+    
+    node->attr   = dir.get_attr();
+    node->size   = dir.get_size();
+    node->write.setTime(  dir.get_last_write_time()  );
+    node->write.setDate(  dir.get_last_write_date()  );
+    node->access.setTime( dir.get_last_access_time() );
+    node->access.setDate( dir.get_last_access_date() );
+    node->create.setTime( dir.get_create_time()      );
+    node->create.setDate( dir.get_create_date()      );
+    node->easize = dir.get_easize();
+  }else if( DosQueryPathInfo((PUCHAR)path,2,&statbuf,sizeof(FILESTATUS4))==0){
+    /* PathInfo系成功 */
+
+    length=strlen(fname);
+    if( (node=(FileListT*)malloc(sizeof(FileListT)+length))==NULL )
+      return NULL;
+
+    node->attr   = statbuf.attrFile;
+    node->size   = statbuf.cbFile;
+    node->write.setTime( statbuf.ftimeLastWrite );
+    node->write.setDate( statbuf.fdateLastWrite );
+    node->access.setTime( statbuf.ftimeLastAccess );
+    node->access.setDate( statbuf.fdateLastAccess );
+    node->create.setTime( statbuf.ftimeCreation );
+    node->create.setDate( statbuf.fdateCreation );
+    node->easize = statbuf.cbList;
+  }else{
+    /* 大失敗 */
     return NULL;
-  
+  }
   strcpy( node->name , fname );
-  node->attr   = dir.get_attr();
   node->length = length;
-  node->size   = dir.get_size();
-  node->write.setTime(  dir.get_last_write_time()  );
-  node->write.setDate(  dir.get_last_write_date()  );
-  node->access.setTime( dir.get_last_access_time() );
-  node->access.setDate( dir.get_last_access_date() );
-  node->create.setTime( dir.get_create_time()      );
-  node->create.setDate( dir.get_create_date()      );
-  node->easize = dir.get_easize();
   node->next = NULL;
   node->prev = NULL;
-  
+
   return node;
 }
 
 FileListT *dup_filelist(FileListT *org)
 {
+  assert( org != NULL);
+
   FileListT *tmp=(FileListT *)
     malloc( sizeof(FileListT) + org->length );
 
-  if( tmp != NULL )
+  if( tmp == NULL )
     return NULL;
 
   memcpy( tmp , org , sizeof(FileListT)+org->length );
@@ -89,27 +122,19 @@ FileListT *dup_filelist(FileListT *org)
 static int compare(filelist::DirDateTime &A , filelist::DirDateTime &B )
 {
   int rc;
-  // 年
-  rc=(int)A.d.year - (int)B.d.year;
-  if( rc != 0 ) return rc;
-  // 月
-  rc=(int)A.d.month - (int)B.d.month;
-  if( rc != 0 ) return rc;
-  // 日
-  rc=(int)A.d.day - (int)B.d.day;
-  if( rc != 0 ) return rc;
-  // 時
-  rc=(int)A.t.hour - (int)B.t.hour;
-  if( rc != 0 ) return rc;
-  // 分
-  rc=(int)A.t.minute - (int)B.t.minute;
-  if( rc != 0 ) return rc;
-  // 秒
-  return (int)A.t.second - (int)B.t.second;
+  if( (rc=A.getYear()  - B.getYear()   )!= 0 ) return rc; /* 年 */
+  if( (rc=A.getMonth() - B.getMonth()  )!= 0 ) return rc; /* 月 */
+  if( (rc=A.getDay()   - B.getDay()    )!= 0 ) return rc; /* 日 */
+  if( (rc=A.getHour()  - B.getHour()   )!= 0 ) return rc; /* 時 */
+  if( (rc=A.getMinute()- B.getMinute() )!= 0 ) return rc; /* 分 */
+  return A.getSecond()- B.getSecond();
 }
 
 static int compare(FileListT *X,FileListT *Y,int method)
 {
+  assert( X != NULL );
+  assert( Y != NULL );
+
   int rc=0;
   switch( method & ~SORT_REVERSE ){
   case SORT_BY_SUFFIX:
@@ -201,6 +226,8 @@ static int compare(FileListT *X,FileListT *Y,int method)
 FileListT *fsort_and_insert(FileListT *first , FileListT *tmp ,
 			    int *nfiles , int method=0)
 {
+  assert( tmp != NULL );
+
   int diff;
   if( first == NULL || (diff=compare(tmp,first,method)) < 0 ){
     if( nfiles != NULL )
@@ -246,6 +273,7 @@ FileListT *fsort_and_insert(FileListT *first , FileListT *tmp ,
 
 void Files::insert( FileListT *newone , int sort )
 {
+  assert( newone != NULL );
   top = fsort_and_insert( top , newone , &n , sort );
 }
 

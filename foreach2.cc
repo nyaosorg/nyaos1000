@@ -48,7 +48,7 @@ static int word_design(StrBuffer &line ,const char *value,const char *opt)
 
     const char *ext=_getext(value);
     if( ext != 0 ){
-      line.add( value , ext-value );
+      line.paste( value , ext-value );
     }else{
       line << value;
     }
@@ -57,7 +57,7 @@ static int word_design(StrBuffer &line ,const char *value,const char *opt)
 
     const char *name=_getname(value);
     if( name != 0 )
-      line.add( value , name-value );
+      line.paste( value , name-value );
     
   }else if( opt[0] == 't' && opt[1] == '\0' ){	/* 「:t」ディレクトリ除く */
     

@@ -4,7 +4,6 @@
 #include <ctype.h>
 #include <process.h>
 #include <sys/video.h>
-#include <sys/nls.h>
 
 #define USE_SET_WIN_TITLE 0
 
@@ -49,26 +48,18 @@ extern int killAllPublicHistory(void);
 
 int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 
+/* 「VER」コマンド： 
+ * nyaos.cc さえ再コンパイルすれば、NYAOS で表示される全ての
+ * バージョンナンバが更新されるよう、あえてここに置いている。
+ */
 int cmd_ver( FILE *source , Parse &argv )
 {
-  spawnl(P_WAIT,cmdexe_path,"CMD","/C","ver",NULL);
-  puts( "Nihongo Yet Another Os/2 Shell is "VERSION );
-  puts( "compiled on "__DATE__ );
-  return 0;
+  fputs("Nihongo Yet Another Os/2 Shell is "VERSION
+	"\ncompiled on "__DATE__ , stdout );
+  fflush(stdout);
+  return RC_HOOK;
 }
 
-static void get_scrsize_with_env(int *wh)
-{
-  const char *env;
-
-  env=getenv("COLUMNS");
-  if( env==NULL || (wh[0]=atoi(env)) <= 1 ) 
-    wh[0] = 80;
-
-  env=getenv("LINES");
-  if( env==NULL || (wh[1]=atoi(env)) <= 1 )
-    wh[1] = 25;
-}
 
 /* VIOプログラムから、内部的に PM アプリケーションに化ける
  * これによって、PM のクリップボードの読み書きを可能とする。
@@ -88,7 +79,32 @@ static int pretend_pm_application()
   return 0;
 }
 
+/* 環境変数より、画面サイズを取得する。
+ * 取得できなかった場合は、80x25 となる。
+ *	wh[0] 桁数
+ *	wh[1] 行数
+ */
+static void get_scrsize_with_env(int *wh)
+{
+  const char *env;
 
+  env=getenv("COLUMNS");
+  if( env==NULL || (wh[0]=atoi(env)) <= 1 ) 
+    wh[0] = 80;
+
+  env=getenv("LINES");
+  if( env==NULL || (wh[1]=atoi(env)) <= 1 )
+    wh[1] = 25;
+}
+
+/* ストリーム f の画面サイズを取得する。
+ * f がファイルの場合は、環境変数より取得、
+ * 端末の場合は、_scrsize関数を用いて取得する。
+ *
+ *	wh[0] 桁数
+ *	wh[1] 行数
+ *	f ストリーム
+ */
 void get_scrsize(int *wh,FILE *f)
 {
   if( f==0 )
@@ -212,6 +228,11 @@ int main(int argc, char **argv)
       default:
 	fprintf(stderr,"-%c : no such option.\n",argv[i][1]);
 	warning_mode = 1;
+	break;
+
+      case 'z':
+      case 'Z': /* Vz ライクキーモード */
+	Shell::bindkey_wordstar();
 	break;
 
       case 'g': /* ウインドウサイズ指定 */

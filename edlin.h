@@ -132,6 +132,7 @@ public:
   int getLen()          const throw() { return len; }
   const char *getText() const throw() { return strbuf; }
   const char *getAttr() const throw() { return atrbuf; }
+  int operator[](int n) const throw() { return strbuf[n] & 255; }
 
   static int complete_tail_char;
   
@@ -182,8 +183,6 @@ extern char dbcstable[256];
 int dbcs_table_init();
 
 class Shell : private Edlin2 {
-  struct WHist;
-
   const char *prompt;
   bool topline_permission;
 
@@ -237,6 +236,8 @@ public:
   static void bindkey_tcshlike();
   static void bindkey_nyaos();
   static int bindkey(const char *key,const char *funcname);
+  static Status (Shell::*get_bindkey_function(int key))()
+    { return bindmap[ key ]; }
   static int bind_hotkey(const char *key,const char *program);
   static void bindlist(FILE *fp);
 
@@ -249,7 +250,6 @@ private:
   static History *history;
   static int nhistories;
   History *cur;
-  int vz_history_core(struct WHist *);
 public:
   static int get_history_number() { return nhistories; }
   static const char *get_nth_history(int n);

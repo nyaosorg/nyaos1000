@@ -7,6 +7,8 @@
 #include "Edlin.h"
 #include "macros.h"
 
+#include "quoteflag.h"
+
 int option_tilda_is_home=1;
 int option_tilda_without_root=0;
 int option_replace_slash_to_backslash_after_tilda=1;
@@ -24,7 +26,7 @@ static struct PublicHistory {
 
 int nhistories = 0;
 
-char drivealias[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+// char drivealias[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /* 00h から 1Fh までの制御文字を ^H という形で表示するfputs。
  * 出力先が端末でない、ファイル等の時は、変換を行わない。
@@ -138,6 +140,7 @@ static const char *get_hist_f(int n)
   return cur->string;
 }
 
+#if 0
 /* ドライブエイリアスのコマンド。プリプロセスでのドライブ文字変換を
  * 設定するコマンド。
  *	source コマンド文字列が入っていたストリーム
@@ -168,6 +171,7 @@ int cmd_drivealias( FILE *source , Parse &params )
   }
   return 0;
 }
+#endif
 
 /* 過去方向へヒストリを検索する 
  *	n ... 遡るヒストリの数
@@ -491,7 +495,7 @@ void replace_history(const char *sp, char *_dp , int max )
 void preprocess(const char *sp, char *_dp , int max )
 {
   SmartPtr dp(_dp,max);
-  int quote=0;
+  QuoteFlag qf;
   int prevchar=' ';
 
   try{
@@ -501,19 +505,14 @@ void preprocess(const char *sp, char *_dp , int max )
     while( *sp != '\0' ){
       switch( *sp ){
       case '\'':
-	if( (quote & 1)==0 )
-	  quote ^= 2;
-	break;
-	
       case '"':
-	if( (quote & 2)==0 )
-	  quote ^= 1;
+	qf.eval( *sp );
 	break;
 	
       case ';': /* 空白＋「；」を「&;」に変換する */
 	++sp;
 	if(   Parse::option_semicolon_terminate 
-	   && !quote && is_space(prevchar) ){
+	   && !qf.isInQuote() && is_space(prevchar) ){
 	  *dp++ = '&';
 	}
 	*dp++ = ';';
@@ -521,7 +520,7 @@ void preprocess(const char *sp, char *_dp , int max )
 	
       case '.': /* 空白＋「...」を「..\..」に変換する */
 	if(   option_dots 
-	   && !quote 
+	   && !qf.isInQuote()
 	   && is_space(prevchar) && sp[1]=='.' && sp[2]=='.' ){
 	  
 	  ++sp;
@@ -538,8 +537,7 @@ void preprocess(const char *sp, char *_dp , int max )
 	break;
 	
       case '~':
-	if(    option_tilda_is_home  
-	   &&  quote==0
+	if(    option_tilda_is_home  &&  !qf.isInQuote()
 	   &&  is_space(prevchar) ){
 	  if( *(sp+1) != '\\' && *(sp+1) != '/' && !option_tilda_without_root){
 	    /* option tilda_without_root が off の時は
@@ -589,7 +587,7 @@ void preprocess(const char *sp, char *_dp , int max )
 	break;
 	
       case '%':
-	if( (quote & 2)==0  &&  isalpha(sp[1] & 255) ){
+	if( !qf.isInDoubleQuote()  &&  isalpha(sp[1] & 255) ){
 	  char envname[128];
 	  
 	  ++sp;
@@ -616,7 +614,8 @@ void preprocess(const char *sp, char *_dp , int max )
 	prevchar = *dp++ = *sp++;
 	*dp++ = *sp++;
       }else{
-	if( quote==0  && isalpha(sp[0] & 255) && sp[1]==':' ){
+#if 0
+	if( !qf.isInQuote()  && isalpha(sp[0] & 255) && sp[1]==':' ){
 	  if( islower(sp[0] & 255) )
 	    *dp++ = drivealias[ sp[0] & 0x1F ] + ('a'-'A');
 	  else
@@ -624,8 +623,11 @@ void preprocess(const char *sp, char *_dp , int max )
 	  prevchar = *dp++ = ':';
 	  sp += 2;
 	}else{
+#endif
 	  prevchar = *dp++ = *sp++;
+#if 0
 	}
+#endif
       }
     }
   exit:

@@ -14,7 +14,7 @@ class StrBuffer {
   int max;	/* この max は length の max なので、サイズは +1 必要 */
   int inc;
   
-  int is_null()     const { return length==0; }
+  int isNull() const { return length==0; }
   void grow(int x) throw(MallocError);
 public:
   StrBuffer &operator << ( const char *s ) throw(MallocError);
@@ -25,14 +25,18 @@ public:
     buffer[ length ] = 0;
     return *this;
   }
-  StrBuffer &add( const char *s , int size ) throw(MallocError);
+  
+  /* メモリ領域(先頭アドレス＋バイト数)を追加する。*/
+  StrBuffer &paste( const void *s , int size ) throw(MallocError);
 
+  /* 文字列をヒープ文字列として取り出す。
+   * 代わりにインスタンスは空になる。*/
   char *finish() throw();
 
   char &operator[](int x){ return buffer[x]; }
   int getLength() const { return length; }
-  const char *getTop() const { return buffer; }
 
+  const char *getTop() const { return buffer; }
   operator const char *() const { return buffer; }
 
   StrBuffer() : length(0),buffer(0),max(0),inc(80){ }

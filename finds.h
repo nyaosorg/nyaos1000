@@ -31,7 +31,7 @@ public:
     READONLY	= 0x1,	AND_READONLY	= 0x100,  OR_READONLY	= 0x1,
     ALL = 0x37 ,
   };
-  int _findfirst(const char *fname,int attr=ALL)
+  int dosfindfirst(const char *fname,int attr=ALL)
     {
       return rc=DosFindFirst( (PUCHAR)fname , &handle , attr
 			     , (PVOID)&buffer , sizeof(buffer)
@@ -132,6 +132,7 @@ typedef struct filelist{
       { date = *(unsigned short *)&d; }
 
   } create , access , write ;
+
   int length;
   char name[1]; /* ‰Â•Ï’· */
 } FileListT;

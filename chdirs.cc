@@ -131,7 +131,7 @@ static int cdshort_1(char *list[] , int modeflag );
 static int cdshort_2(const char *cwdx,char *list[] , int modeflag )
 {
   Dir dir;
-  for( dir._findfirst(cwdx) ; dir != NULL ; ++dir ){
+  for( dir.dosfindfirst(cwdx) ; dir != NULL ; ++dir ){
     const char *name=dir.get_name();
     if(   name[0] != '.'
        && (dir.get_attr() & Dir::DIRECTORY) != 0

@@ -37,8 +37,7 @@ int option_sos=0;
 int option_script_cache=1;
 int option_auto_close=1;
 
-// ファイル名を、'/' <--> '\\' 変換しながら、コピーする
-// 空白や、ヌルをファイル名末尾とみなす。
+extern void debugger(const char *,...);
 
 struct ScriptCache{
   char *name;
@@ -48,16 +47,14 @@ struct ScriptCache{
   ~ScriptCache(){ free(name); free(interpreter); }
 };
 
-Hash<ScriptCache> script_hash(1024);
+Hash <ScriptCache> script_hash(1024);
 
 extern int option_debug_echo;
 
-/* "suffix.cc" */
-struct Suffix{
-  char *interpretor;
-  char suffix[1];
-};
-
+/* コマンド「cache」：
+ * スクリプトキャッシュに保存されているキャッシュ情報を
+ * 画面に表示する。
+ */
 int cmd_cache(FILE *source, Parse &args )
 {
   for(HashIndex<ScriptCache> hi(script_hash) ; *hi != NULL ; hi++ ){
@@ -66,7 +63,9 @@ int cmd_cache(FILE *source, Parse &args )
   return 0;
 }
 
-
+/* コマンド「rehash」：
+ * スクリプトキャッシュの情報を全て破棄させる。
+ */
 int cmd_rehash(FILE *source , Parse &args )
 {
   Complete::make_command_cache();
@@ -295,12 +294,12 @@ static char *read_script_header( const char *fname ) throw(MallocError)
  * throw NULL  メモリ確保エラー
  *
  */
-static void script_to_cache( char *script , char *interpreter )
-     throw (MallocError)
+static void script_to_cache( char *script , char *interpreter ) 
+     throw(MallocError)
 {
   ScriptCache *sc=new ScriptCache;
   if( sc == NULL )
-    throw NULL;
+    throw MallocError();
 
   sc->name = script;
   sc->interpreter = interpreter;
@@ -350,6 +349,14 @@ static bool is_inner_command( const char *name ) throw()
   return buildinCommand != NULL;
 }
 
+/* スクリプト変換を行う。
+ *
+ * return
+ *	変換後のテキスト。ヒープ文字列なので、使用後に
+ *	free することが必要。
+ * throw
+ *	MallocError 文字通り
+ */
 char *replace_script( const char *sp ) throw(MallocError)
 {
   StrBuffer buf;
@@ -434,12 +441,12 @@ char *replace_script( const char *sp ) throw(MallocError)
 	copy_filename( buf , fname.getTop() , BACKSLASH_DEMILITOR );
 	sp = copy_args( buf , sp );
 	
-      }else if(  stricmp(suffix=_getext2(fname),".class") == 0 ){
+      }else if( stricmp(suffix=_getext2(fname),".class") == 0 ){
 	/*
 	 * ------ Java Application (*.class な時) -----
 	 */
 	buf << "java ";
-	buf.add( fname , suffix-fname );
+	buf.paste( fname , suffix-fname );
 	buf << ' ';
 	sp = copy_args( buf , sp );
 
@@ -455,6 +462,7 @@ char *replace_script( const char *sp ) throw(MallocError)
 	type = SearchEnv(fname,"SCRIPTPATH",path);
 	if( auto_close )
 	  buf << "/C /F ";
+	
 	buf << sc->interpreter << ' ';
 	copy_filename( buf , path , SLASH_DEMILITOR );
 	sp = copy_args( buf , sp );
@@ -464,30 +472,43 @@ char *replace_script( const char *sp ) throw(MallocError)
 	/*
 	 * -------- SOSスクリプト --------
 	 */
-	StrBuffer argv;
-	sp = copy_args( argv , sp );
-	expand_sos( buf , header , path , argv );
-	
+	try{
+	  StrBuffer argv;
+	  sp = copy_args( argv , sp );
+	  expand_sos( buf , header , path , argv );
+	}catch(...){
+	  free(header);
+	  throw;
+	}
 	free(header);
-      }else if(   type==FILE_EXISTS 
+      }else if(    type==FILE_EXISTS 
 	       && (header=read_script_header(path)) != 0 ){
 	/*
 	 * ------- 「#!」スクリプト --------
 	 */
 	if( auto_close )
 	  buf << "/C /F ";
-
-	copy_filename( buf , path , SLASH_DEMILITOR );
+	
+	/* 「#!」行内のインタプリタ名をペースト */
+	copy_filename( buf , header , BACKSLASH_DEMILITOR );
 	buf << ' ';
+	/* スクリプト名自身をペースト */
+	copy_filename( buf , path   , SLASH_DEMILITOR );
+	
+	buf << ' ';
+
 	/* オプションが立っていれば、
 	 * キャッシュに、読み出した結果を保存する */
 	if( option_script_cache ){
 	  char *name = strdup( fname );
-	  if( name == 0 )
+	  if( name == 0 ){
+	    free( header );
 	    throw MallocError();
+	  }
 	  script_to_cache( name , header );
+	}else{
+	  free( header );
 	}
-	free( header );
 	sp = copy_args( buf , sp );
 
       }else{

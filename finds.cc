@@ -11,6 +11,9 @@
 
 int convroot(char *&dp,int &size,const char *sp) throw(size_t)
 {
+  assert( sp != NULL );
+  assert( dp != NULL );
+
   int lastchar=0;
   while( *sp != '\0' ){
     lastchar = *sp;
@@ -45,14 +48,19 @@ int get_current_cp()
 
 Dir::Dir(): handle(0xFFFFFFFF), count(1)
 {
+  /* 英語モードで日本語のファイル名を取得すると、
+   * コアしてしまうので、無理やり日本語モードにしている。
+   */
   codepage = get_current_cp();
   DosSetProcessCp( 932 );
 }
 
 Dir::Dir(const char *path,int attr=ALL) : handle(0xFFFFFFFF),count(1)
 {
+  /* 英語モードで日本語のファイル名を取得すると、
+   * コアしてしまうので、無理やり日本語モードにしている。
+   */
   codepage = get_current_cp();
-  
   DosSetProcessCp( 932 );
   this->findfirst(path,attr); 
 }
@@ -60,6 +68,8 @@ Dir::Dir(const char *path,int attr=ALL) : handle(0xFFFFFFFF),count(1)
 Dir::~Dir()
 { 
   DosFindClose(handle);
+  
+  /* 変更したコードページを元に戻す */
   DosSetProcessCp( codepage );
 }
 
@@ -91,7 +101,7 @@ int Dir::findfirst(const char *fname,int attr)
   }
   *p = '\0';
   
-  return _findfirst(path,attr);
+  return dosfindfirst(path,attr);
 }
 
 /* ワイルドカードファイル名を受け入れる findfirst。
@@ -104,24 +114,30 @@ int Dir::findfirst_with_wildcard(const char *fname,int attr)
   char *p=path;
   try{
     (void)convroot(p,size,fname);
+    *p = '\0';
   }catch( ... ){
-    ;
+    return -1;
   }
-  *p = '\0';
-  return _findfirst(path,attr);
+
+  assert( size > 0 );
+  return dosfindfirst(path,attr);
 }
 
 void fnexplode2_free(char **buffer)
 {
   if( buffer != NULL ){
-    for(char **p=buffer ; *p != NULL ; p++ )
+    for(char **p=buffer ; *p != NULL ; p++ ){
       free(*p);
+      *p = NULL;
+    }
     free(buffer);
   }
 }
 
 char **fnexplode2(const char *path)
 {
+  assert( path != NULL );
+  
   const char *lastroot=NULL;
   int finalchar = 0;
   int have_wildcard = 0;
@@ -165,7 +181,7 @@ char **fnexplode2(const char *path)
   }
   Dir dir;
 
-  dir._findfirst(path,Dir::ALL);
+  dir.dosfindfirst(path,Dir::ALL);
   if( dir == NULL )
     return NULL;
 

@@ -64,18 +64,17 @@ int cmd_source( FILE *srcfil, Parse &params );
 int cmd_hotkey(FILE *source,Parse &param );
 int cmd_bind(FILE *source, Parse &param );
 int cmd_bindkey(FILE *source,Parse &param);
-/* int cmd_bindcomplete(FILE *source,Parse &param); */
 int cmd_set( FILE *srcfil, Parse &params );
 int cmd_cursor( FILE *fp, Parse &params);
 int cmd_lecho(FILE *source, Parse &params );
 int cmd_echo(FILE *srcfil, Parse &params );
-int cmd_drvalias(FILE *srcfil, Parse &params );
-
-/* "suffix.cc" */
-int cmd_ext(FILE *source , Parse &argp );
+// int cmd_drvalias(FILE *srcfil, Parse &params );
 
 /* "prepro.cc" */
-int cmd_drivealias(FILE *source , Parse &arg );
+// int cmd_drivealias(FILE *source , Parse &arg );
+
+/* "eadir.cc" */
+int eadir(int argc, char **argv,FILE *fout,Parse &);
 
 /* "spool.cc" *
  * int cmd_spool(FILE *source , Parse &arg );
@@ -90,33 +89,29 @@ void ctrl_c_signal(int sig)
 }
 
 static int compatible(FILE *source , Parse &params ,
-		      int (*routine)(FILE *,const char*,int,char**) )
+		      int (*routine)(  FILE * , const char*,int,char**) )
 {
   int argc=params.get_argc();
-  char **argv=(char**)malloc( (argc+1)*sizeof(char*) );
+  char **argv=(char**)alloca( (argc+1)*sizeof(char*) );
 
   for(int i=0 ; i<argc ; i++){
-    argv[i] = params[i].dup();
+    argv[i] = (char*)alloca( params[i].len + 1 );
+    memcpy( argv[i] , params[i].ptr , params[i].len );
+    argv[i][ params[i].len ] = '\0';
   }
   return (*routine)( source , params.get_parameter() , argc , argv );
 }
 
-int foreach( FILE *srcfil , const char *parameter, int argc, char **argv);
-static int foreach(FILE *source, Parse &params )
-{ return compatible(source,params,foreach);  }
+int foreach(FILE *,const char *parameter, int argc, char **argv);
 
-static int cmd_ls( FILE *srcfil, Parse &params )
+static int foreach(FILE *source, Parse &params )
+{  return compatible(source,params,foreach);  }
+
+int cmd_ls( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
 
-
-#if 0
-   static int cmd_eadir( FILE *srcfil, Parse &params )
-   {  return params.call_as_main(eadir);  }
-#endif
 static int cmd_exit( FILE *srcfil, Parse &params )
-{
-  return RC_QUIT;
-}
+{  return RC_QUIT;  }
 
 void backquote_replace(const char *sp , char *dp , int max )
 {
@@ -243,11 +238,10 @@ Command jumptable[]={
   {"chdir",  cmd_chdir   },
   {"comment",cmd_comment },
   {"dirs",   cmd_dirs    },
-  {"drvalias",cmd_drivealias },
+//  {"drvalias",cmd_drivealias },
   {"echo",   cmd_echo    },
   {"exec",   cmd_exec    },
   {"exit",   cmd_exit    },
-  {"ext",    cmd_ext     },
   {"fg",     cmd_fg      },
   {"foreach",foreach     },
   {"history",cmd_history },
@@ -269,7 +263,6 @@ Command jumptable[]={
   {"rmdir",  cmd_rmdir   },
   {"set",    cmd_set     },
   {"source", cmd_source  },
-//  {"spool",  cmd_spool   },
   {"unalias",cmd_unalias },
   {"ver",    cmd_ver     },
   {"which"  ,cmd_which   },
@@ -322,12 +315,16 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 
     DosError( FERR_DISABLEHARDERR );
     getcwd_case(wd);
-    _chdrive( c = drivealias[ cmdline[0] & 0x1F ] );
+    _chdrive( c=cmdline[0] );
+    /* _chdrive( c = drivealias[ cmdline[0] & 0x1F ] );
+     * ↑ ドライブエイリアスの残骸 
+     */
+
     /*
      * _chdrive( ) は、いつも0を返してくるので実行結果を把握できない (+_;)
      * 期待通りにカレントドライブが変わったかどうか疑ってみる
      */
-    if(_getdrive()==c)	  /* うまく変わってたら	 */
+    if(_getdrive()==toupper(c))	  /* うまく変わってたら	 */
       strcpy(prevdir,wd); /* prevdirを覚えておく */
     else
       fputs("Cannot find the specified drive.\n",stderr);

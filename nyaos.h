@@ -3,27 +3,16 @@
 #define NYAOS_H
 
 #include "macros.h"
+#define VERSION "1.55"
 
-#define VERSION "1.54"
+class Parse;
 
-/**** "callcmd.cc" ****/
-
+/* 内蔵コマンドの戻り値のうち、特別なもの */
 enum{
   RC_QUIT = -32768,  /* exit コマンドなど */
   RC_HOOK = -32767,  /* 内蔵コマンドは別のコマンドへのフィルター */
   RC_ABORT= -32766,  /* Ctrl-C が押された */
 };
-
-int query_filesystem(int drivenum);
-extern int screen_width , screen_height ;
-int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
-void set_win_title( const char *title );
-
-int eadir(int argc, char **argv,FILE *fout);
-char *fgets_chop(char *dp,int max,FILE *fp);
-bool set_prompt(const char *promptenv,char *dp,int size);
-
-class Parse;
 
 extern struct Command{
   const char *name;
@@ -35,6 +24,12 @@ extern struct Alias{
   char *base;
   char name[1];
 } *alias_hashtable[256];
+
+extern int screen_width , screen_height ;
+int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
+
+char *fgets_chop(char *dp,int max,FILE *fp);
+bool set_prompt(const char *promptenv,char *dp,int size);
 
 extern int cursor_start , cursor_end;
 extern char *cursor_on_color_str;
@@ -48,15 +43,16 @@ extern int scriptflag,option_sos;
 
 extern int option_tilda_is_home;
 extern int option_replace_slash_to_backslash_after_tilda;
+extern int option_vio_cursor_control;
+extern int option_prompt_even_piped;
+extern int option_cmdlike_crlf;
+
 void replace_alias( const char *source, char *destinate ,int max );
 void replace_history( const char *source , char *destinate ,int max );
 void preprocess( const char *sp , char *destinate , int max );
 int replace_script( const char *source , char *destinate , int max );
 void buildin_command_to_complete_table(void);
 
-extern int option_vio_cursor_control;
-extern int option_prompt_even_piped;
-extern int option_cmdlike_crlf;
 extern char *cmdexe_path;
 
 /* NYAOS.CC */

@@ -136,9 +136,9 @@ int cmd_bg(FILE *source , Parse &argv )
   return cmd_fg_bg( argv , FALSE );
 }
 
-int eadir( int argc, char **argv,FILE *fout=stdout);
+int eadir( int argc, char **argv,FILE *fout,Parse &parser);
 
-static int print_file(char *s)
+static int print_file(char *s,Parse &parser)
 {
   char *eadir_argv[]={
     "eadir",
@@ -152,7 +152,7 @@ static int print_file(char *s)
   if( statbuf.st_attr & A_DIR ){
     return 1;
   }else{
-    eadir(2,eadir_argv);
+    eadir(2,eadir_argv,parser.open_stdout(),parser);
     return 0;
   }
 }
@@ -199,7 +199,9 @@ int cmd_which( FILE *source , Parse &params )
     }else{
       /* 実行ファイルの検索 */
       type=SearchEnv(argv,"PATH",buffer);
-      if( type == NO_FILE || type == FILE_EXISTS || print_file(buffer) !=0 ){
+      if(   type == NO_FILE
+	 || type == FILE_EXISTS
+	 || print_file(buffer,params) !=0 ){
 	printf( "%s : not found %s.\n"
 	       , argv
 	       , scriptflag ? "in PATH and SCRIPTPATH" : "in PATH" );
@@ -209,7 +211,7 @@ int cmd_which( FILE *source , Parse &params )
   return 0;
 }
 
-static void the_open( char *fname , const char *setup_string , int active )
+static void the_open( char *fname , const char *setup_string )
 {
   char *p=fname;
   char *lastp=NULL , *last2p=NULL;
@@ -234,8 +236,6 @@ static void the_open( char *fname , const char *setup_string , int active )
   
   HOBJECT hObject=WinQueryObject( (PSZ)fname );
   WinSetObjectData( hObject , (PCSZ) setup_string );
-  if( active )
-    WinSetObjectData( hObject , (PCSZ) setup_string );
 }
 extern char *getcwd_case(char *dst);
 extern void correct_case(char *dst,const char *src,int size);
@@ -245,7 +245,6 @@ int cmd_open( FILE *source , Parse &params )
   int argc = params.get_argc();
   const char *setup_string="OPEN=DEFAULT";
   int nopens=0;
-  int active = 0;
 
   FILE *fout=params.open_stdout();
 
@@ -257,11 +256,7 @@ int cmd_open( FILE *source , Parse &params )
       default:
 	fprintf(fout,"open: bad option `%s'\n",arg);
 	break;
-	
-      case 'a':
-	active ^= 1;
-	break;
-	
+
       case 'p': /* プロパティーオプション */
       case 's':
 	setup_string = "OPEN=SETTINGS";
@@ -332,7 +327,7 @@ int cmd_open( FILE *source , Parse &params )
       }
       
       fprintf(fout,"open %s\n", fname );
-      the_open(fname , setup_string , active );
+      the_open(fname , setup_string );
       nopens++;
     }
   }
@@ -340,7 +335,7 @@ int cmd_open( FILE *source , Parse &params )
     char cwd[512];
     correct_case( cwd , "." , sizeof(cwd) );
     fprintf(fout,"open %s\n",cwd);
-    the_open(cwd , setup_string , active );
+    the_open(cwd , setup_string  );
   }
   return 0;
 }

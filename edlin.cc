@@ -15,6 +15,8 @@
 #define KEY(x)	(0x100 | K_##x )
 #define CTRL(x)	((x) & 0x1F )
 
+extern void debugger(const char *,...);
+
 Edlin::Edlin()
 {
   pos = len = markpos = msgsize = 0;
@@ -284,7 +286,7 @@ void Edlin::insert_and_forward(const char *s)
     return;
   
   while( *s != '\0' ){
-    if( is_kanji(*s) ){
+    if( is_kanji(*s & 255) ){
       writeDBChar( *s , *(s+1) );
       s+=2;
     }else if( 0 < *s && *s < ' ' ){
@@ -401,31 +403,6 @@ int Edlin::seek_word_top()
     }
   }
 }
-
-#if 0
-/*
- *
- */
-
-char *Edlin::dup_current_word( int &top , bool &quote )
-{
-  top = seek_word_top();
-
-  if( strbuf[top]=='"' ){
-    ++top;
-    quote = true;
-  }else{
-    quote = false;
-  }
-  
-  char *s=(char*)malloc( pos-top+1 );
-  memcpy( s , &strbuf[top] , pos-top );
-  s[ pos-top ] = '\0';
-  
-  /* 書きかけっすよ */
-}
-
-#endif
 
 Edlin::CompleteFunc Edlin::completeBindmap[ 0x200 ];
 
@@ -951,17 +928,13 @@ void Edlin::forward_word()
 {
   int nextpos = pos;
   /* 単語の読み飛ばし */
-  while( !isspace(strbuf[nextpos] & 255) ){
-    if( nextpos >= len )
-      return;
+  while( nextpos < len  &&  !isspace(strbuf[nextpos] & 255) )
     ++nextpos;
-  }
+
   /* 空白の読み飛ばし */
-  while( isspace(strbuf[nextpos] & 255) ){
-    if( nextpos >= len )
-      return;
+  while( nextpos < len  &&  isspace(strbuf[nextpos] & 255) )
     ++nextpos;
-  }
+  
   while( pos < nextpos )
     putnth( pos++ );
 }
@@ -972,6 +945,7 @@ void Edlin::backward_word()
   /* 空白の読み飛ばし */
   while( nextpos > 0  &&  is_space(strbuf[--nextpos]) )
     ;
+  /* 非空白文字の読み飛ばし */
   while( nextpos > 0  &&  !is_space(strbuf[nextpos-1]) )
     --nextpos;
 
@@ -981,11 +955,13 @@ void Edlin::backward_word()
 
 int Edlin::forward()
 {
-  if( pos+1 <= len  &&  atrbuf[pos] == SBC ){
-    /* 同じ文字の二度打ちによる右移動 */
+  /* 同じ文字の二度打ちによる右移動 */
+  if( pos+1 <= len  &&  atrbuf[pos] != DBC1ST ){
+    /* 半角 */
     putnth( pos++ );
     return 1;
   }else if( pos+2 <= len ){
+    /* 全角 */
     putnth( pos++ );
     putnth( pos++ );
     return 2;
@@ -995,16 +971,22 @@ int Edlin::forward()
 
 int Edlin::forward(int w)
 {
-  for(int i=0 ; i<w ; i+=forward() )
-    ;
-  return w;
+  int i;
+  for(i=0 ; i<w ; i+=forward() ){
+    if( pos >= len )
+      break;
+  }
+  return i;
 }
 
 int Edlin::backward(int w)
 {
-  for(int i=0 ; i<w ; i+=backward() )
-    ;
-  return w;
+  int i;
+  for(i=0 ; i<w ; i+=backward() ){
+    if( pos <= 0 )
+      break;
+  }
+  return i;
 }
 
 

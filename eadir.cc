@@ -1,3 +1,8 @@
+/* -*- c++ -*-
+ * 内蔵 ls を実行するための関数 eadir および 下請け関数。
+ *
+ */
+
 #include <process.h>
 #include <assert.h>
 #include <ctype.h>
@@ -96,12 +101,19 @@ static struct {
   { "ln",&ls_longname} ,
 };
 
+/* 拡張属性を読み取る為のポインタ型 */
 union MultiPtr {
   void *value;
   const char *byte;
   const unsigned short *word;
 };
 
+/* 数値をカンマ付きで表示する。
+ *	width	最大表示桁(満たない時は空白で埋められる。
+ *	n	表示する数値
+ *	fp	表示先
+ * return 実表示文字数
+ */
 static int print_num_with_comma(int width,int n,FILE *fp)
 {
   if( width < 1 )
@@ -118,12 +130,13 @@ static int print_num_with_comma(int width,int n,FILE *fp)
   }
 }
 
-
+/* 拡張属性 .LONGNAME を得る。
+ *	fname 属性を読みとりたいファイルの名前
+ * return
+ *	ロングネーム(要free)
+ */
 char *get_ea_longname( const char *fname )
 {
-  /* 拡張属性のロングネームを取得する。
-     返り値は free する必要がある。 */
-  
   struct _ea ea;
   union MultiPtr ptr;
   
@@ -161,21 +174,23 @@ char *get_ea_longname( const char *fname )
   return s = (char*)realloc(s,n);
 }
 
+/* ポインタ配列と、その中のポインタの示すHeapを全て解放する。
+ *	table	ポインタ配列の先頭。末尾は NULL で終わっている必要がある。
+ */
 void free_pointors(char **table)
 {
-  /* ポインタ配列を free する。
-     下の get_ea_comments の返り値に用いる */
-
   while( *table != NULL )
     free( *table++ );
 }
 
-
+/* 拡張属性 .COMMENT の内容を得る。
+ *	fname 属性を持つファイルの名前
+ * return
+ *	属性値をポインタ配列で返す。
+ *	使用後は、free_pointors関数で解放してやる必要がある。
+ */
 char **get_ea_comments( const char *fname )
 {
-  /* 拡張属性のコメントを取得する。
-     返り値は、上の free_pointors で解放する必要がある。*/
-
   struct _ea ea;
   union MultiPtr ptr;
 
@@ -285,17 +300,14 @@ static void set_ls_color_table(const char *s)
 
 int nprintlines=0;
 
-/* そのファイルは、フラグと照合して、表示してよいかを判定する */
-
-static int is_file_print(FileListT *f)
+/* そのファイルは、フラグと照合して、表示してよいかを判定する 
+ *	f  ファイル情報
+ */
+static int is_file_print(const FileListT *f)
 {
-  const char *top=f->name;
-  for(const char *p=f->name ; *p != '\0' ; p++ ){
-    if( *p=='/' || *p=='\\' )
-      top=p+1;
-    if( is_kanji(*p) )
-      ++p;
-  }
+  assert( f != NULL );
+  const char *top=_getname(f->name);
+
   if( ls_flag[LS_ALL]==0  &&  ( *top == '.' || (f->attr & Dir::HIDDEN) ))
     return 0;
   if( f->name[f->length-1] == '~' &&  ls_flag[LS_IGNORE_BACKUP] )
@@ -305,7 +317,10 @@ static int is_file_print(FileListT *f)
   return 1;
 }
 
-/* 英字モードの時に、DBCS 文字を「?」に変換して表示する。*/
+/* 英字モードの時に、DBCS 文字を「?」に変換して表示する。
+ * ようにしていたが、日本語モードにもいろいろなコードページ
+ * があるので、現在は fputs と同じようにしか動かない。
+ */
 static int dbcs_fputs(const char *s,FILE *fout)
 {
   int i=0;
@@ -382,7 +397,7 @@ static void smart_copy( SmartPtr &dp , const char *sp )
  *	curdir … 基準ディレクトリ
  *	fout … 出力先
  */
-void dir1(  FileListT *flist , int max_length 
+void dir1(  const FileListT *flist , int max_length 
 	  , const char *curdir , FILE *fout)
 {
   int tailchar = ' ';
@@ -491,7 +506,7 @@ void dir1(  FileListT *flist , int max_length
     "Jul","Aug","Sep","Oct","Nov","Dec",
   };
   
-  filelist::DirDateTime *datetime;
+  const filelist::DirDateTime *datetime;
   switch( ls_flag[ LS_SORT ] ){
   case SORT_BY_LAST_ACCESS_TIME: // -u
     datetime = &flist->access;
@@ -563,7 +578,8 @@ void dir1(  FileListT *flist , int max_length
   putc(tailchar,fout);
   ncolumns++;
 
-  char _fullpath[ FILENAME_MAX ] , *fullpath=_fullpath;
+  char _fullpath[ FILENAME_MAX ];
+  const char *fullpath=_fullpath;
   if( curdir == NULL || curdir[0] == '\0' ){
     fullpath = flist->name;
   }else{
@@ -646,7 +662,7 @@ void dir1(  FileListT *flist , int max_length
  *	0 ... 成功
  *	1 ... 失敗
  */
-int print_filelist(Files &files , FILE *fout)
+int print_filelist(const Files &files , FILE *fout)
 {
   FileListT *cur=files.get_top();
 
@@ -656,7 +672,7 @@ int print_filelist(Files &files , FILE *fout)
   /* --- 表示可能なファイルの数と、ファイル名の最大長を求める。--- */
   int nlists=0;
   int max_length=2;
-  for(FileListT *p=files.get_top() ; p != NULL ; p=p->next ){
+  for(const FileListT *p=files.get_top() ; p != NULL ; p=p->next ){
     if( is_file_print(p) ){
       nlists++;
       if( p->length > max_length )
@@ -738,6 +754,9 @@ int print_filelist(Files &files , FILE *fout)
 
 int the_dir(const char *dirname, FILE *fout )
 {
+  assert( dirname != NULL);
+  assert( fout != NULL );
+
   Files files , dirs;
   int max_length=0;
 
@@ -762,32 +781,12 @@ int the_dir(const char *dirname, FILE *fout )
     }
   }
 
-  /* column=0; */
-  if( files.get_num() == 0 )
-    goto next;
-
-#if 0 /* フラグ形式を変更にした際、ここの分岐の意味が分からなくなったので
-	 とりあえず、分岐を無効にした */
-  if( flag & EADIR_MODE ){
-    char cwd[FILENAME_MAX];
-
-    _getcwd2(cwd,sizeof(cwd));
-    _chdir2( dirname );
-    _rfnlwr();
+  /* カレントディレクトリのファイルを表示する。*/
+  if( files.get_num() >= 0 ){
     print_filelist( files , fout);
-    _chdir2( cwd );
-    _rfnlwr();
-
-  }else{
-#endif
-    print_filelist( files , fout);
-#if 0
   }
-#endif
 
-  /* column=0; */
-
- next:
+  /* カレントディレクトリ以下のサブディレクトリを表示する。*/
   for(  FileListT *dirlist=dirs.get_top()
       ; dirlist != NULL  &&  ctrl_c==0 
       ; dirlist = dirlist->next ){
@@ -815,6 +814,8 @@ int the_dir(const char *dirname, FILE *fout )
 static int exit_with_ctrl_c()
 {
   fputs("\n^C\n",stderr);
+  fflush(stderr);
+
   signal(SIGINT,ctrl_c_signal);
   return RC_ABORT;
 }
@@ -834,7 +835,6 @@ int call_original_ls( char **argv,FILE *fout=stdout)
   }
   return rc;
 }
-
 
 static void on_inline_comment()
 {  ls_flag[ LS_COMMENT ] = 1 ; ls_flag[ LS_LONG ] = 1; }
@@ -867,8 +867,9 @@ static void on_numeric_sort()
 static void on_sort_reverse()
 {  ls_flag[ LS_SORT ] |= SORT_REVERSE;  }
 
- 
-int eadir( int argc, char **argv,FILE *fout=stdout)
+class Parse;
+
+int eadir( int argc, char **argv,FILE *fout,Parse &parser)
 {
   /* --- フラグを全て初期化する --- */
   memset( ls_flag , 0 , sizeof(ls_flag) );
@@ -979,9 +980,13 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
       }/* end for */
 
     }else{
-      /* オプションでない文字列 ... ファイル名 */
+      /* オプションでない文字列 ... ファイル名を登録する。
+       * ここでは、全てのファイル・ディレクトリを一度、
+       * オブジェクト files , dirs に登録している。
+       */
       char **list=fnexplode2(argv[i]);
       if( list != NULL ){
+	/* ワイルドカード展開が出来た場合 */
 	for(char **ptr=list; *ptr != NULL ; ptr++ ){
 	  FileListT *node=new_filelist( *ptr );
 	  if( node != NULL ){
@@ -997,10 +1002,11 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  }
 	}
 	fnexplode2_free(list);
-      }else{ /* _fnexplode で展開できない場合 */
-
+      }else{
+	/* ワイルドカード展開が出来なかった場合
+	 * それ自身ファイル名だから、直接、ファイル情報を得る。
+	 */
 	FileListT *node = new_filelist(argv[i]);
-
 	if( node != NULL ){
 	  if( node->attr & A_DIR ){
 	    dirs.insert( node , ls_flag[ LS_SORT] );
@@ -1019,8 +1025,12 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
   if( ctrl_c )
     return exit_with_ctrl_c();
   
+  /* files , dirs の登録されたファイル・ディレクトリを
+   * 表示してゆく 
+   */
   if( files.get_num() > 0 || dirs.get_num() > 0  ){
-    /* ファイル名が指定された */
+    /* 少なくとも一つ以上のファイル名、あるいはディレクトリ名が
+     * 指定されている。*/
     if( files.get_num() > 0 ){
       /* dotfile や Hidden属性があっても、直接コマンドラインで指定しているの
        * だから、表示させる 
@@ -1038,6 +1048,11 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     FileListT *p=dirs.get_top();
     if( p != NULL ){
       for(;;){
+	/* ファイルとディレクトリ名が複数登録されている場合、
+	 * ディレクトリの中身を表示する際に
+	 * 「ディレクトリ名 :」という行を入れる。
+	 * 逆にそのディレクトリしか、登録されていない場合は省略する。
+	 */
 	if( dirs.get_num()+files.get_num() > 1 ){
 	  if( ! ls_flag[ LS_NOCOLOR ] ){
 	    fputs( ls_end_code , fout);
@@ -1049,6 +1064,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	    more(fout);
 	  }
 	}
+	/* ディレクトリ名の中身を表示 */
 	the_dir( p->name , fout );
 	if( ctrl_c )
 	  return exit_with_ctrl_c();
@@ -1062,8 +1078,9 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
       fputs( ls_end_code , fout );
 
   }else if( filefault <= 0 ){
-    /* ファイル名が指定されていない ---> カレントディレクトリ */
-
+    /* ファイル名/ディレクトリ名が一つも指定されていない
+     * カレントディレクトリを表示する。 
+     */
     the_dir( "." ,  fout );
     if( ctrl_c )
       return exit_with_ctrl_c();

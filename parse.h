@@ -5,48 +5,7 @@
 #include <string.h>
 
 #include "smartptr.h"
-
-/* Substr : 部分文字列参照用クラス(Pascal型文字列) */
-class Substr{
- public:
-  int len;
-  const char *ptr;
-
-  int operator[](int n) const
-    { return ptr[n] & 255; }
-
-  /* 初期化 */
-  Substr(void) : len(0), ptr(NULL) { }
-  Substr(const char *p,int l) :  len(l) ,ptr(p) { }
-  void clean(){ len = 0; ptr = NULL; }
-
-  /* テスト */
-  operator const void* () const
-    { return ptr; }
-  int operator ! () const
-    { return ptr == NULL; }
-
-  /* 単純コピー */
-  void operator >> (char *dp) const
-    { memcpy(dp,ptr,len); dp[len] = '\0'; }
-  
-  void operator >> (SmartPtr dp) const;
-
-  char *dup() const;
-
-  /* 単一文字列の空白分離による切り出し 
-   *   const char *sp = ソース文字列 ;
-   *   Substr a,b,c,d;
-   *
-   *   const char *tail = (sp >> a >> b >> c >> d);
-   * なんてことが可能。だが、「&」とか「|」には対応していないので、
-   * Parse では使用していない。おいおい。
-   */
-  friend const char *operator >> (const char *sp,Substr &);
-
-  /* 引用コピー */
-  char *quote(char *dp) const;
-};
+#include "substr.h"
 
 /* 字句解析クラス */
 class Parse{
@@ -67,7 +26,8 @@ public:
 private:
   const char *sp;
 
-  const char *nextcmds,*tail;
+  const char *nextcmds; /* ターミネータ文字の次の位置まで */
+  const char *tail;	/* ターミネータ文字まで */
   int tailcheck();
 
   Terminal terminal;
@@ -121,6 +81,9 @@ public:
   SmartPtr copyall(int n,SmartPtr dp,int flag=QUOTE_COPY);
   SmartPtr betacopy(SmartPtr dp,int n=0);
 
+  Substr getAfter(int n) const
+    { return Substr(args[n].ptr,tail-args[n].ptr); }
+
   char *copy   (int n, char *dp, int flag=0 )
     { return copy(n,SmartPtr(dp,10000),flag).rawptr(); }
   char *copyall(int n, char *dp, int flag=QUOTE_COPY)
@@ -128,11 +91,10 @@ public:
   char *betacopy(char *dp,int n=0)
     { return betacopy(SmartPtr(dp,10000),n).rawptr(); }
 
-  int call_as_main(int (*routine)(int argc,char **argv));
-  int call_as_main(int (*routine)(int argc,char **argv,FILE *fp));
+  int call_as_main(int (*routine)(int argc,char **argv,FILE *fp,Parse &));
 
-  FILE *open_stdin();
   FILE *open_stdout();
+  void close_stdout();
 
   int is_append_redirect(int i) const { return appendflag[i]; }
 };
