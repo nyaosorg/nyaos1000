@@ -55,7 +55,7 @@ SAY "---- バイナリパッケージ作成 ----"
 
 SAY "---- ソースパッケージ作成 ----"
 "make README1ST="readme_1st "nyaos.tar"
-"bzip2 --compress --repetitive-best < nyaos.tar >" srcpack
+"bzip2 < nyaos.tar >" srcpack
 "del nyaos.tar"
 
 webdir = "..\..\www\my\warp"

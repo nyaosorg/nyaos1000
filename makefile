@@ -14,7 +14,15 @@ CFLAGS=-Wall -O2 -DNDEBUG
 LDFLAGS=-lvideo -lsocket -lwrap -Zcrtdll
 CC=gcc
 
+# make package=46 とした場合、make package VER=46 と等価にする。
+
+ifeq (/$(package)/,//)
 all : nyaos.exe nyaos.doc
+VER=XX
+else
+all : package
+VER=$(package)
+endif
 
 # -------------- 自動生成ルール ----------------
 
@@ -51,9 +59,23 @@ NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
 # 「make README1ST=readme.XXX nyaos.tar」と呼び出す必要がある。
 
 nyaos.tar :
-	cd .. && tar cvf nyaos/$@ $(foreach A,\
+	tar -C .. -cvf nyaos/$@ $(foreach A, \
 		Makefile pknyaos.cmd $(NYAOS_HDR) $(NYAOS_SRC) \
 		mkbtable.cmd $(README1ST) $(NYAOS_TBL),nyaos/$(A))
+
+# 「make package=XX」と呼び出せば、
+#	nyaos1XX.lzh	   (バイナリパッケージ)
+#	nyaos-1.XX.tar.bz2 (ソースパッケージ)
+# が出来る。
+
+package : 
+	lha a nyaos1$(VER).lzh readme.1$(VER) nyaos.doc nyaosdoc.html \
+		nyaos.exe nyaos.rc nyaos1.ico nyaos2.ico nyaos-fc.ico \
+		nyaos-fo.ico sample.err install.cmd
+	tar --zip=bzip2 -zcvf nyaos-1.$(VER).tar.bz2 -C .. \
+		$(foreach A, \
+		Makefile pknyaos.cmd $(NYAOS_HDR) $(NYAOS_SRC) \
+		mkbtable.cmd readme.1$(VER) $(NYAOS_TBL),nyaos/$(A))
 
 # ------------- 実行ファイル作成 ----------------
 
@@ -86,3 +108,4 @@ nyaos.eng : nyaoseng.xx
 
 clean :
 	rm -f *.o *~ $(NYAOS_TBL:.tbl=.cc)
+

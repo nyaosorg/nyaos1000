@@ -11,6 +11,7 @@
 #include "complete.h"
 #include "macros.h"
 #include "keyname.h"
+#include "strbuffer.h"
 
 const char *getShellEnv(const char *);
 
@@ -363,6 +364,8 @@ int Edlin::seek_word_top()
   int wrdtop=0;
   int p=0;
 
+  const char *punct=getShellEnv("NOTPATHCHAR");
+  
   for(;;){
     // 空白を読みとばす。
     while( isspace(strbuf[p] & 255) ){
@@ -374,8 +377,10 @@ int Edlin::seek_word_top()
       p++;
     }
     // 単語境界を設定する。 
-    if( strbuf[p]=='<' || strbuf[p]=='>' || strbuf[p]=='+' || strbuf[p]=='-' )
+    if(  strbuf[p]=='<' || strbuf[p]=='>' 
+       || ( punct != NULL && strchr(punct,strbuf[p]) != NULL ) ){
       ++p;
+    }
     wrdtop = p;
     
     // 空白以外を読みとばす。 
@@ -384,7 +389,7 @@ int Edlin::seek_word_top()
 	return wrdtop;
 
       // 「+」や「;」の直後も単語境界とみなせるので、wrdtop を更新する。 
-      if(   (strbuf[p]=='+' || strbuf[p]==';' || strbuf[p]=='=')
+      if(   (punct != NULL  && strchr(punct,strbuf[p]) != NULL )
 	 && strbuf[p+1] != '\0' ){
 	wrdtop = ++p;
 	continue;
@@ -703,42 +708,50 @@ int Edlin::complete_to_fullpath(const char *header)
   int basesize=pos-fntop;
   bool quoted=false;
   
-  char *buffer=(char*)alloca(basesize*3);
+  StrBuffer sbuf;
+  // char *buffer=(char*)alloca(basesize*3);
+
   if( strbuf[fntop] == '"' ){
     fntop++;
     basesize--;
     quoted = true;
   }
-
+  // char *bp=buffer;
   /* ローカルバッファに原ファイル名を展開する。
    * この時、チルダや ... も展開する。
    */
-  char *bp=buffer;
   if( strbuf[fntop] == '~' ){
     const char *home=getShellEnv("HOME");
     if( home != NULL ){
-      ++bp;
-      while( *home != '\0' )
-	*bp++ = *home++;
-      ++fntop;
+      // ++bp;
+      while( *home != '\0' ){
+	// *bp++ = *home++;
+	sbuf << *home++;
+      }
+      ++fntop; // skip tilda.
     }
   }else if( strbuf[fntop]=='.' && strbuf[fntop+1]=='.' ){
-    *bp++ = strbuf[fntop++];
-    *bp++ = strbuf[fntop++];
+    // *bp++ = strbuf[fntop++];
+    // *bp++ = strbuf[fntop++];
+    sbuf << strbuf[fntop++];
+    sbuf << strbuf[fntop++];
     while( strbuf[fntop] == '.' ){
-      *bp++ = '\\';
-      *bp++ = '.';
-      *bp++ = '.';
+      sbuf << "\\..";
+      // *bp++ = '\\';
+      // *bp++ = '.';
+      // *bp++ = '.';
       ++fntop;
     }
   }
-  while( fntop < pos )
-    *bp++ = strbuf[fntop++];
-  *bp = '\0';
+  while( fntop < pos ){
+    sbuf << strbuf[fntop++];
+    // *bp++ = strbuf[fntop++];
+  }
+  // *bp = '\0';
 
   // フルパスを得る。得られなかったら、終了
   char fullpath[ FILENAME_MAX ];
-  if( _fullpath( fullpath , buffer , sizeof(fullpath) ) != 0 ){
+  if( _fullpath( fullpath , (const char *)sbuf , sizeof(fullpath) ) != 0 ){
     while( spaces > 0 )
       spaces -= forward();
     return 0;
