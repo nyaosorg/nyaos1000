@@ -294,9 +294,9 @@ int cmd_set( FILE *srcfil, Parse &params )
   if( appendmode ){
     PathList pathlist;
     pathlist.append( env_value );
-    char *org=getenv(env_name);
+    const char *org=getShellEnv(env_name);
     if( org != NULL )
-      pathlist.append( getenv(env_name) );
+      pathlist.append( getShellEnv(env_name) );
     pathlist.listing( env_value );
   }
   setenv( env_name , env_value );

@@ -34,8 +34,6 @@ public:
   
   void operator >> (SmartPtr dp) const;
   
-  char *dup() const;
-  
   /* 引用コピー */
   char *quote(char *dp) const;
 };

@@ -9,7 +9,6 @@
 #define INCL_DOSMISC
 #include <os2.h>
 
-// #include "edlin.h"
 #include "nyaos.h"
 #include "finds.h"
 #include "strtok.h"
@@ -17,8 +16,7 @@
 
 extern int nhistories;
 extern int execute_result;
-
-extern char *get_ea_longname( const char *fname );
+extern char *get_asciitype_ea(const char *fname,const char *eatype,int *l=0);
 
 char *strcpytail(char *dp,const char *sp)
 {
@@ -29,18 +27,16 @@ char *strcpytail(char *dp,const char *sp)
 }
 
 /* パスが、ホームディレクトリ名を含んでいれば、「～」に変換する。
- *
- * in/out p ファイル名。直接書き変えられる
- * return 書き変え後のファイル名の末尾
+ *	sp ファイル名
+ * return 書き変えたファイル名(NULLの時は「～」を含まなかった。
  */
-static char *to_tilda_name(char *p,int &size)
+static char *to_tilda_name(const char *sp)
 {
-  const char *home=getenv("HOME");
+  const char *home=getShellEnv("HOME");
   if( home == NULL || *home == '\0' )
     return NULL;
   
   /* 比較する */
-  char *sp=p;
   while( *home != '\0' ){
     int x=tolower(*home & 255); if( x == '\\' ) x='/';
     int y=tolower(*sp   & 255); if( y == '\\' ) y='/';
@@ -48,12 +44,11 @@ static char *to_tilda_name(char *p,int &size)
       return NULL;
     ++home ; ++sp;
   }
-  
-  *p++ = '~'; --size;
-  while( *sp != '\0'  &&  --size > 1 )
-    *p++ = *sp++;
-  *p = '\0';
-  return p;
+
+  StrBuffer sbuf;
+  sbuf << '~' << sp;
+
+  return sbuf.finish();
 }
 
 /* 真のファイル名を得る(ファイル名のみ、ディレクトリは含まず)
@@ -244,7 +239,8 @@ char *get_cwd_long_name(char *dp)
       *dp++ = '/';
       
       char *longname=0;
-      if( filesystem != 2  &&  (longname=get_ea_longname(cwd)) != NULL ){
+      if(    filesystem != 2
+	 &&  (longname=get_asciitype_ea(cwd,".LONGNAME")) != NULL ){
 	/* .LONGNAME が存在する場合は、そちらを使う */
 	const char *sp=longname;
 	while( *sp != '\0' ){
@@ -284,6 +280,98 @@ char *get_cwd_long_name(char *dp)
   return dp;
 }
 
+
+/* バッファに NYAOS ロゴ(画面最上段に表示させるもの) を書き込む */
+static void set_logo_to_prompt(StrBuffer &prompt)
+{
+  int a=0x0F;
+  if( option_vio_cursor_control )
+    a = v_getattr();
+
+  const char logo[]=
+    " Nihongo Yet Another Os/2 Shell "VERSION
+      " (c) 1996-99 HAYAMA,Kaoru ";
+	
+  prompt << "\x1B[s\x1B[1;44;37m\x1B[H";
+  
+  for(int i=screen_width-sizeof(logo) ; i > 0 ; i-- )
+    prompt << ' ';
+    
+  prompt << logo;
+  
+  if( option_vio_cursor_control )
+    v_attrib(a);
+}
+
+/* バッファに、指定されている全ドライブのカレントディレクトリを書き込む */
+static void set_multi_curdir_to_prompt(  StrBuffer &prompt
+				       , const char *&promptenv )
+{
+  int a=0x0F;
+  int curdrv=_getdrive();
+  if( option_vio_cursor_control )
+    a = v_getattr();
+	
+  /* カーソル位置を記憶 ＆ 画面最上段へ移動 */
+  prompt << "\x1b[s\x1B[H";
+
+  /* ここで変数 length は、最上段での表示文字数をカウントする */
+  int length=0;
+
+  while(   *++promptenv != '}' 
+	&& *  promptenv != '\0'
+	&& length < screen_width-1 ){
+    
+    /* ${...} の中はドライブレターのみ、他は無視 */
+    if( !isalpha(*promptenv) )
+      continue;
+
+    char curdir[ FILENAME_MAX ];
+    
+    int drv=toupper(*promptenv);
+
+    /* カレントドライブならば赤、さもなければ青で表示する。*/
+    prompt << "\x1B[1;" << (drv==curdrv ? "41" : "44")
+      << ";37m" << (char) drv << ':';
+    length += 3;
+    
+    DosError( FERR_DISABLEHARDERR );    
+    _getcwd1(curdir,drv);
+    DosError( FERR_ENABLEHARDERR );
+    int len=strlen(curdir);
+    
+    if( length + len < screen_width-1 ){
+      /* カレントディレクトリのサイズが十分、画面幅に収まる場合 */
+      length += len;
+      prompt << curdir;
+    }else{
+      /* カレントディレクトリのサイズが、画面幅に入らない
+       * ⇒ クリッピング処理 */
+      
+      const char *p=curdir;
+      for(int i=length ; i<screen_width-4 ; i++ ){
+	if( is_kanji(*p) ){
+	  prompt << *++p;
+	  ++i;
+	}
+	prompt << *++p;
+      }
+      if( length < 74 )
+	prompt << "...";
+      prompt << "\x1b[0m ";
+      while( *promptenv != '}' && *promptenv != '\0' )
+	++promptenv;
+      break;
+    }
+    prompt << "\x1B[0m ";
+  }
+  prompt << "\x1b[K\x1b[u";
+
+  if( option_vio_cursor_control )
+    v_attrib(a);
+}
+
+
 /* プロンプトを作成する。
  *     promptenv プロンプトの元文字列
  *     dp        プロンプトの変換後文字列の入れるバッファ
@@ -292,209 +380,94 @@ char *get_cwd_long_name(char *dp)
  *     false: 画面最上段を使用しなかった。
  *     true:  画面最上段を使用した。
  */
-bool set_prompt(const char *promptenv , char *dp , int size)
+bool make_prompt( StrBuffer &prompt , const char *promptenv )
 {
   bool used_topline=false;
 
-  const char *sp;
   time_t now;
   time( &now );
   struct tm *thetime = localtime( &now );
 
-  while( *promptenv != '\0'  &&  size >= 3 ){
+  while( *promptenv != '\0' ){
     if( *promptenv == '$' ){
-      int n;
       switch( promptenv++ , to_upper(*promptenv) ){
-	
-      case '!': /* ヒストリ番号 */
-	n = snprintf(dp,size,"%d",nhistories+1 );
-	dp += n;
-	break;
-
-      case '@': /* ボリュームラベル */
-	sp = _getvol(0);
-	if( sp != NULL ){
-	  while( *sp != '\0' &&  --size > 0 )
-	    *dp++ = *sp++;
-	}
-	break;
-	
-      case '$': *dp++ = '$';  --size;  break;
-      case '_': *dp++ = '\n'; --size;  break;
-      case 'A': *dp++ = '&';  --size;  break;
-      case 'B': *dp++ = '|';  --size;  break;
-      case 'C': *dp++ = '(';  --size;  break;
-	
+      case '!':
+	prompt << nhistories+1;	break;
+      case '@':	prompt << _getvol(0);		break; /* ボリュームラベル */
+      case '$': prompt << '$';			break;
+      case '_': prompt << '\n';			break;
+      case 'A': prompt << '&';			break;
+      case 'B': prompt << '|';			break;
+      case 'C': prompt << '(';			break;
+      case 'E': prompt << '\x1b'; 		break;
+      case 'F': prompt << ')';			break;
+      case 'G': prompt << '>';			break;
+      case 'H': prompt << '\b';			break;
+      case 'L': prompt << '<';			break;
+      case 'Q': prompt << '=';			break;
+      case 'S': prompt << ' ';			break;
+      case 'N': prompt << (char)_getdrive();	break;
+      case 'R': prompt << execute_result;	break;
       case 'D':/* 現在の日付 */
-	n = sprintf(dp,"%4d-%02d-%02d" ,
-		    thetime->tm_year+1900 ,
-		    thetime->tm_mon+1 ,
-		    thetime->tm_mday );
-	dp += n;
-	size -= n;
+	prompt.putNumber( thetime->tm_year+1900 , 4 , '0' ) << '-';
+	prompt.putNumber( thetime->tm_mon +1    , 2 , '0' ) << '-';
+	prompt.putNumber( thetime->tm_mday      , 2 , '0' );
 	break;
-	
-      case 'E': *dp++ = '\x1b'; --size; break;
-      case 'F': *dp++ = ')';	--size; break;
-      case 'G': *dp++ = '>';	--size; break;
-      case 'H': *dp++ = '\b';	--size; break;
-	
-      case 'I':
-	{
-	  int a=0x0F;
-	  if( option_vio_cursor_control )
-	    a = v_getattr();
-	
-	  n = snprintf(dp,size
-		       ,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
-		       , screen_width ,
-		       " Nihongo Yet Another Os/2 Shell "VERSION
-		       " (c) 1996-99 HAYAMA,Kaoru "
-		       );
-	  dp += n;
-	  size -= n;
-	  used_topline = true;
-	  
-	  if( option_vio_cursor_control )
-	    v_attrib(a);
-	}
-	break;
-
-      case '{':
-	{
-	  int a=0x0F;
-	  int curdrv=_getdrive();
-	  if( option_vio_cursor_control )
-	    a = v_getattr();
-	  
-	  dp += sprintf(dp,"\x1b[s\x1B[H" );
-	  for(int length=0; *++promptenv != '}' && *promptenv != '\0'
-	      && length < screen_width-1 ;){
-	    if( isalpha(*promptenv) ){
-	      int drv=toupper(*promptenv);
-	      n = sprintf(dp,"\x1B[1;%s;37m%c:"
-			  ,(drv==curdrv ? "41" : "44")
-			  ,drv);
-	      dp += n;
-	      size -= n;
-	      length += 3;
-	      
-	      DosError( FERR_DISABLEHARDERR );    
-	      _getcwd1(dp,drv);
-	      DosError( FERR_ENABLEHARDERR );
-	      int len=strlen(dp);
-	      if( length + len < screen_width-1 ){
-		length += len;
-		dp += len;
-	      }else{
-		for(int i=length ; i<screen_width-4 ; i++ ){
-		  if( is_kanji(*dp) ){
-		    ++dp;
-		    ++i;
-		  }
-		  ++dp;
-		}
-		if( length < 74 ){
-		  if( size <= 3 )
-		    goto promptend;
-		  *dp++ = '.';
-		  *dp++ = '.';
-		  *dp++ = '.';
-		  size -= 3;
-		}
-		dp += sprintf(dp,"\x1b[0m ");
-		while( *promptenv != '}' && *promptenv != '\0' )
-		  ++promptenv;
-		goto driveloop;
-	      }
-	      if( size > 0 ){
-		n = snprintf(dp,size,"\x1b[0m ");
-		dp += n; size -= n;
-	      }
-	    }
-	  }
-	driveloop:
-	  n = snprintf(dp,size,"\x1b[K\x1b[u");
-	  dp += n;
-	  size -= n;
-	  used_topline = true;
-	  if( option_vio_cursor_control )
-	    v_attrib(a);
-	  
-	  if( *promptenv == '\0' )
-	    goto promptend;
-	}
-	break;
-	
-      case 'L': *dp++ = '<';	--size;  break;
-	
-      case 'N':/* カレントドライブ */
-	*dp++ = _getdrive();
-	--size;
-	break;
-	
-      case 'P':/* カレントディレクトリ */
-	/* !!!! サイズチェック !!!!! */
-	dp = getcwd_case(dp);
-	break;
-	
-      case 'Q': *dp++ = '='; --size;  break;
-
-      case 'R':
-	n = snprintf(dp,size,"%d",execute_result);
-	dp += n;
-	size -= n;
-	break;
-
-      case 'S': *dp++ = ' ';	  break;
-	
       case 'T':/* 現在の時刻 */
-	n = sprintf(dp,"%02d:%02d:%02d",
-		    thetime->tm_hour ,
-		    thetime->tm_min ,
-		    thetime->tm_sec );
-	dp += n;
-	size -= n;
+	prompt.putNumber( thetime->tm_hour	, 2 , '0' ) << ':';
+	prompt.putNumber( thetime->tm_min	, 2 , '0' ) << ':';
+	prompt.putNumber( thetime->tm_sec	, 2 , '0' );
+	break;
+      case 'I':/* ロゴ */
+	set_logo_to_prompt( prompt );
+	used_topline = true;
+	break;
+      case '{':/* 各ドライブのカレントディレクトリ */
+	set_multi_curdir_to_prompt( prompt , promptenv );
+	used_topline = true;
 	break;
       case 'V':/* OS/2のバージョン */
-	if( _osmode == OS2_MODE )
-	  n = snprintf(dp,size,"The Operating System/2 Version is %d.%d"
-		       , _osmajor/10 , _osminor );
-	else
-	  n = snprintf(dp,size,"PC DOS Version is %d.%d"
-		       , _osmajor , _osminor );
-	dp += n;
-	size -= n;
+	prompt << "The Operating System/2 Version is "
+	  << _osmajor/10 << '.' << _osminor;
+	break;
+      case 'P':/* カレントディレクトリ */
+	{
+	  char curdir[ FILENAME_MAX ];
+	  getcwd_case( curdir );
+	  prompt << curdir;
+	}
 	break;
 
       case 'W':/* カレントディレクトリ:ホームディレクトリを「~」に変換する */
 	{
-	  char *tail=getcwd_case(dp);
-	  if( (dp=to_tilda_name(dp,size))==NULL )
-	    dp = tail;
+	  char curdir[ FILENAME_MAX ];
+	  getcwd_case( curdir );
+	  char *tilda_name=to_tilda_name(curdir);
+	  if( tilda_name != NULL ){
+	    prompt << tilda_name;
+	    free(tilda_name);
+	  }else{
+	    prompt << curdir;
+	  }
 	}
 	break;
 
       case 'Z':
 	switch( ++promptenv , to_upper(*promptenv) ){
-	case 'A':
-	  *dp++ = '\a';	  --size;  break;
-
+	case 'A': 
+	  prompt << '\a'; break;
 	case 'H': /* ヒストリ番号 */
-	  n = snprintf(dp,size,"%d",nhistories+1);
-	  dp += n; size -= n;
+	  prompt << nhistories+1;
 	  break;
-
 	case 'V': /* ボリュームラベル */
-	  sp = _getvol(0);
-	  if( sp != NULL ){
-	    while( *sp != '\0' &&  --size > 1 )
-	      *dp++ = *sp++;
-	  }
+	  prompt << _getvol(0);
 	  break;
 	case 'P': /* LONGNAME */
-	  /* !!!!! 容量チェック !!!!! */
-	  dp = get_cwd_long_name(dp);
+	  {
+	    char curdir[FILENAME_MAX];
+	    get_cwd_long_name( curdir );
+	    prompt << curdir;
+	  }
 	  break;
 	case '\0':
 	  goto promptend;
@@ -503,15 +476,25 @@ bool set_prompt(const char *promptenv , char *dp , int size)
       }
       promptenv++;
     }else{
-      if( is_kanji(*promptenv) ){
-	*dp++ = *promptenv++;
-	--size;
-      }
-      *dp++ = *promptenv++;
-      --size;
+      if( is_kanji(*promptenv) )
+	prompt << *promptenv++;
+      prompt << *promptenv++;
     }
   }
  promptend:    
-  *dp = '\0';
   return used_topline;
+}
+
+bool set_prompt( const char *promptenv , char *dp , int size )
+{
+  StrBuffer prompt;
+  bool rv=false;
+  try{
+    rv=make_prompt( prompt , promptenv );
+    strncpy( dp , prompt , size );
+  }catch(StrBuffer::MallocError){
+    strncpy( dp , "<NYAOS>" , size );
+  }
+  dp[size-1] = '\0';
+  return rv;
 }

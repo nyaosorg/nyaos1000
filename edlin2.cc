@@ -34,12 +34,14 @@
 
 int option_honest = 0;
 
+const char *getShellEnv(const char *);
+
 #if CANNA
 /* ~/.canna が存在すれば 0 さもなければ 1 */
 static bool access_home_canna()
 {
   char fname[ FILENAME_MAX ];
-  const char *home=getenv("HOME");
+  const char *home=getShellEnv("HOME");
   if( home == NULL  || *home=='\0' )
     return true;
   sprintf( fname , "%s/.canna" , home );
@@ -52,7 +54,7 @@ static bool access_home_canna()
 static int access_script_canna()
 {
   static char fname[] = "?:/usr/local/canna/lib/default.canna";
-  const char *drv=getenv("SCRIPTDRIVE");
+  const char *drv=getShellEnv("SCRIPTDRIVE");
   if( drv == NULL || *drv == '\0' )
     return -1;
   fname[ 0 ] = *drv;
@@ -172,7 +174,7 @@ int canna_init()
    * set cannya=ドライブ[,初期化ファイル]
    * --------------------------------------------------------------------*/
   
-  char *dotcanna=getenv("CANNYA");
+  char *dotcanna=getShellEnv("CANNYA");
   int orgdrv = _getdrive();
   
   if( dotcanna != NULL  &&  *dotcanna != '\0' ){

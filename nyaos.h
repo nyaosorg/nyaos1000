@@ -3,7 +3,7 @@
 #define NYAOS_H
 
 #include "macros.h"
-#define VERSION "1.56"
+#define VERSION "1.57"
 
 class Parse;
 
@@ -59,5 +59,11 @@ extern char *cmdexe_path;
 void truepath( char *dst , const char *src , int size );
 char *getcwd_case(char *dst);
 void get_scrsize(int *wh,FILE *f=0);
+
+const char *getShellEnv(const char *varname);
+void setShellEnv(const char *varname,const char *value);
+
+int changeDir(const char *s);
+void resetCWD();
 
 #endif

@@ -88,6 +88,10 @@ public:
   Hash(int i) : HashB(i) { }
 };
 
+/* Hash に登録されている全てのオブジェクトを参照するためのクラス。
+ * 
+ */
+
 class HashPtr{
   static void *preptr;
   HashB &hash;

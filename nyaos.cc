@@ -88,11 +88,11 @@ static void get_scrsize_with_env(int *wh)
 {
   const char *env;
 
-  env=getenv("COLUMNS");
+  env=getShellEnv("COLUMNS");
   if( env==NULL || (wh[0]=atoi(env)) <= 1 ) 
     wh[0] = 80;
 
-  env=getenv("LINES");
+  env=getShellEnv("LINES");
   if( env==NULL || (wh[1]=atoi(env)) <= 1 )
     wh[1] = 25;
 }
@@ -181,6 +181,16 @@ void set_win_title( const char *title )
 
 #endif
 
+static void nyaosAtExit()
+{
+  const char *envAtExit=getShellEnv("ATEXIT");
+  if( envAtExit != NULL ){
+    execute(stdin,envAtExit);
+  }else{
+    fputs("\nGood bye!\n",stdout);
+  }
+}
+
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
@@ -198,6 +208,9 @@ int main(int argc, char **argv)
     fprintf(stderr,"nyaos: DBCS init error\n");
     return -1;
   }
+
+  /* シェル変数 CWD にカレントディレクトリを設定する */
+  resetCWD();
   
   // ---- 画面表示は、fflush せずとも、ただちにやれ！ -----
   setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
@@ -369,7 +382,7 @@ int main(int argc, char **argv)
 	break;
       }
     }else{
-      if( _chdir2(argv[i]) != 0 ){
+      if( changeDir(argv[i]) != 0 ){
 	fprintf(stderr,"%s: %s:invalid argument.\n",argv[0],argv[i]);
 	return -1;
       }
@@ -385,18 +398,19 @@ int main(int argc, char **argv)
 
     int cp=get_current_cp();
     if( cp==932 || cp==942 || cp==943 ){
-      printf("\n  ┏┓┳┳  ┳┏━┓┏━┓┏━┓  " 
-	     "\n  ┃┃┃┗━┫┣━┫┃  ┃┗━┓  "
-	     "\n  ┻┗┛┗━┛┻  ┻┗━┛┗━┛  "
-	     );
+      fputs("\n  ┏┓┳┳  ┳┳　┳┏━┓┏━┓  " 
+	    "\n  ┃┃┃┗━┫┣━┫┃  ┃┗━┓  "
+	    "\n  ┻┗┛┗━┛┗━┛┗━┛┗━┛  "
+	    ,stdout );
     }else{
-      printf("\n   //  // //  //  ////   ////   ////"
-	     "\n  /// // ////// //  // //  // ///   "
-	     "\n // ///    /// ////// //  //    /// "
-	     "\n//  //  ////  //  //  ////  /////   ");
+      fputs("\n   //  // //  // //  //  ////   ////"
+	    "\n  /// // ////// ////// //  // ///   "
+	    "\n // ///    /// //  // //  //    /// "
+	    "\n//  //  ////   ////   ////  /////   "
+	    ,stdout);
     }
     
-    fputs("\n          Free Software           "
+    fputs("\n        The Free Software         "
 	  "\n- Nihongo Yet Another Os/2 Shell -"
 	  "\n  1996,97,98,99 (c) HAYAMA,Kaoru  "
 	  "\n Ver."VERSION" compiled on "__DATE__
@@ -416,7 +430,7 @@ int main(int argc, char **argv)
       path = "_nyaos";
     }else if( access("nyaos.rc",0)==0 ){
       path = "nyaos.rc";
-    }else if( (home=getenv("HOME"))!=NULL ){
+    }else if( (home=getShellEnv("HOME"))!=NULL ){
       char *dp = path = buffer;
       int lastchar=0;
       
@@ -482,8 +496,8 @@ int main(int argc, char **argv)
 	 * パイプされている場合でも、プロンプトを表示させなくては
 	 * いけない */
 	char promptstr[2048];
-	const char *promptenv=getenv("NYAOSPROMPT");
-	if( promptenv==NULL && (promptenv=getenv("PROMPT")) == NULL )
+	const char *promptenv=getShellEnv("NYAOSPROMPT");
+	if( promptenv==NULL && (promptenv=getShellEnv("PROMPT")) == NULL )
 	  promptenv = "$p$g";
 	(void)set_prompt( promptenv , promptstr , sizeof(promptstr) );
 	fputs( promptstr , stdout );
@@ -513,8 +527,8 @@ int main(int argc, char **argv)
     /* プロンプト文字列の作成 */
     
     char promptstr[256];
-    const char *promptenv=getenv("NYAOSPROMPT");
-    if( promptenv==NULL && (promptenv=getenv("PROMPT")) == NULL )
+    const char *promptenv=getShellEnv("NYAOSPROMPT");
+    if( promptenv==NULL && (promptenv=getShellEnv("PROMPT")) == NULL )
       promptenv = "$p$g";
     
     /* プロンプト文字列に、最上段を使用するものがあれば、
@@ -562,7 +576,7 @@ int main(int argc, char **argv)
 	
 	if( execute_result == RC_QUIT ){
 	  // --- exitコマンドなどによる終了 ----
-	  fputs("Good bye.\n",stdout);
+	  nyaosAtExit();
 	  return 0;
 	}
 	if( option_cmdlike_crlf )
@@ -578,7 +592,7 @@ int main(int argc, char **argv)
       switch( rc ){
       case Shell::QUIT:
 	// ---- CTRL-Z などによる終了 ----
-	fputs("\nGood bye!\n",stdout);
+	nyaosAtExit();
 	return 0;
 
       case RC_ABORT:

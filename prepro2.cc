@@ -9,6 +9,8 @@
 #include "autofileptr.h"
 #include "quoteflag.h"
 
+const char *getShellEnv(const char *);
+
 int option_tilda_is_home=1;
 int option_tilda_without_root=0;
 int option_replace_slash_to_backslash_after_tilda=1;
@@ -156,6 +158,43 @@ static const char *get_hist_r(int n)
   return cur->string;
 }
 
+/* パスをオプションの値によって、切り刻むルーチン
+ * option
+ *	'h' : ディレクトリ部分
+ *	't' : 非ディレクトリ部分
+ *	'r' : 非拡張子部分
+ *	'e' : 拡張子部分
+ * return
+ *	非NULL : 取り出した部分の先頭位置
+ *	NULL   : option が h,t,r,e 以外
+ */
+char *cut_with_designer(char *path,int option)
+{
+  switch( option ){
+  case 'H':
+  case 'h': /* ディレクトリ部分 */
+    *( _getname( path ) ) = '\0';
+    return path;
+
+  case 'T':
+  case 't': /* ディレクトリ部分以外 */
+    return _getname( path );
+
+  case 'R':
+  case 'r': /* 拡張子部分以外 */
+    *( _getext2( path ) ) = '\0';
+    return path;
+    
+  case 'E':
+  case 'e': /* 拡張子部分 */
+    return _getext2( path );
+    
+  default:
+    return NULL;
+  }
+}
+
+
 /* 環境変数の内容をコピーする
  *	env ... 環境変数名(NULL可)
  *	dp ... コピー先(スマートポインタ)
@@ -163,7 +202,45 @@ static const char *get_hist_r(int n)
  */
 SmartPtr insert_env(const char *env,SmartPtr dp)
 {
-  const char *sp=getenv(env);
+  const char *sp;
+  const char *opt=strchr(env,':');
+  if( opt != NULL  &&  opt[1] != '\0' ){
+    /* %bar:h% ... %bar%のディレクトリ部分
+     * %bar:t% ... %bar%のディレクトリ部分以外
+     * %bar:r% ... %bar%の拡張子以外
+     * %bar:e% ... %bar%の拡張子
+     */
+
+    /* %bar:x% の bar の部分だけ、抜き出す */
+    char *envtmp = (char*)alloca( opt-env+1 );
+    memcpy( envtmp , env , opt-env );
+    envtmp[ opt-env ] = '\0';
+
+    /* %bar% の値を得る。未定義ならば終了 */
+    const char *value = getShellEnv(envtmp);
+    if( value == NULL ){
+      *dp = '\0';
+      return dp;
+    }
+    
+    /* %bar% の値を加工する為に、別の領域にコピーする。*/
+    int vallen=strlen(value);
+    char *valtmp=(char*)alloca(vallen+1);
+    memcpy( valtmp , value , vallen );
+    valtmp[ vallen ] = '\0';
+
+    /* %bar:x% を得る。
+     * ただし、「:x」の部分が不適な場合は「bar:x」全体を環境変数とみなす。
+     */
+    if( opt[2]!='\0' || (sp=cut_with_designer( valtmp , opt[1] ))==NULL ){
+      sp = getShellEnv(env);
+    }
+  }else{
+    /* ⇒ 単純な %bar% の場合 */
+    sp = getShellEnv(env);
+  }
+
+  /* SmartPtr で示される展開先へ展開する */
   if( sp != NULL ){
     while( *sp != '\0' )
       *dp++ = *sp++;
@@ -493,8 +570,7 @@ void preprocess(const char *sp, char *_dp , int max )
 	  ++sp;
 	  /* sp は二つ目の . を差している。*/
 	  for(;;){
-	    *dp++ = '.';
-	    *dp++ = '.';
+	    dp << "..";
 	    if( *++sp != '.' )
 	      break;
 	    *dp++ = '\\';
@@ -514,7 +590,7 @@ void preprocess(const char *sp, char *_dp , int max )
 	    break;
 	  }else if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
 	    ++sp;
-	    const char *system_ini = getenv("SYSTEM_INI");
+	    const char *system_ini = getShellEnv("SYSTEM_INI");
 	    if( system_ini == NULL ){
 	      *dp++ = '?';
 	    }else{
@@ -523,10 +599,8 @@ void preprocess(const char *sp, char *_dp , int max )
 	  }else{ /* 普通の UNIX 的チルダの変換 */
 	    dp = insert_env("HOME",dp);
 	    if( isalnum(*++sp&255) || is_kanji(*sp&255) ){
-	      *dp++ = Edlin::complete_tail_char;
-	      *dp++ = '.';
-	      *dp++ = '.';
-	      prevchar = *dp++ = Edlin::complete_tail_char;;
+	      dp << (char) Edlin::complete_tail_char << ".."
+		<< (char)(prevchar=Edlin::complete_tail_char) ;
 	    }else{
 	      prevchar = '~';
 	    }
@@ -554,47 +628,37 @@ void preprocess(const char *sp, char *_dp , int max )
 	break;
 	
       case '%':
-	if( !qf.isInDoubleQuote()  &&  isalpha(sp[1] & 255) ){
+
+	if( !qf.isInDoubleQuote() ){
 	  char envname[128];
 	  
-	  ++sp;
+	  ++sp; /* 最初の％を読みとばす */
 	  char *ddp=envname;
-	  for(;;){
-	    if( *sp=='\0' ){
-	      break;
-	    }else if( *sp=='%' ){
+	  while( *sp != '\0' && ddp < envname+sizeof(envname)-2 ){
+	    if( *sp=='%' ){
+	      /* 最後の sp を読みとばす */
 	      prevchar = *sp++;
-	      break;
-	    }else if( ddp >= envname+sizeof(envname)-2 ){
 	      break;
 	    }
 	    prevchar = *ddp++ = toupper(*sp & 255);
 	    ++sp;
 	  }
 	  *ddp = '\0';
-	  dp = insert_env(envname,dp);
+	  if( envname[0] == '\0' ){
+	    *dp++ = '%';	/* 「%%」は一つの「%」へ変換する */
+	  }else{
+	    dp = insert_env(envname,dp);
+	  }
 	  continue;
 	}
 	break;
-      }
+	
+      } /* end of switch () */
       if( is_kanji(*sp) ){
 	prevchar = *dp++ = *sp++;
 	*dp++ = *sp++;
       }else{
-#if 0
-	if( !qf.isInQuote()  && isalpha(sp[0] & 255) && sp[1]==':' ){
-	  if( islower(sp[0] & 255) )
-	    *dp++ = drivealias[ sp[0] & 0x1F ] + ('a'-'A');
-	  else
-	    *dp++ = drivealias[ sp[0] & 0x1F ];
-	  prevchar = *dp++ = ':';
-	  sp += 2;
-	}else{
-#endif
-	  prevchar = *dp++ = *sp++;
-#if 0
-	}
-#endif
+	prevchar = *dp++ = *sp++;
       }
     }
   exit:

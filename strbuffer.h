@@ -39,10 +39,13 @@
  * を catch することで対応できる。MallocError はメンバーを持たない
  * クラス。
  *
- * （注意点）
- * StrBuffer は０文字の段階では、(const char *)キャスト、finishメソッド
- * ともに、NULL を返してしまう。isNullメソッドで一々チェックしなくては
- * いけない。
+ * 《注意点》
+ * StrBuffer は 0文字の段階(this->isZero()!=0)では
+ *    (const char *)   → "\0" (固定文字列 , const )
+ *    getTop  メソッド → "\0" (固定文字列 , const )
+ *    finish  メソッド → NULL
+ *    finish2 メソッド → "\0" (ヒープ：要free文字列)
+ * を返す。
  */
 
 #ifndef STRBUFFER_H
@@ -50,18 +53,24 @@
 
 #ifndef MALLOC_ERROR
 #define MALLOC_ERROR
-class MallocError {};
+class MallocError{ };
 #endif
 
 class StrBuffer {
+public:
+  class MallocError : ::MallocError { };	/* 例外：メモリ確保失敗 */
+  class OverFlow { };				/* 例外：配列添字エラー */
+private:
   int length;
   char *buffer;
   int max;	/* この max は length の max なので、サイズは +1 必要 */
   int inc;
   
   void grow(int x) throw(MallocError);
+  static char zero[1];
+
 public:
-  bool isNull() const { return length==0; }
+  bool isZero() const { return length==0; }
   StrBuffer &operator << ( const char *s ) throw(MallocError);
   StrBuffer &operator << ( char c ) throw(MallocError){
     if( length+1 >= max )
@@ -75,24 +84,32 @@ public:
   /* メモリ領域(先頭アドレス＋バイト数)を追加する。*/
   StrBuffer &paste( const void *s , int size ) throw(MallocError);
 
+  /* 数値を右詰めで出力する */
+  StrBuffer &putNumber(int num,int width,char fillchar=' ',char sign='\0');
+
   /* 文字列をヒープ文字列として取り出す。
    * 代わりにインスタンスは空になる。*/
-  char *finish() throw();
+  char *finish() throw();             /* 0 文字では NULL を返す。*/
+  char *finish2() throw(MallocError); /* 0 文字ではヒープ文字列"\0"を返す */
 
-  /* n文字目以降を切り捨てる。
-   */
-  void back(int n) throw() {
-    buffer[ length=n ] = '\0';
+  /* n文字目以降を切り捨てる。*/
+  void back(int n) throw() { buffer[ length=n ] = '\0'; }
+
+  /* n文字目を得る。配列サイズのチェックはしない */
+  int operator[](int x)   const throw(){ return buffer[x] & 255; }
+
+  /* n文字目を得る。配列サイズをオーバーすると例外を飛ばす */
+  int at(int x) const throw(OverFlow){ 
+    if( x < length )	return buffer[x] & 255;
+    else		throw OverFlow();
   }
 
-  char &operator[](int x){ return buffer[x]; }
-  int getLength() const { return length; }
+  int getLength()         const throw(){ return length; }
+  const char *getTop()    const throw(){ return buffer; }
+  operator const char *() const throw(){ return buffer; }
 
-  const char *getTop() const { return buffer; }
-  operator const char *() const { return buffer; }
-
-  StrBuffer() : length(0),buffer(0),max(0),inc(80){ }
-  StrBuffer(int x) : length(0),buffer(0),max(0),inc(x){ }
+  StrBuffer() : length(0),buffer(zero),max(0),inc(80){ }
+  StrBuffer(int x) : length(0),buffer(zero),max(0),inc(x){ }
   ~StrBuffer();
 };
 #endif

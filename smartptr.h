@@ -20,13 +20,26 @@ public:
   SmartPtr(char *p,int max) : ptr(p) , border(p+max-1) { }
 
   SmartPtr &operator++() throw(BorderOut) {
-    if( ++ptr > border ) throw BorderOut();
+    if( ++ptr > border ){
+      throw BorderOut();
+    }
     return *this;
   }
   char *operator++(int) throw(BorderOut) {
     if( ptr+1 > border ) throw BorderOut();
     return ptr++;
   }
+  SmartPtr &operator << (char c){
+    *ptr++ = c;
+    if( ptr+1 > border ) throw BorderOut();
+    return *this;
+  }
+  SmartPtr &operator << (const char *s){
+    while( *s != '\0' )
+      *this << *s++;
+    return *this;
+  }
+
   char &operator*() throw()
     { return *ptr; }
   operator const char*() const throw()

@@ -33,6 +33,12 @@ static void translate_copy( const Substr &arg , SmartPtr &dp )
   
   *dp = '\0';
 }
+
+/*  ワイルドカード展開を行う。
+ *	arg		ワイルドカードを含む元ファイル名
+ *	dp		展開先
+ *	translate_flag	
+ */
 static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp 
 				 ,int translate_flag )
 {
@@ -104,6 +110,47 @@ static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp
   return;
 }
 
+/* %1:h , %2:r などを実現する為の加工ルーチン
+ * foreach2.cc の word_design の SubStr/SmartPtr版。
+ *	dp	… 展開先
+ *	argv	… 引数自身(SubStr):サイズ制限無し
+ *	option	… 'h','t','r' or 'e'
+ * return
+ *	true  … option が適切。部分文字列をコピーした。
+ *	false … option が不適。文字列全体をコピーした。
+ */
+static bool word_design(SmartPtr &dp,const Substr &argv,int option)
+{
+  /* cut_with_designer は prepro2.cc で定義されている関数。
+   * 与えられた文字列を切り刻んで、ディレクトリとか、
+   * 拡張子とかを抜き出す。それゆえ、元の文字列は無事に
+   * 帰ってこない。だから、身代りを alloca で、まず作る。
+   */
+  extern char *cut_with_designer(char *path,int option);
+
+  char *buffer=(char*)alloca(argv.len+1);
+  argv.quote( buffer );
+
+  /* 身代りができたから、さっそく切り刻んでもらおう */
+  char *part=cut_with_designer( buffer , option );
+
+  if( part != NULL ){
+    /* ⇒ option 値が適切で、ちゃんと部分文字列が切り出せた。
+     */
+    while( *part != '\0' )
+      *dp++ = *part++;
+    *dp = '\0';
+    return true;
+  }else{
+    /* ⇒ option 値が不適か、そもそも、切り刻んでほしくない場合は
+     *    文字列全体をコピーする。
+     */
+    for( int i=0 ; i<argv.len ; i++ )
+      *dp++ = argv.ptr[i];
+    return false;
+  }
+}
+
 void replace_alias(const char *sp , char *destinate , int max )
 {
   SmartPtr dp(destinate,max);
@@ -131,10 +178,14 @@ void replace_alias(const char *sp , char *destinate , int max )
 	dp = params.betacopy(dp);
       }else{
 	const char *spa=ptr->base;
-	int percent_used=0;
+	bool percent_used=false;
 	
 	while( *spa != '\0' ){
 	  if( *spa == '%' ){
+	    /* 引数(％の展開)の展開を行う */
+
+	    /* ワイルドカード展開を行うか、
+	     * %+1 , %+2 となっているかをチェックする */
 	    int wildcard_flag = 0;
 	    if( *++spa == '+' ){
 	      wildcard_flag = 1;
@@ -144,18 +195,26 @@ void replace_alias(const char *sp , char *destinate , int max )
 	    switch( *spa ){
 	    default:
 	      if( is_digit(*spa) ){
-		percent_used = 1;
-		int n=0;
-		do{
-		  n *= 10;
-		  n += (*spa-'0');
-		}while( is_digit(*++spa) );
+		percent_used = true;
+                int n=0;
+                do{
+                  n *= 10;
+                  n += (*spa-'0');
+                }while( is_digit(*++spa) );
 		
 		if( n < params.get_argc() ){
-		  if( wildcard_flag )
+		  if( wildcard_flag ){
+		    /* ワイルドカード展開する場合 */
 		    wildcard_expand_copy( params[n] , dp , *spa=='@' ? 1 : 0 );
-		  else
+		  }else if( spa[0]==':'  &&  is_alpha(spa[1]) ){
+		    /* 「:x」など、パスを部分的に取り出す場合 */
+		    if( word_design( dp , params[n] , spa[1] ) ){
+		      spa += 2; /* 「:x」を読み飛ばす */
+		    }
+		  }else{
+		    /* 文字列全体を素直に取り出す場合 */
 		    dp = params.copy(n,dp);
+		  }
 		}
 		
 		if( *spa == '*' ){
@@ -181,7 +240,7 @@ void replace_alias(const char *sp , char *destinate , int max )
 	      break;
 	      
 	    case '*':
-	      percent_used = 1;
+	      percent_used = true;
 	      spa++;
 	      if( wildcard_flag ){
 		for(int i=1;i<params.get_argc();i++)
@@ -192,7 +251,7 @@ void replace_alias(const char *sp , char *destinate , int max )
 	      break;
 	      
 	    case '@':
-	      percent_used = 1;
+	      percent_used = true;
 	      spa++;
 	      if( wildcard_flag ){
 		for(int i=1;i<params.get_argc() ; i++)
@@ -216,7 +275,7 @@ void replace_alias(const char *sp , char *destinate , int max )
 	    *dp++ = *spa++;
 	  }
 	}
-	if( percent_used == 0 ){
+	if( percent_used == false ){
 	  *dp++ = ' ';
 	  dp = params.copyall(1,dp);
 	}
@@ -266,7 +325,6 @@ void replace_alias(const char *sp , char *destinate , int max )
 
 int cmd_unalias(FILE *fin, Parse &params)
 {
-  
   int argc=params.get_argc();
 
   if( argc < 2 )
@@ -283,6 +341,13 @@ int cmd_unalias(FILE *fin, Parse &params)
   return 0;
 }
 
+/* 別名 name の定義内容を「NAME=VALUE\n」形式で fout へ出力する。
+ *	name 別名名称
+ *	fout 出力先
+ * return
+ *	0 … その別名が存在して、表示した。
+ *	1 … その別名は存在しなかった。
+ */
 static int print_one_alias(const char *name,FILE *fout=stdout)
 {
   Alias *ptr=alias_hash[ name ];
@@ -299,25 +364,31 @@ int cmd_alias(FILE *fp, Parse &params)
   int argc=params.get_argc();
 
   if( argc < 2  ||  sp==NULL ){
+    /* 引数が無い場合、エイリアスのリストを表示する。*/
+
     FILE *fout=params.open_stdout();
     if( fout == NULL ){
       fputs("alias : cannot make a pipe or file\n",stderr);
       return 1;
     }
-    for( HashPtr hp(alias_hash) ; *hp != NULL ; hp++ ){
-      Alias *cur = (Alias*)*hp;
-      fprintf(fout,"%s=\"%s\"\n",cur->name,cur->base);
-    }
+    for( HashIndex <Alias> cur(alias_hash) ; *cur != NULL ; ++cur )
+      fprintf( fout,"%s=\"%s\"\n" , cur->name , cur->base );
   }else{
+    /* 引数があるので、エイリアスを定義、あるいは、表示する */
     int length=strlen(sp);
-    struct Alias *tmp=(Alias*)malloc(sizeof(struct Alias)+length);
-    assert( tmp != NULL );
+    Alias *tmp=(Alias*)malloc(sizeof(struct Alias)+length);
+    if( tmp == NULL )
+      return -1;
 
     char *dp=tmp->name;
     while( !is_space(*sp) ){
       if( sp >= params.get_tail() ){
 	*dp = '\0';
 	FILE *fout=params.open_stdout();
+	if( fout == NULL ){
+	  fputs("alias : cannot make a pipe or file\n",stderr);
+	  return 1;
+	}
 	print_one_alias(tmp->name,fout);
 	free(tmp);
 	return 0;
@@ -351,44 +422,25 @@ int cmd_alias(FILE *fp, Parse &params)
     
     tmp->base = dp;
 
-    if( *sp == '"' ){
-      /* alias ahaha="ufufuf ""ohoho""" の場合。
-       * 引用符一個は空文字に、連続する引用符二個は引用符一個に置換される。
-       */
-      int quote = 1;
-      if( *++sp == '"' ){
-	/* 余り考えられない状況だが「alias ufufu=""ahaha""」などの場合の為 */
-	*dp++ = '"';
-	++sp;
-      }
-      
-      for(;;){
-	if( *sp == '"' ){
-	  if( *++sp == '"' ){
-	    *dp++ = '"';
-	    ++sp;
-	    continue;
-	  }else{
-	    quote ^= 1;
-	    /* continue せずに直後のコピーへ移行する */
-	  }
+    /* alias ahaha="ufufuf ""ohoho""" の場合。
+     * 引用符一個は空文字に、連続する引用符二個は引用符一個に置換される。
+     */
+    int quote = 1;
+    for(;;){
+      if( *sp == '"' ){
+	if( *++sp == '"' ){
+	  *dp++ = *sp++;
+	  continue;
+	}else{
+	  quote ^= 1;
 	}
-	if( sp >= params.get_tail() )
-	  break;
-	*dp++ = *sp++;
       }
-      *dp = '\0';
-
-    }else{
-      /* 従来と互換性のある alias。引用符一個は引用符一個にしか置換されない。
-       * 引用符で囲まれていない「&」や「|」以降もエイリアスに含まれてしまう等
-       * のバグがあるが、互換性のため修正はしていない。
-       */
-      
-      while( *sp != '\0' )
-	*dp++ = *sp++;
-      *dp = '\0';
+      if( sp >= params.get_tail() )
+	break;
+      *dp++ = *sp++;
     }
+    *dp = '\0';
+    
     alias_hash.destruct( tmp->name );
     alias_hash.insert( tmp->name , tmp );
   }

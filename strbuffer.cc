@@ -2,40 +2,51 @@
 #include <string.h>
 #include "strbuffer.h"
 
+char StrBuffer::zero[1]={ '\0' };
+
 char *StrBuffer::finish() throw()
 {
-  if( isNull() )
-    return 0;
+  if( isZero() )
+    return NULL;
 
   char *rc=(char*)realloc(buffer,length+1);
-  if( rc == 0 )
+  if( rc == NULL )
     rc = buffer;
   
-  buffer = 0;
+  buffer = zero;
   length = 0;
   max = 0;
   return rc;
 }
 
-void StrBuffer::grow(int newSize) throw(MallocError)
+char *StrBuffer::finish2()
+     throw(StrBuffer::MallocError)
 {
-  if( isNull() ){
-    /* 新規取得 */
-    buffer = (char*)malloc( newSize+1 );
-    if( buffer == 0 )
+  if( isZero() ){
+    char *rc=(char*)malloc(1);
+    if( rc==NULL )
       throw MallocError();
-    max = newSize;
-  }else{
-    /* ２回目移行、つまり増加！*/
-    char *newBuffer=(char*)realloc( buffer , newSize+1 );
-    if( newBuffer == 0 )
-      throw MallocError();
-    max = newSize;
-    buffer = newBuffer;
+    rc[0] = '\0';
+    return rc;
   }
+  return this->finish();
 }
 
-StrBuffer &StrBuffer::operator << (const char *s) throw(MallocError)
+void StrBuffer::grow(int newSize)
+     throw(StrBuffer::MallocError)
+{
+  char *newBuffer = (char*)(  isZero() 
+			    ? malloc( newSize+1 ) 
+			    : realloc( buffer , newSize+1 ) );
+  if( newBuffer == NULL )
+    throw MallocError();
+
+  max = newSize;
+  buffer = newBuffer;
+}
+
+StrBuffer &StrBuffer::operator << (const char *s)
+     throw(StrBuffer::MallocError)
 {
   /* 引数が NULL の時は何もしない。呼び出し元の NULL チェックを省略する為 */
   if( s == NULL )
@@ -49,7 +60,37 @@ StrBuffer &StrBuffer::operator << (const char *s) throw(MallocError)
   return *this;
 }
 
-StrBuffer &StrBuffer::paste(const void *s , int size) throw(MallocError)
+/* 数字を右詰めで出力する 
+ *	num	 出力すべき数値
+ *	width	 表示桁数
+ *	fillchar 表示桁数に満たなかった時に、埋めるべき文字。
+ *	sign	 数値の直前に置くべき文字。'\0' か '-'
+ */
+StrBuffer &StrBuffer::putNumber(int num,int width,char fillchar,char sign)
+{
+  if( num < 0 ){ /* マイナス */
+    return putNumber( -num , width , fillchar , '-' );
+  }else if( num >= 10 ){
+    putNumber( num / 10 , width-1 , fillchar , sign );
+    return *this << "0123456789"[ num % 10 ];
+  }else{
+    if( sign != '\0' )
+      width -= 2;
+    else
+      --width;
+    
+    while( width-- > 0 )
+      *this << (char)fillchar;
+
+    if( sign != '\0' )
+      *this << sign;
+
+    return *this << "0123456789"[ num ];
+  }
+}
+
+StrBuffer &StrBuffer::paste(const void *s , int size)
+     throw(StrBuffer::MallocError)
 {
   /* 引数が NULL の時は何もしない。呼び出し元の NULL チェックを省略する為 */
   if( s == NULL || size <= 0 )
@@ -66,11 +107,12 @@ StrBuffer &StrBuffer::paste(const void *s , int size) throw(MallocError)
 
 StrBuffer::~StrBuffer()
 {
-  if( buffer != 0 )
+  if( ! isZero() )
     free(buffer);
 }
 
-StrBuffer &StrBuffer::operator << (int n) throw(MallocError)
+StrBuffer &StrBuffer::operator << (int n)
+     throw(StrBuffer::MallocError)
 {
   if( n < 0 ){
     return *this << '-' << -n;
@@ -80,7 +122,6 @@ StrBuffer &StrBuffer::operator << (int n) throw(MallocError)
     return *this << (n / 10) << "0123456789"[ n % 10 ];
   }
 }
-
 
 #if 0
 #include <stdio.h>

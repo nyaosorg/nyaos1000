@@ -5,6 +5,8 @@
 #include "macros.h"
 #include "finds.h"
 
+const char *getShellEnv(const char *);
+
 #undef CACHE
 #ifdef CACHE
 extern PathCache *script_cache;
@@ -160,7 +162,7 @@ static int _SearchEnv(const char *fname,const char *envname,char *path)
   }else{
 #endif
     /* ƒLƒƒƒbƒVƒ…–³‚µ‚Ìê‡ */
-    const char *env=getenv(envname);
+    const char *env=getShellEnv(envname);
     if( env == NULL )
       return NO_FILE;
     

@@ -4,6 +4,8 @@
 #include "macros.h"
 #include "pathlist.h"
 
+const char *getShellEnv(const char *);
+
 PathList::~PathList()
 {
   while( first != NULL ){
@@ -73,7 +75,7 @@ void PathList::append(const char *paths,int dem)
 void PathList::listing(char *dp,int dem)
 {
   OnePath *cur=first;
-  const char *home=getenv("HOME");
+  const char *home=getShellEnv("HOME");
   for(;;){
     const char *sp=cur->name;
     if( *sp == '~'  &&  home != NULL ){

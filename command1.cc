@@ -137,6 +137,67 @@ int cmd_mkdir ( FILE *source , Parse &params)
   return 0;
 }
 
+union MultiPtr {
+  void *value;
+  unsigned short *word;
+  char  *byte;
+};
+
+/* ASCII タイプの拡張属性を設定する。
+ *	fname	拡張属性を設定するファイルのファイル名
+ *	eatype	拡張属性のタイプ(".SUBJECT"等)
+ *	value	設定する内容。NULL の場合、その属性を削除する。
+ */
+int set_asciitype_ea(  const char *fname , const char *eatype 
+		     , const char *value )
+{
+  struct _ea eavalue;
+
+  eavalue.flags = 0;
+  if( value == 0 || value[0] == '\0' ){
+    /* EA の値を消す */
+    eavalue.size = 0;
+    eavalue.value = "";
+  }else{
+    MultiPtr ptr;
+
+    int len = strlen(value);
+    ptr.value = eavalue.value = alloca( (eavalue.size = len+4)+1 );
+    /* 4 はヘッダのバイト数 */
+    
+    *ptr.word++ = 0xFFFD;
+    *ptr.word++ = len;
+    memcpy(ptr.value , value , len );
+  }
+  return _ea_put( &eavalue , fname , 0 , eatype );
+}
+
+/* コマンド subject : ファイルに .SUBJECT属性を設定する。
+ */
+int cmd_subject(FILE *source, Parse &params)
+{
+  if( params.get_argc() < 2 ){
+    fputs("subject filename subject...\n",stderr);
+    return 1;
+  }
+  /* ファイル名を ASCIZ 文字列にする。*/
+  char *fname=(char*)alloca(params.get_length(1)+1);
+  params.copy(1,fname,Parse::REPLACE_SLASH);
+  
+  /* 設定するサブジェクト値を ASCIZ 文字列にする */
+  char *subject=(char*)alloca(params.get_length_later(2)+1);
+  params.copyall(2,subject,Parse::QUOTE_NOT_COPY);
+
+  int rc=set_asciitype_ea(fname,".SUBJECT",subject);
+  if( rc== 0 ){
+    printf("%s --> %s\n" , fname , subject );
+  }else{
+    fprintf(stderr,"subject: cannot write subject on %s\n",fname);
+  }
+  return rc; 
+}
+
+
 int cmd_comment(FILE *source, Parse &params)
 {
   if( params.get_argc() < 2 ){
@@ -156,17 +217,13 @@ int cmd_comment(FILE *source, Parse &params)
   }else{
     int size=params.get_length_later(2);
 
-    union{
-      void           *value;
-      unsigned short *word;
-      char  *byte;
-    } ptr;
-
+    MultiPtr ptr;
     ptr.value = eavalue.value = alloca( (eavalue.size = size+10)+1 );
+    /* 10 はヘッダのバイト数 */
 
     *ptr.word++ = 0xFFDF;
-    *ptr.word++ = 932;
-    *ptr.word++ = 1;
+    *ptr.word++ = 0; /* 932: コードページ */
+    *ptr.word++ = 1; /* EA の数 */
     *ptr.word++ = 0xFFFD;
     *ptr.word++ = (unsigned short)
       ( params.copyall( 2 , ptr.byte+2 , Parse::QUOTE_NOT_COPY ) - (ptr.byte+2) );

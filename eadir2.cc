@@ -15,6 +15,7 @@
 #include <string.h>
 #include <signal.h>
 
+#include "strbuffer.h"
 #include "SmartPtr.h"
 #include "keyname.h"
 
@@ -45,6 +46,7 @@ enum{
   LS_SORT_REVERSE ,
   LS_ViRGE ,
   LS_COMMA ,
+  LS_SUBJECT ,
   NUM_LS ,
 };
 
@@ -63,6 +65,7 @@ static char *ls_executable_file="35;1"; /* 紫 */
 static char *ls_read_only_file="33;1";	/* 背景が黄 */
 static char *ls_comment="44;37;1";	/* 青地に白 */
 static char *ls_longname="41;37;1";     /* 赤字に白 */
+static char *ls_subject="42;37;1";	/* 緑字に白 */
 
 /* struct tm のカバークラス。
  * 扱い方は DirDateTime と互換性があるが、
@@ -100,6 +103,7 @@ static struct {
   { "ex",&ls_executable_file },
   { "cm",&ls_comment} ,
   { "ln",&ls_longname} ,
+  { "sj",&ls_subject} ,
 };
 
 /* 拡張属性を読み取る為のポインタ型 */
@@ -119,7 +123,7 @@ static int print_num_with_comma(int width,int n,FILE *fp)
 {
   if( width < 1 )
     width = 1;
-
+  
   if( n >= 1000 ){
     int len=print_num_with_comma(width-4,n/1000,fp);
     putc( ',' , fp );
@@ -131,17 +135,20 @@ static int print_num_with_comma(int width,int n,FILE *fp)
   }
 }
 
-/* 拡張属性 .LONGNAME を得る。
- *	fname 属性を読みとりたいファイルの名前
+/* ASCII タイプのＥＡ(.LONGNAME / .SUBJECT)を取得する。
+ *	fname … ファイル名
+ *	eatype … EAの属性名(".LONGNAME" や ".SUBJECT")
+ *	*pLen … 非NULL の場合、長さが入る。
  * return
- *	ロングネーム(要free)
+ *	得られた EA (要free文字列)
+ *	NULL の時は失敗
  */
-char *get_ea_longname( const char *fname )
+char *get_asciitype_ea( const char *fname , const char *eatype , int *pLen=0 )
 {
   struct _ea ea;
   union MultiPtr ptr;
   
-  if( _ea_get( &ea , fname , 0 , ".LONGNAME" ) != 0 
+  if( _ea_get( &ea , fname , 0 , eatype ) != 0 
      || ea.size <= 0 || ea.value == NULL )
     return NULL;
 
@@ -151,28 +158,26 @@ char *get_ea_longname( const char *fname )
     _ea_free(&ea);
     return NULL;
   }
-    
+  
   int size = *ptr.word++; /* 実際のサイズ */
-  int n = 0;              /* ctrl-codeを ^N などと変形した後のサイズ*/
-  char *s=(char*)malloc(size*2); /* 変形後の文字列が入る */
+  StrBuffer sbuf;
   
   for(int i=0 ; i<size ; i++ ){
     if( *ptr.byte == '\r' ){
       ptr.byte++;
     }else if( *ptr.byte == '\n' ){
-      s[n++] = ' ';
+      sbuf << ' ';
       ptr.byte++;
     }else if( 0 <= *ptr.byte  && *ptr.byte < ' ' ){
-      s[n++] = '^';
-      s[n++] = '@'+*ptr.byte++ ;
+      sbuf << '^' << char('@'+*ptr.byte++) ;
     }else{
-      s[n++] = *ptr.byte++ ;
+      sbuf << *ptr.byte++ ;
     }
-  }/* for(int i...) */
-  s[n++] = '\0';
-  
+  }
   _ea_free( &ea );
-  return s = (char*)realloc(s,n);
+  if( pLen != 0 )
+    *pLen = sbuf.getLength();
+  return sbuf.finish();
 }
 
 /* ポインタ配列と、その中のポインタの示すHeapを全て解放する。
@@ -325,29 +330,10 @@ static int is_file_print(const FileListT *f)
 static int dbcs_fputs(const char *s,FILE *fout)
 {
   int i=0;
-#if 0
-  ULONG CpList[8];
-  ULONG CpSize;
-  
-  if( DosQueryCp(sizeof(CpList),CpList,&CpSize)==0 && CpList[0] == 932 ){
-#endif
-    while( *s != '\0' ){
-      putc( *s++ , fout );
-      i++;
-    }
-#if 0
-  }else{
-    while( *s != '\0' ){
-      if( *s & ~127 ){
-	putc( '?' , fout);
-      }else{
-	putc( *s , fout );
-      }
-      ++s;
-      i++;
-    }
+  while( *s != '\0' ){
+    putc( *s++ , fout );
+    i++;
   }
-#endif
   return i;
 }
 
@@ -586,72 +572,103 @@ void dir1(  const FileListT *flist , int max_length
   }else{
     sprintf(_fullpath,"%s/%s",curdir,flist->name);
   }
-  
-  /* ---- EA のロングネームを表示する ---- */
-  char *longname;
-  if(    ls_flag[ LS_LONGNAME ] 
-     &&  flist->easize > 4
-     &&  (longname=get_ea_longname(fullpath) )!=NULL ){
-    
-    if( strcmp( flist->name , longname ) != 0 ){
-      int longname_length = strlen(longname);
-      int nspaces = screen_width - ncolumns - longname_length;
-      if( ls_flag[ LS_LONGNAME] == 2 ){
-	if( nspaces < 0 ){
-	  more(fout);
-	  nspaces = screen_width - longname_length;
-	}
-	while( nspaces-- > 0 )
-	  putc( ' ' , fout );
-      }
-      
-      putc(' ',fout);
-      putc('(',fout);
-      if( ls_flag[ LS_NOCOLOR] ){
-	fputs( longname , fout );
+
+  /* ==== EA が存在すれば、EA の各属性を表示させる。==== */
+  if( flist->easize > 4 ){
+    char *subject=0;
+    char *longname=0;
+    int length;
+
+    /* ---- EA のサブジェクトを表示する ---- */
+    if(   ls_flag[LS_SUBJECT] 
+       && (subject=get_asciitype_ea(fullpath,".SUBJECT",&length)) != NULL ){
+
+      if( ncolumns + 2 + length >= screen_width ){
+	more(fout);
+	for(int i=screen_width-length-2-1 ; i>0 ; i-- )
+	  fputc(' ',fout);
+	ncolumns = screen_width-1;
       }else{
-	fputs( ls_left_code , fout );
-	fputs( ls_longname , fout );
+	ncolumns += 2+length;
+      }
+      fputs("> ",fout);
+
+      if( ls_flag[ LS_NOCOLOR ] ){
+	fputs( subject , fout );
+      }else{
+	fputs( ls_left_code  , fout );
+	fputs( ls_subject    , fout );
 	fputs( ls_right_code , fout );
-	dbcs_fputs( longname , fout );
+	dbcs_fputs( subject , fout );
 	fputs( ls_end_code , fout );
       }
-      putc(')',fout);
-      ncolumns += 3 + longname_length;
-    }
-    free( longname );
-  }
-
-  /* ----- EAのコメントを表示する ------ */
-  char **comments;
-  if(   flist->easize > 4
-     && ls_flag[LS_COMMENT]
-     && (comments=get_ea_comments(fullpath) ) != NULL ){
+    }else  if(   ls_flag[ LS_LONGNAME ] 
+	      && (longname=get_asciitype_ea(fullpath,".LONGNAME",&length))!=0){
+	
+      /* ⇒ EA のロングネームを表示する
+       * ロングネームとサブジェクトは同時に表示できない */
       
-    if( ls_flag[LS_COMMENT] == 1 ){
-      /* ---- インラインコメント ----- */
-      if( ! ls_flag[LS_NOCOLOR] )
-	fprintf(fout,".. %s%s%s%s%s"
-		,ls_left_code,ls_comment,ls_right_code
-		,comments[0],ls_end_code);
-      else
-	fprintf(fout,".. %s",comments[0]);
-
-      ncolumns += 3 + strlen(comments[0]);
-    }else{
-      /* ---- マルチコメント ---- */
-      for(char **pp=comments;*pp != NULL;pp++){
-	more(fout);
-	if( ! ls_flag[LS_NOCOLOR] )
-	  fprintf(fout,"\t%s%s%s%s%s"
-		  ,ls_left_code,ls_comment,ls_right_code
-		  ,*pp,ls_end_code);
-	else
-	  fprintf(fout,"\t%s",*pp);
+      if( strcmp( flist->name , longname ) != 0 ){
+	int nspaces = screen_width - ncolumns - length;
+	if( ls_flag[ LS_LONGNAME] == 2 ){
+	  if( nspaces < 0 ){
+	    more(fout);
+	    nspaces = screen_width - length;
+	  }
+	  while( nspaces-- > 0 )
+	    putc( ' ' , fout );
+	}
+	
+	putc(' ',fout);
+	putc('(',fout);
+	if( ls_flag[ LS_NOCOLOR] ){
+	  fputs( longname , fout );
+	}else{
+	  fputs( ls_left_code , fout );
+	  fputs( ls_longname , fout );
+	  fputs( ls_right_code , fout );
+	  dbcs_fputs( longname , fout );
+	  fputs( ls_end_code , fout );
+	}
+	putc(')',fout);
+	ncolumns += 3 + length;
       }
+      free( longname );
     }
-    free_pointors( comments );
-  }
+
+
+    /* ----- EAのコメントを表示する ------ */
+    char **comments=0;
+    if( ls_flag[LS_COMMENT] && (comments=get_ea_comments(fullpath) ) != 0 ){
+      
+      if( ls_flag[LS_COMMENT] == 1 ){
+	if( subject == 0 && longname == 0 ){
+	  /* ---- インラインコメント ----- */
+	  if( ! ls_flag[LS_NOCOLOR] )
+	    fprintf(fout,".. %s%s%s%s%s"
+		    ,ls_left_code,ls_comment,ls_right_code
+		    ,comments[0],ls_end_code);
+	  else
+	    fprintf(fout,".. %s",comments[0]);
+	  
+	  ncolumns += 3 + strlen(comments[0]);
+	}
+      }else{
+	/* ---- マルチコメント ---- */
+	for(char **pp=comments;*pp != NULL;pp++){
+	  more(fout);
+	  if( ! ls_flag[LS_NOCOLOR] )
+	    fprintf(fout,"\t%s%s%s%s%s"
+		  ,ls_left_code,ls_comment,ls_right_code
+		    ,*pp,ls_end_code);
+	  else
+	    fprintf(fout,"\t%s",*pp);
+	}
+      }
+      free_pointors( comments );
+    }
+  }/* ↑ EA関係の処理 */
+
   more(fout);
 }
 
@@ -858,6 +875,8 @@ static void on_more()
 {  ls_flag[ LS_MORE ] = 1; }
 static void on_virge()
 {  ls_flag[ LS_ViRGE ] = 1; }
+static void on_subject()
+{  ls_flag[ LS_SUBJECT ] = 1; }
 
 static void on_numeric_sort()
 {
@@ -892,7 +911,7 @@ int eadir( int argc, char **argv,FILE *fout,Parse &parser)
   int filefault=0;
   Files files,dirs;
 
-  set_ls_color_table( getenv("LS_COLORS") );
+  set_ls_color_table( getShellEnv("LS_COLORS") );
 
   for( int i=1 ; i<argc ; i++ ){
     assert( argv[i] != NULL );
@@ -957,6 +976,7 @@ int eadir( int argc, char **argv,FILE *fout,Parse &parser)
 	  ls_flag[ LS_LONG ] = 1;
 	  ls_flag[ LS_LONGNAME ] = 1;
 	  ls_flag[ LS_COMMENT ] = 1;
+	  ls_flag[ LS_SUBJECT ] = 1;
 	  break;
 	case 'P':
 	  ls_flag[ LS_MORE ] = 1; break;
@@ -969,6 +989,10 @@ int eadir( int argc, char **argv,FILE *fout,Parse &parser)
 	case 'H':
 	  ls_flag[ LS_LONG ] = 1;
 	  ls_flag[ LS_COMMENT ] = 1;
+	  break;
+
+	case 'j':
+	  ls_flag[ LS_SUBJECT ] = 1;
 	  break;
 
 	case 'F':

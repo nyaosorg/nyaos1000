@@ -12,4 +12,5 @@ multi-comment	on_multi_comment
 no-color	on_nocolor
 numeric-sort	on_numeric_sort
 reverse		on_sort_reverse
+subject		on_subject
 virge		on_virge

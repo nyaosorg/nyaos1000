@@ -60,7 +60,7 @@ static int history_core(WHist *tmp,int rightmove,Edlin &ed)
     ed.cleanmsg();
     
     Shell::Status (Shell::*function)() = Shell::get_bindkey_function(key);
-
+    
     if(   function==&Shell::next_history
        || function==&Shell::vz_next_history ){
       /* ŽŸŒó•â */

@@ -31,14 +31,14 @@ all : nyaos.exe nyaos.doc
 NYAOS_HDR=\
 	complete.h edlin.h finds.h hash.h macros.h nyaos.h substr.h \
 	parse.h pathlist.h smartptr.h strtok.h keyname.h strbuffer.h \
-	quoteflag.h autofileptr.h
+	quoteflag.h autofileptr.h autofreeptr.h
 NYAOS_SRC=\
 	alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
-	command2.cc dbcs.cc eadir.cc edlin.cc edlin2.cc execute.cc \
+	command2.cc dbcs.cc eadir2.cc edlin.cc edlin2.cc execute.cc \
 	finds.cc filelist.cc foreach2.cc getkey.cc hash.cc nyaos.cc \
-	open.cc parse.cc pathlist.cc prepro2.cc prompt.cc script2.cc \
+	open.cc parse.cc pathlist.cc prepro2.cc prompt2.cc script2.cc \
 	search.cc shell.cc source.cc vzhistory.cc strtok.cc keynameseek.cc \
-	strbuffer.cc debugger.cc
+	strbuffer.cc debugger.cc let.cc
 # suffix.cc 
 
 NYAOS_TBL=\
@@ -52,7 +52,7 @@ NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
 
 nyaos.tar :
 	cd .. && tar cvf nyaos/$@ $(foreach A,\
-		Makefile $(NYAOS_HDR) $(NYAOS_SRC) \
+		Makefile pknyaos.cmd $(NYAOS_HDR) $(NYAOS_SRC) \
 		mkbtable.cmd $(README1ST) $(NYAOS_TBL),nyaos/$(A))
 
 # ------------- 実行ファイル作成 ----------------
@@ -65,7 +65,7 @@ $(NYAOS_OBJ) : %.o : %.cc
 
 keynameseek.o : keynameseek.cc keynames.cc
 bindkey.o : bindkey.cc bindfunc.cc
-eadir.o : eadir.cc eadirop.cc
+eadir2.o : eadir2.cc eadirop.cc
 
 tables : $(NYAOS_TBL:.tbl=.cc)
 bindfunc.cc : bindfunc.tbl mkbtable.cmd

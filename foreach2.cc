@@ -34,44 +34,66 @@ static unsigned option=0;
  *	 0 : 成功
  *	-1 : opt の内容が不適である。
  */
-static int word_design(StrBuffer &line ,const char *value,const char *opt)
-     throw(MallocError)
+int word_design(StrBuffer &line ,const char *value,int option)
+     throw(StrBuffer::MallocError)
 {
-  if( opt == NULL  ||  opt[0] == '\0' ){
-    line << value;
-    
-  }else if( opt[0] == 'e'  &&  opt[1] == '\0' ){	/* 「:e」拡張子のみ */
-
+  switch( option ){
+  case 'e':
+  case 'E': /* 「:e」拡張子のみ */
     line << _getext2(value);
+    break;
 
-  }else if( opt[0] == 'r' && opt[1] == '\0' ){	/* 「:r」拡張子除く */
-
-    const char *ext=_getext(value);
-    if( ext != 0 ){
-      line.paste( value , ext-value );
-    }else{
-      line << value;
+  case 'r':
+  case 'R': /* 「:r」拡張子除く */
+    {
+      const char *ext=_getext(value);
+      if( ext != 0 ){
+	line.paste( value , ext-value );
+      }else{
+	line << value;
+      }
     }
+    break;
 
-  }else if( opt[0] == 'h' && opt[1] == '\0' ){	/* 「:h」ディレクトリのみ */
+  case 'h':
+  case 'H': /* 「:h」ディレクトリのみ */
+    {
+      const char *name=_getname(value);
+      if( name != 0 )
+	line.paste( value , name-value );
+    }
+    break;
 
-    const char *name=_getname(value);
-    if( name != 0 )
-      line.paste( value , name-value );
-    
-  }else if( opt[0] == 't' && opt[1] == '\0' ){	/* 「:t」ディレクトリ除く */
-    
+  case 't':
+  case 'T':/* 「:t」ディレクトリ除く */
     line << _getname(value);
-    
-  }else{
+    break;
+
+  default:
     return -1;
   }
   return 0;
 }
 
+static int word_design(StrBuffer &line ,const char *value,const char *opt)
+     throw(StrBuffer::MallocError)
+{
+  if( opt==NULL  ||  opt[0] == '\0' ||  !isalpha(opt[0])  || opt[1] !='\0' )
+    return -1;
+
+  return word_design(line,value,opt[0]);
+}
 
 static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
+     throw(StrBuffer::MallocError)
 {
+  int rv=0;
+  
+  /* シェル変数に、argv[1] の内容を設定する */
+  const char *orgEnvValue=getShellEnv(var);
+  char *orgEnvValueDup=(orgEnvValue ? strdup(orgEnvValue) : 0 );
+  setShellEnv(var,str);
+
   /* 各命令毎にループ */
   for( ; src != NULL ; src=src->next ){
     StrBuffer line;
@@ -95,13 +117,15 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 	  while( *sp != '}' ){
 	    if( *sp == '\0' ){
 	      fputs("foreach : '${' without '}'\n",stderr);
-	      return -1;
+	      rv = -1;
+	      goto exit;
 	    }else if( *sp == ':' ){ /* ${VAR:OPT} の場合 */
 	      ++sp;
 	      while( *sp != '}' ){
 		if( *sp == '\0' ){
 		  fputs("foreach : '${' without '}'\n",stderr);
-		  return -1;
+		  rv = -1;
+		  goto exit;
 		}
 		opt << *sp++;
 	      }
@@ -117,13 +141,15 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 	  while( *sp != ')' ){
 	    if( *sp == '\0' ){
 	      fputs("foreach : '$(' without ')'\n",stderr);
-	      return -1;
+	      rv = -1;
+	      goto exit;
 	    }else if( *sp == ':' ){ /* $(VAR:OPT) の場合 */
 	      ++sp;
 	      while( *sp != ')' ){
 		if( *sp == '\0' ){
 		  fputs("foreach : '$(' without ')'\n",stderr);
-		  return -1;
+		  rv = -1;
+		  goto exit;
 		}
 		opt << *sp++;
 	      }
@@ -152,14 +178,15 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 	if( strcmp(word,var)==0 ){
 	  /* foreach の変数の場合 */
 	  value = str;
-	}else if( (env=getenv(word)) != NULL ){
+	}else if( (env=getShellEnv(word)) != NULL ){
 	  /* 環境変数の場合 */
 	  value = env;
 	}else{
 	  /* さもなければ、エラーっすよ */
 	  fprintf(stderr,"foreach : no environment variable $%s\n"
 		  ,word.getTop() );
-	  return -1;
+	  rv = -1;
+	  goto exit;
 	}
 
 	if( opt.getLength() <= 0 ){
@@ -170,7 +197,8 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 	    fprintf(  stderr 
 		    , "foreach: %s: no such option for $VAR:OPT\n"
 		    , opt.getTop() );
-	    return -1;
+	    rv = -1;
+	    goto exit;
 	  }
 	}
       }
@@ -179,7 +207,8 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
     if( ctrl_c ){
       puts( "\nCtrl-C Hit." );
       ctrl_c = 0;
-      return -1;
+      rv = -1;
+      goto exit;
     }
 
     /* 置換して作成した、各コマンドを実行する。
@@ -202,21 +231,25 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
       
       if( execute_result != 0  &&  (option & OPTION_I)==0 ){
 	fprintf(stderr,"foreach : error level %d",execute_result );
-	return -1;
+	rv = -1;
+	goto exit;
       }
     }
   }/* 命令ループ */
-  return 0;
+
+ exit:
+  setShellEnv( var , orgEnvValueDup );
+  free( orgEnvValueDup );
+
+  return rv;
 }
 
-int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
+static int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
 {
   if( srcfil == NULL ){
     fputs("foreach is not available in REXX Script!\n",stderr);
     return 0;
   }
-  
-  /* _wildcard( &argc , &argv ); */
   
   if( argc < 3 ){
     fputs("foreach [-ivn] var param1 param2 ... paramN\n",stderr);
@@ -259,7 +292,7 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   if( isatty(fileno(srcfil)) ){
     /* キーボード入力 */
     Shell shell;
-    const char *promptenv=getenv("NYAOSPROMPT2");
+    const char *promptenv=getShellEnv("NYAOSPROMPT2");
     char prompt[256];
     if( promptenv == NULL ){
       prompt[0] = '?';
@@ -354,19 +387,27 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   for(int i=2;i<argc;i++){
     /* 展開したファイル名ごとのループ */
     char **list = fnexplode2(argv[i]);
-    if( list==NULL ){
-      eachcmd(srcfil,argv[1],argv[i],dummyfirst.next);
-    }else{
-      numeric_sort(list);
-      for(char **listptr=list ; *listptr != NULL ; listptr++ ){
-	int rv=eachcmd(srcfil,argv[1],*listptr,dummyfirst.next);
-	if( rv != 0 ){
-	  fnexplode2_free(list);
+    try{
+      if( list==NULL ){
+	if( eachcmd(srcfil,argv[1],argv[i],dummyfirst.next) != 0 )
 	  goto exit;
+      }else{
+	numeric_sort(list);
+	for(char **listptr=list ; *listptr != NULL ; listptr++ ){
+	  int rv=eachcmd(srcfil,argv[1],*listptr,dummyfirst.next);
+	  if( rv != 0 ){
+	    fnexplode2_free(list);
+	    goto exit;
+	  }
 	}
-      }
-      fnexplode2_free(list);
-    }/* 展開後の名前ループ */
+	fnexplode2_free(list);
+      }/* 展開後の名前ループ */
+    }catch(StrBuffer::MallocError){
+      if( list != NULL )
+	fnexplode2_free(list);
+      fputs("foreach: memory allocation error\n",stderr);
+      break;
+    }
   }/* パラメータループ */
 
  exit:
@@ -377,4 +418,23 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
     delete args;
   }
   return rv;
+}
+
+static int compatible(FILE *source , Parse &params ,
+		      int (*routine)(  FILE * , const char*,int,char**) )
+{
+  int argc=params.get_argc();
+  char **argv=(char**)alloca( (argc+1)*sizeof(char*) );
+
+  for(int i=0 ; i<argc ; i++){
+    argv[i] = (char*)alloca( params[i].len + 1 );
+    memcpy( argv[i] , params[i].ptr , params[i].len );
+    argv[i][ params[i].len ] = '\0';
+  }
+  return (*routine)( source , params.get_parameter() , argc , argv );
+}
+
+int cmd_foreach(FILE *source, Parse &params )
+{
+  return compatible(source,params,foreach); 
 }

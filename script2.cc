@@ -93,7 +93,7 @@ enum{
 static const char *copy_filename(  StrBuffer &buf
 				 , const char *sp 
 				 , int flag=SPACE_TERMINATE )
-     throw(MallocError)
+     throw(StrBuffer::MallocError)
 {
   for(;;){
     /* 「&」や「|」、「\0」など、コマンド末尾の文字列なら終了 */
@@ -138,7 +138,7 @@ static const char *copy_filename(  StrBuffer &buf
  *	NULL メモリ確保エラー
  */
 static const char *copy_args( StrBuffer &buf , const char *sp )
-     throw (MallocError)
+     throw (StrBuffer::MallocError)
 {
   while( ! Parse::is_terminal_char(*sp) ){
     if( *sp == '"' ){
@@ -163,7 +163,7 @@ static const char *copy_args( StrBuffer &buf , const char *sp )
  * インタプリタ名記述行を Heap 文字列で返す。
  * さもなければ、NULL を返す
  */
-static char *read_sos_header( const char *path ) throw(MallocError)
+static char *read_sos_header( const char *path ) throw(StrBuffer::MallocError)
 {
   AutoFilePtr fp(path,"r");
   if( fp == NULL )
@@ -220,7 +220,7 @@ static void expand_sos(  StrBuffer &buf
 		       , const char *fmt
 		       , const char *prog
 		       , const char *argv )
-     throw(MallocError)
+     throw(StrBuffer::MallocError)
 {
   for( ; *fmt != '\0' ; ++fmt ){
     if( *fmt != '%' ){
@@ -250,7 +250,7 @@ static void expand_sos(  StrBuffer &buf
  *	fname スクリプトのファイル名
  *	return インタプリタ名(ヒープの文字列:freeが必要)
  */
-static char *read_script_header( const char *fname ) throw(MallocError)
+static char *read_script_header( const char *fname ) throw(StrBuffer::MallocError)
 {
   AutoFilePtr fp(fname,"r");
   if( fp==NULL )
@@ -264,7 +264,7 @@ static char *read_script_header( const char *fname ) throw(MallocError)
   /* 環境変数 SCRIPTDRIVE の最初の一文字を複写 */
   int ch;
   const char *usp=0;
-  if( (ch=getc(fp))=='/' && (usp=getenv("SCRIPTDRIVE")) != NULL ){
+  if( (ch=getc(fp))=='/' && (usp=getShellEnv("SCRIPTDRIVE")) != NULL ){
     while( *usp != '\0' && *usp != ':' ){
       buf << *usp++;
     }
@@ -286,11 +286,11 @@ static char *read_script_header( const char *fname ) throw(MallocError)
  *
  */
 static void script_to_cache( char *script , char *interpreter ) 
-     throw(MallocError)
+     throw(StrBuffer::MallocError)
 {
   ScriptCache *sc=new ScriptCache;
   if( sc == NULL )
-    throw MallocError();
+    throw StrBuffer::MallocError();
 
   sc->name = script;
   sc->interpreter = interpreter;
@@ -346,9 +346,9 @@ static bool is_inner_command( const char *name ) throw()
  *	変換後のテキスト。ヒープ文字列なので、使用後に
  *	free することが必要。
  * throw
- *	MallocError 文字通り
+ *	StrBuffer::MallocError 文字通り
  */
-char *replace_script( const char *sp ) throw(MallocError)
+char *replace_script( const char *sp ) throw(StrBuffer::MallocError)
 {
   StrBuffer buf;
   
@@ -425,9 +425,7 @@ char *replace_script( const char *sp ) throw(MallocError)
        */
       sp = copy_filename( fname , sp );
 
-      if( fname.isNull() ){
-	;
-      }else if( is_inner_command( fname.getTop() )) {
+      if( is_inner_command( fname.getTop() )) {
 
 	/* ------ 内臓コマンド ------*/
 	copy_filename( buf , fname.getTop() , BACKSLASH_DEMILITOR );
@@ -438,6 +436,10 @@ char *replace_script( const char *sp ) throw(MallocError)
 	 * ------ Java Application (*.class な時) -----
 	 */
 	buf << "java ";
+	const char *javaopt=getShellEnv("JAVAOPT");
+	if( javaopt != NULL  &&  javaopt[0] != '\0' )
+	  buf << javaopt << ' ';
+	
 	buf.paste( fname , suffix-fname );
 	buf << ' ';
 	sp = copy_args( buf , sp );
@@ -495,7 +497,7 @@ char *replace_script( const char *sp ) throw(MallocError)
 	  char *name = strdup( fname );
 	  if( name == 0 ){
 	    free( header );
-	    throw MallocError();
+	    throw StrBuffer::MallocError();
 	  }
 	  script_to_cache( name , header );
 	}else{
@@ -553,7 +555,7 @@ int replace_script( const char *sp , char *dst , int max )
   char *kekka;
   try{
     kekka = replace_script(sp);
-  }catch(MallocError){
+  }catch(StrBuffer::MallocError){
     strncpy( dst , sp , max );
     return 0;
   }

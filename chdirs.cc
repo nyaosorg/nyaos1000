@@ -16,7 +16,7 @@ enum{
   BIT_CD_LAST	   = 8,
 };
 
-
+const char *getShellEnv( const char * );
 
 int option_cd_goto_home=0;
 char prevdir[FILENAME_MAX]=".";
@@ -89,26 +89,52 @@ static StringStack currentDirectories;
 
 #endif /* ================================================================ */
 
-/* エラーウインドウを極力出さないようにした chdir
+/* シェル変数 CWD へ現在のカレントディレクトリの内容を反映させる
+ */
+void resetCWD()
+{
+  char newcwd[FILENAME_MAX];
+  if( getcwd_case( newcwd ) != NULL )
+    setShellEnv( "CWD" , newcwd );
+  else
+    setShellEnv( "CWD" , "(cannot get current dir)" );
+}
+
+
+/* カレントディレクトリを変更すると共に、
+ * シェル変数 "CWD" にカレントディレクトリを保存する。
+ * changeDir から呼び出される下請け関数
+ */
+static int changeDirAndSetEnv(const char *cwd)
+{
+  int rc=_chdir2( cwd );
+  if( rc == 0 )
+    resetCWD();
+  return rc;
+}
+
+
+/* chdir 関数
+ * ただし、エラーダイアログを極力出力させず、
+ * 同時に、シェル変数 "CWD" にカレントディレクトリを保存する。
  *	s ディレクトリ名
  * return 0:成功 -1:失敗
  */
-static int changeDir(const char *s)
+int changeDir(const char *s)
 {
   int rc=0;
+  char buffer[FILENAME_MAX];
   if( s[1] == ':' ){
-    char buffer[FILENAME_MAX];
-    
     DosError( FERR_DISABLEHARDERR );
     rc = _getcwd1(buffer,toupper(s[0]));
     if( rc == 0 ){
-      rc = _chdir2( s );
+      rc = changeDirAndSetEnv( s );
     }else{
       fprintf(stderr,"Drive %c: is not ready\n",s[0]);
     }
     DosError( FERR_ENABLEHARDERR );
   }else{
-    rc=_chdir2(s);
+    rc = changeDirAndSetEnv( s );
   }
   return rc;
 }
@@ -121,6 +147,7 @@ int cmd_pwd( FILE *source , Parse &params )
     return 0;
 
   FILE *fout=params.open_stdout();
+
   fputs(cwd,fout);
   putc('\n',fout);
   return 0;
@@ -141,7 +168,7 @@ static int cdshort_2(const char *cwdx,char *list[] , int modeflag )
       if( cdshort_1(list+1,modeflag) == 0 ){
 	return 0;
       }else{
-	chdir("..");
+	changeDir("..");
       }
     }
   }
@@ -209,7 +236,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
 
   if(argc<=0&&!(modeflag&BIT_CD_LAST)){
     if( option_cd_goto_home ){
-      const char *home=getenv("HOME");
+      const char *home=getShellEnv("HOME");
       if( home == NULL || changeDir(home) != 0 ){
 	fputs("nyaos: %HOME% does not point a right directory.\n",stderr);
 	return-1;
@@ -230,7 +257,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
   // ------- CDPATH を検索する。 --------
   
   if( modeflag & BIT_CD_PATH ){
-    const char *sp=getenv("CDPATH");
+    const char *sp=getShellEnv("CDPATH");
     
     if( sp != NULL ){
       char cdpath[FILENAME_MAX];
@@ -247,7 +274,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
 	if( lastchar != '\\' && lastchar != '/' && lastchar != ':' )
 	  *dp++ = '\\';
 	strcpy( dp , cwd );
-	if( access(cdpath,0)==0	 &&  _chdir2(cdpath)==0 ){
+	if( access(cdpath,0)==0	 &&  changeDir(cdpath)==0 ){
 	  strcpy(prevdir,wd);
 	  return 0;
 	}
@@ -262,7 +289,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
 
   if( modeflag & BIT_CD_SHORT ){
     /* CD-SHORT モード */
-    const char *env=getenv("CDSHORT");
+    const char *env=getShellEnv("CDSHORT");
     if( env != NULL ){
       int org_drive=_getdrive();
       
@@ -273,20 +300,19 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
 	  
 	  _chdrive(*env);
 	  getcwd(pwd,sizeof(pwd));
-	  chdir("/");
+	  changeDir("/");
 	  
 	  if( cdshort_1(argv,modeflag)==0 ){
 	    strcpy(prevdir,wd);
 	    return 0;
 	  }
-	  chdir(pwd);
+	  changeDir(pwd);
 	}
 	++env;
       }
       _chdrive( org_drive );
     }
   }
-  
   fprintf(stderr,"%s : no such directory.\n",argv[0]);
   return-1;
 }
@@ -307,7 +333,7 @@ int cmd_chdir( FILE *srcfil, Parse &params)
   }else if( option_cd_goto_home ){
     char wd[FILENAME_MAX];
     getcwd_case(wd);
-    const char *home=getenv("HOME");
+    const char *home=getShellEnv("HOME");
     if( home == NULL || changeDir(home) != 0 )
       fprintf(stderr,"chdir: $HOME does not point a right directory.\n");
     strcpy(prevdir,wd);
@@ -326,10 +352,11 @@ struct Dirstack{
 
 static char *gethome(int &size)
 {
-  char *home=getenv("HOME");
-  if( home == NULL  || (home=strdup(home))==NULL )
+  const char *_home=getShellEnv("HOME");
+  if( _home == NULL )
     return NULL;
 
+  char *home=strdup(_home);
   char *p=home;
   while( *p != '\0' ){
     if( *p == '\\' )
@@ -471,7 +498,7 @@ static int chdir_to_nth_stack(int n,char *error_dir=NULL)
     cur = cur->prev;
   }
   
-  if( _chdir2( cur->buffer ) != 0 ){
+  if( changeDir( cur->buffer ) != 0 ){
     if( error_dir != NULL )
       strcpy( error_dir , cur->buffer );
     return -3;
@@ -548,7 +575,7 @@ static int simple_popd(int nth=0)
     return -1;
   
   if( nth == 0 ){
-    if( _chdir2(dirstack->buffer) != 0 )
+    if( changeDir(dirstack->buffer) != 0 )
       return -2;
     strcpy(prevdir,wd);
     drop_stacktop();
@@ -610,7 +637,7 @@ int cmd_pushd( FILE *srcfil , Parse &params)
       return 0;
     }
     
-    if( _chdir2(dirstack->buffer) != 0){
+    if( changeDir(dirstack->buffer) != 0){
       fprintf(stderr,"%s: Specified directory in the stack is not found.\n"
 	      , dirstack->buffer );
       return 0;

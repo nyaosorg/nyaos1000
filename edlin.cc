@@ -12,6 +12,8 @@
 #include "macros.h"
 #include "keyname.h"
 
+const char *getShellEnv(const char *);
+
 #define KEY(x)	(0x100 | K_##x )
 #define CTRL(x)	((x) & 0x1F )
 
@@ -56,7 +58,7 @@ void Edlin::init()
   has_marked = false;
   strbuf[0]=0;
   
-  const char *env_markattr = getenv("NYAOSMARKCOLOR");
+  const char *env_markattr = getShellEnv("NYAOSMARKCOLOR");
   if( env_markattr == NULL )
     return;
 
@@ -713,7 +715,7 @@ int Edlin::complete_to_fullpath(const char *header)
    */
   char *bp=buffer;
   if( strbuf[fntop] == '~' ){
-    const char *home=getenv("HOME");
+    const char *home=getShellEnv("HOME");
     if( home != NULL ){
       ++bp;
       while( *home != '\0' )

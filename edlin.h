@@ -237,7 +237,7 @@ public:
   static void bindkey_nyaos();
   static int bindkey(const char *key,const char *funcname);
   static Status (Shell::*get_bindkey_function(int key))()
-    { return bindmap[ key ]; }
+    { return (unsigned(key) < NUMOF_BINDMAP ) ? bindmap[ key ] : NULL ; }
   static int bind_hotkey(const char *key,const char *program);
   static void bindlist(FILE *fp);
 

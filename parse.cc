@@ -264,17 +264,6 @@ int Parse::check ()
   return terminal;
 }
 
-#if 0
-static FILE *pp_kill_popen;
-static void kill_popen(int sig)
-{
-  fputs("\a\a\a",stderr);
-  fflush(stderr);
-  kill( pp_kill_popen->_pid , sig );
-  signal( sig , SIG_ACK );
-}
-#endif
-
 FILE *Parse::open_stdout()
 {
   if( redirect[1] != NULL ){

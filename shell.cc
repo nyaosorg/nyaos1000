@@ -26,9 +26,9 @@ int Shell::complete_hook(Complete &com)
     }
 
     /* alias */
-    extern Hash<Alias> alias_hash;
+    extern Hash <Alias> alias_hash;
 
-    for(HashIndex<Alias> hi(alias_hash) ; *hi != NULL ; hi++ ){
+    for(HashIndex <Alias> hi(alias_hash) ; *hi != NULL ; hi++ ){
       if( com.add_buildin_command(hi->name) == 0 )
 	n++;
     }

@@ -25,9 +25,8 @@ int cmd_exec  (FILE *source , Parse &params );
 int cmd_mode  (FILE *source , Parse &params );
 int cmd_pwd   (FILE *source , Parse &params );
 int cmd_option(FILE *source, Parse &params );
+int cmd_subject(FILE *source, Parse &params );
 int cmd_comment(FILE *source, Parse &params );
-int cmd_alias(FILE *source, Parse & );
-int cmd_unalias(FILE *source, Parse & );
 int cmd_mkdir(FILE *source, Parse & );
 int cmd_rmdir(FILE *source, Parse & );
 int cmd_history(FILE *source, Parse & );
@@ -42,7 +41,6 @@ int cmd_jobs( FILE *source , Parse & );
 int cmd_console( FILE *source , Parse & );
 
 /* "chdirs.cc" */
-
 int chdir_with_cdpath(const char *cwd);
 int cmd_chdir (FILE *srcfil, Parse &params );
 int cmd_pushd( FILE *srcfil , Parse &params);
@@ -50,15 +48,12 @@ int cmd_popd( FILE *srcfil, Parse &params);
 int cmd_dirs( FILE *srcfil , Parse &params );
 
 /* "alias.cc" */
-int cmd_unalias(FILE *fin, const char *parameter,int argc,char **argv);
-int cmd_alias(FILE *fin, const char *sp,int argc,char **argv);
+int cmd_alias( FILE * , Parse &params );
+int cmd_unalias( FILE * , Parse &params );
 
 /* "script.cc" */
 int cmd_rehash(FILE *source, Parse &args);
 int cmd_cache(FILE *source,Parse &args);
-
-/* "source.cc" */
-int cmd_source( FILE *srcfil, Parse &params );
 
 /* "command2.cc" */
 int cmd_hotkey(FILE *source,Parse &param );
@@ -68,19 +63,21 @@ int cmd_set( FILE *srcfil, Parse &params );
 int cmd_cursor( FILE *fp, Parse &params);
 int cmd_lecho(FILE *source, Parse &params );
 int cmd_echo(FILE *srcfil, Parse &params );
-// int cmd_drvalias(FILE *srcfil, Parse &params );
 
-/* "prepro.cc" */
-// int cmd_drivealias(FILE *source , Parse &arg );
+/* その他：１ソース＝１コマンド */
+int eadir(int argc, char **argv,FILE *fout,Parse &);	/* "eadir.cc" */
+int cmd_foreach(FILE *source, Parse &params );		/* "foreach2.cc" */
+int cmd_source( FILE *srcfil, Parse &params );		/* "source.cc" */
+int cmd_let( FILE *,Parse & );				/* "let.cc" */
 
-/* "eadir.cc" */
-int eadir(int argc, char **argv,FILE *fout,Parse &);
+/* その他：１コマンド＝１ライン関数 */
+static int cmd_exit( FILE * , Parse & ){ return RC_QUIT; }
+static int cmd_rem ( FILE * , Parse & ){ return 0;}
 
-/* "spool.cc" *
- * int cmd_spool(FILE *source , Parse &arg );
- * スプール機能をつけようとしてあきらめたのだ
- */ 
+static int cmd_ls( FILE *srcfil, Parse &params )
+{  return params.call_as_main(eadir);  }
 
+/* Ctrl-C が押された際の、シグナルハンドラ */
 volatile int ctrl_c=0;
 void ctrl_c_signal(int sig)
 {
@@ -88,31 +85,7 @@ void ctrl_c_signal(int sig)
   signal(sig,SIG_ACK);
 }
 
-static int compatible(FILE *source , Parse &params ,
-		      int (*routine)(  FILE * , const char*,int,char**) )
-{
-  int argc=params.get_argc();
-  char **argv=(char**)alloca( (argc+1)*sizeof(char*) );
-
-  for(int i=0 ; i<argc ; i++){
-    argv[i] = (char*)alloca( params[i].len + 1 );
-    memcpy( argv[i] , params[i].ptr , params[i].len );
-    argv[i][ params[i].len ] = '\0';
-  }
-  return (*routine)( source , params.get_parameter() , argc , argv );
-}
-
-int foreach(FILE *,const char *parameter, int argc, char **argv);
-
-static int foreach(FILE *source, Parse &params )
-{  return compatible(source,params,foreach);  }
-
-int cmd_ls( FILE *srcfil, Parse &params )
-{  return params.call_as_main(eadir);  }
-
-static int cmd_exit( FILE *srcfil, Parse &params )
-{  return RC_QUIT;  }
-
+/* 逆クォート処理をするパス */
 void backquote_replace(const char *sp , char *dp , int max )
 {
   int quote=0;
@@ -220,10 +193,7 @@ void backquote_replace(const char *sp , char *dp , int max )
   *dp = '\0';
 }
 
-static int cmd_rem(FILE *source , Parse &)
-{
-  return 0;
-}
+
 
 Command jumptable[]={
   {"alias",  cmd_alias   },
@@ -238,16 +208,16 @@ Command jumptable[]={
   {"chdir",  cmd_chdir   },
   {"comment",cmd_comment },
   {"dirs",   cmd_dirs    },
-//  {"drvalias",cmd_drivealias },
   {"echo",   cmd_echo    },
   {"exec",   cmd_exec    },
   {"exit",   cmd_exit    },
   {"fg",     cmd_fg      },
-  {"foreach",foreach     },
+  {"foreach",cmd_foreach },
   {"history",cmd_history },
   {"hotkey", cmd_hotkey  },
   {"jobs",   cmd_jobs    },
   {"lecho",  cmd_lecho   },
+  {"let" ,   cmd_let     },
   {"ls",     cmd_ls      },
   {"md",     cmd_mkdir   },
   {"mode",   cmd_mode    },
@@ -263,6 +233,7 @@ Command jumptable[]={
   {"rmdir",  cmd_rmdir   },
   {"set",    cmd_set     },
   {"source", cmd_source  },
+  {"subject",cmd_subject },
   {"unalias",cmd_unalias },
   {"ver",    cmd_ver     },
   {"which"  ,cmd_which   },
@@ -306,8 +277,6 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   if( cmdline[0] == '#' )
     return 0;
 
-
-
   /* カレントドライブの変更 */
   if(   is_alpha(cmdline[0]) && cmdline[1]==':' 
      && (cmdline[2]=='\0' || is_space(cmdline[2])) ) {
@@ -316,17 +285,15 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
     DosError( FERR_DISABLEHARDERR );
     getcwd_case(wd);
     _chdrive( c=cmdline[0] );
-    /* _chdrive( c = drivealias[ cmdline[0] & 0x1F ] );
-     * ↑ ドライブエイリアスの残骸 
-     */
 
-    /*
-     * _chdrive( ) は、いつも0を返してくるので実行結果を把握できない (+_;)
-     * 期待通りにカレントドライブが変わったかどうか疑ってみる
+    /* _chdrive( ) は、いつも0を返してくるので実行結果を把握できない (+_;)
+     * 期待通りにカレントドライブが変わったかどうか疑ってみる。
      */
-    if(_getdrive()==toupper(c))	  /* うまく変わってたら	 */
-      strcpy(prevdir,wd); /* prevdirを覚えておく */
-    else
+    if(_getdrive()==toupper(c)){/* うまく変わってたら  */
+      strcpy(prevdir,wd);	/* prevdirを覚えておく */
+      getcwd_case(wd);		/* カレントディレクトリをシェル変数へ反映 */
+      setShellEnv("CWD",wd);
+    }else
       fputs("Cannot find the specified drive.\n",stderr);
     DosError( FERR_ENABLEHARDERR );
     return 0;
@@ -347,89 +314,106 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   if( option_debug_echo )
     printf("PASS-1:{%s}\n",buffer[curbuf] );
 
-  // 一般的プリプロセス(環境変数など) 
+  /* 一般的プリプロセス(環境変数など) */
   
   preprocess( buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
   curbuf ^= 1;
   if( option_debug_echo )
     printf("PASS-2:{%s}\n",buffer[curbuf] );
-  
-  /* エイリアスの置換処理 */
-  replace_alias( buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
-  curbuf ^= 1;
 
-  if( option_debug_echo )
-    printf( "PASS-3:{%s}\n" , buffer[curbuf] );
-
-  /* 逆クォートの置換処理 */
-  if( option_backquote ){
-    backquote_replace( buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]));
+  try{
+    /* エイリアスの置換処理 */
+    replace_alias( buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
     curbuf ^= 1;
-  }
-  if( option_debug_echo )
-    printf( "PASS-4:{%s}\n" , buffer[curbuf] );
 
-  replace_script(  buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
-  curbuf ^= 1;
-  
-  /* スクリプト置換 */
-  if( option_debug_echo )
-    printf("PASS-5:{%s}\n", buffer[curbuf] );
-  
-  /* 内臓コマンド実行 */
-  for(const char *pointer=buffer[curbuf];;){
-    Parse params(pointer);
+    if( option_debug_echo )
+      printf( "PASS-3:{%s}\n" , buffer[curbuf] );
     
-    /* ヒストリ変換などで文字列が０になることもあるので、
-     * ここでチェックする。 */
-    if( params.get_argc() <= 0 ){
-      pointer = params.get_nextcmds();
-      if( *pointer == '\0' )
-	return 0;
-      else
-	continue;
+    /* 逆クォートの置換処理 */
+    if( option_backquote ){
+      backquote_replace( buffer[curbuf] , buffer[curbuf^1] ,sizeof(buffer[0]));
+      curbuf ^= 1;
     }
 
-    Command *cmd = (  option_ignore_cases
-		    ? command_hash.lookup_tolower( params[0] )
-		    : command_hash[ params[0] ]
-		    );
-
-    if( cmd == NULL )
-      break;
-
-    if( params==NULL ){
-      fputs("Too near terminate charactor.\n",stderr);
-      return 1;
-    }
-    int rc=(*cmd->func)(srcfil,params);
-
-    switch( rc ){
-    case RC_HOOK:
-      goto spawn;
-
-    case RC_ABORT: /* Ctrl-C で終了していたら、続くコマンドは実行しない */   
-      if( ctrl_c != 0 )
-	fputs("\n^C\n",stderr);
-      return RC_ABORT;
-
-    default:
-      Parse::Terminal term=params.get_terminal();
-      if(   term==Parse::SEMI_TERMINAL 
-	 || term==Parse::AMP_TERMINAL
-	 || term==(rc ? Parse::OR_TERMINAL: Parse::AND_TERMINAL) )
-	{
-	  pointer = params.get_nextcmds();
+    if( option_debug_echo )
+      printf( "PASS-4:{%s}\n" , buffer[curbuf] );
+    
+    replace_script(  buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
+    curbuf ^= 1;
+    
+    /* スクリプト置換 */
+    if( option_debug_echo )
+      printf("PASS-5:{%s}\n", buffer[curbuf] );
+  
+    /* 内臓コマンド実行 */
+    for(const char *pointer=buffer[curbuf];;){
+      Parse params(pointer);
+      
+      /* ヒストリ変換などで文字列が０になることもあるので、
+       * ここでチェックする。 */
+      if( params.get_argc() <= 0 ){
+	pointer = params.get_nextcmds();
+	if( *pointer == '\0' )
+	  return 0;
+	else
 	  continue;
-	}
-      else
-	return rc;
+      }
+      
+      Command *cmd = (  option_ignore_cases
+		      ? command_hash.lookup_tolower( params[0] )
+		      : command_hash[ params[0] ]
+		      );
+      
+      if( cmd == NULL )
+	break;
+      
+      if( params==NULL ){
+	fputs("Too near terminate charactor.\n",stderr);
+	return 1;
+      }
+      int rc=(*cmd->func)(srcfil,params);
+      
+      switch( rc ){
+      case RC_HOOK:
+	goto spawn;
+	
+      case RC_ABORT: /* Ctrl-C で終了していたら、続くコマンドは実行しない */   
+	if( ctrl_c != 0 )
+	  fputs("\n^C\n",stderr);
+	return RC_ABORT;
+	
+      default:
+	Parse::Terminal term=params.get_terminal();
+	if(   term==Parse::SEMI_TERMINAL 
+	   || term==Parse::AMP_TERMINAL
+	 || term==(rc ? Parse::OR_TERMINAL: Parse::AND_TERMINAL) )
+	  {
+	    pointer = params.get_nextcmds();
+	    continue;
+	  }
+	else
+	  return rc;
+      }
     }
+    
+    if( echoflag )
+      puts( buffer[curbuf] );
+    
+  spawn:
+    return spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",buffer[curbuf],NULL);
+
+#if 0
+  }catch( SyntaxError e ){
+    fputs( e.getMsg() , stderr );
+    return e.getRc();
+  }catch( StrBuffer::MallocError ){
+    fputs("nyaos: memory allocation error. "
+	  "Nyaos didn't execute the command(s).",stderr);
+    return -1;
+#endif
+  }catch(...){
+    fputs(  "nyaos: internal error. Nyaos did'nt execute the command(s).\n"
+	  , stderr );
+    return -1;
   }
-
-  if( echoflag )
-    puts( buffer[curbuf] );
-
- spawn:
-  return spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",buffer[curbuf],NULL);
 }

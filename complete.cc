@@ -89,7 +89,7 @@ static int pathsplit( const char *path, char *dir, char *fname )
        && (option_tilda_without_root || *(p+1)=='\\' || *(p+1)=='/' ) ){
       
       if( *(p+1) == ':' ){
-	const char *system_ini=getenv("SYSTEM_INI");
+	const char *system_ini=getShellEnv("SYSTEM_INI");
 	if( system_ini != NULL ){
 	  *dir++ = *system_ini;
 	}else{
@@ -97,7 +97,7 @@ static int pathsplit( const char *path, char *dir, char *fname )
 	}
 	++p;
       }else{
-	const char *home=getenv("HOME");
+	const char *home=getShellEnv("HOME");
 	if( home != NULL ){
 	  while( *home != '\0' )
 	    *dir++ = *home++;
@@ -223,7 +223,7 @@ void Complete::make_command_cache()
   path_cache.clear();
 
   // 環境変数 PATH 上のコマンドの登録
-  const char *envpath=getenv("PATH");
+  const char *envpath=getShellEnv("PATH");
   if( envpath != NULL ){
     char *env=(char*)alloca(strlen(envpath)+1);
     strcpy(env,envpath);
@@ -244,7 +244,7 @@ void Complete::make_command_cache()
   /* 環境変数 SCRIPTPATH 上のコマンドの登録
    * こんなコード書いている時点で、NYAOS 専用になってしまうのだな
    */
-  envpath=getenv("SCRIPTPATH");
+  envpath=getShellEnv("SCRIPTPATH");
   if( envpath != NULL ){
     char *env=(char*)alloca(strlen(envpath)+1);
     strcpy(env,envpath);
@@ -266,7 +266,7 @@ void Complete::make_command_cache()
    * これでは ZIP/JAR ファイルの中などは実行できないが、
    * そこまでする必要もないであろう。
    */
-  envpath=getenv("CLASSPATH");
+  envpath=getShellEnv("CLASSPATH");
   if( envpath != NULL ){
     char *env=(char*)alloca(strlen(envpath)+1);
     strcpy(env,envpath);
