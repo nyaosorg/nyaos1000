@@ -6,6 +6,7 @@
 #include "nyaos.h"
 #include "parse.h"
 #include "edlin.h"
+#include "pathlist.h"
 
 int cmd_bind(FILE *source, Parse &param )
 {
@@ -68,6 +69,33 @@ int cmd_bindkey(FILE *source,Parse &param)
   return 0;
 }
 
+/* putenv は putenv("VAR=VALUE")という形式でないと受けつけない為に作った
+ * フィルター関数。VAR は小文字でも大文字に変換してくれる。
+ */
+static void setenv(const char *env,const char *value)
+{
+  int env_len=strlen(env);
+  int value_len=strlen(value);
+  
+  char *buffer=(char*)malloc(env_len+value_len+2);
+  char *dp = buffer;
+  while( *env != '\0' ){
+    if( islower(*env & 255) ){
+      *dp++ = toupper(*env);
+      ++env;
+    }else{
+      *dp++ = *env++;
+    }
+  }
+  if( *value == '\0' ){
+    *dp = '\0';
+  }else{
+    *dp++ = '=';
+    strcpy( dp , value );
+  }
+  putenv( buffer );
+}
+
 int cmd_set( FILE *srcfil, Parse &params )
 {
   if( params.get_argc() < 2 )
@@ -77,72 +105,96 @@ int cmd_set( FILE *srcfil, Parse &params )
   if( sp == NULL )
     return RC_HOOK;
 
-  int ch;
-  char envname[1024],*dp=envname;
   const char *tail=params.get_tail();
-
+  int appendmode=0;
+  
   /* 変数名の前の空白のスキップ */
   while( *sp!='\0' && is_space(*sp) )
     sp++;
 
-  /* 変数名のコピ－ */
-  while( *sp != '=' && !is_space(*sp ) ){
-    if( sp >= tail || *sp == '>' ){
-      /* 変数名がない ---> 画面表示のみ */
+  // --------------- 変数名のコピ－ --------------
+  char env_name[256];
+  char *dp=env_name;
+  for(;;){
+    if( dp >= tailof(env_name)-2 ){
+      // サイズオーバー
+      fputs("set: Too long variable name!",stderr);
+      return 1;
+    }else if( sp >= tail || *sp == '>'  || *sp == '\0' ){
+      // 変数名が無い → 画面表示のみ。→ オリジナル set に任せる。
       return RC_HOOK;
     }else if( *sp=='<' ){
-      fputs("You cannot input-redirect on command set.\n",stderr);
+      // 入力リダイレクトはできないのでエラー
+      fputs("set: can not redirect stdin.\n",stderr);
       return 1;
+    }else if( *sp=='+'  &&  *(sp+1) == '=' ){
+      // 「+=」演算子
+      appendmode = 1;
+      sp += 2;
+      break;
+    }else if( *sp=='=' ){
+      sp++;
+      break;
+    }else if( is_space(*sp) ){
+      // スペースがあった場合は、それを読み飛ばした上で、
+      // 「=」「+=」があるかチェック。無ければ、エラー。
+      do{
+	++sp;
+      }while( is_space(*sp) );
+      if( *sp == '<' ){
+	fputs("set: can not redirect stdin.\n",stderr);
+	return 1;
+      }else if( *sp == '>' ){
+	return RC_HOOK;
+      }else if( *sp=='+' && *(sp+1)=='=' ){
+	appendmode = 1;
+	sp+=2;
+	break;
+      }else if( *sp=='=' ){
+	++sp;
+	break;
+      }else{
+	*dp = '\0';
+	fprintf(stderr
+		, "set: Invalid environment variable name : %s\n"
+		, env_name );
+	return 2;
+      }
     }
     if( is_kanji(*sp) ){
       *dp++ = *sp++;
       *dp++ = *sp++;
+    }else if( is_lower(*sp & 255) ){
+      *dp++ = toupper(*sp);
+      ++sp;
     }else{
-      *dp++ = to_upper(*sp) ;
-      sp++;
+      *dp++ = *sp++;
     }
   }
-
-  char *final_space=dp;
-
-  /* 変数名～「=」の空白のスキップ */
-  while( *sp != '=' ){
-    if( sp >= tail || *sp == '>' ){
-      return RC_HOOK;
-    }else if( *sp == '<' ){
-      fputs("You cannot input-redirect on command set.\n",stderr);
-      return 1;
-    }
-
-    if( !is_space(*sp) ){
-      fputs("Invalid Argument.\n",stderr);
-      return 2;
-    }
-    sp++;
-  }
-
-  /* 「=」のスキップ */
-  *dp++ = *sp++;
+  *dp = '\0';
   
-  /* 「=」～引数の直前の空白を削除 */
+  // 「=」以降の空白を削除(ここまでする必要ない？)
   for(;;){
-    if( *sp == '\0' ){
-      /*「set ahaha=」で環境変数 ahaha を削除する */
-      *final_space = '\0';
-      putenv( strdup(envname) );
+    if( *sp == '\0' || sp >= tail ){
+      //「set ahaha=」で環境変数 ahaha を削除する
+      //「set ahaha+=」は何もしない。
+      if( ! appendmode )
+	setenv( env_name , "\0" );
       return 0;
     }
     if( !is_space(*sp) )
       break;
     ++sp;
   }
-
-  /*  右辺値のコピ－ */
   
-  final_space=NULL;
+  // 右辺値の取得
+
+  char *final_space=NULL;
   int quote=0;
   int compati=( *sp != '"' );
   
+  char env_value[1024];
+  dp = env_value;
   while( sp < tail ){
     if( is_space(*sp) ){
       if( final_space==NULL && quote==0 )
@@ -172,14 +224,20 @@ int cmd_set( FILE *srcfil, Parse &params )
       *dp++ = *sp++;
     *dp++ = *sp++;
   }
- exit:
   *dp = '\0';
   
   if( final_space != NULL )
     *final_space = '\0';
   
-  putenv( strdup(envname) );
-  
+  if( appendmode ){
+    PathList pathlist;
+    pathlist.append( env_value );
+    char *org=getenv(env_name);
+    if( org != NULL )
+      pathlist.append( getenv(env_name) );
+    pathlist.listing( env_value );
+  }
+  setenv( env_name , env_value );
   return 0;
 }
 

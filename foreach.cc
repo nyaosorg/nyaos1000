@@ -1,13 +1,6 @@
-#include <assert.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <io.h>
 #include <ctype.h>
-#include <process.h>
-#include <sys/video.h>
-
-#include <io.h> /* for dup,dup2 */
 
 #include "finds.h"
 #include "edlin.h"

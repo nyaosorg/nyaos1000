@@ -21,6 +21,7 @@ extern char tolower_table[128+256];
 
 #undef numof
 #define numof(A) (sizeof(A)/sizeof((A)[0]))
+#define tailof(A) ((A)+numof(A))
 
 #define alloca_char(n) ((char*)alloca(n))
 

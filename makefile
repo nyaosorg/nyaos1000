@@ -13,7 +13,7 @@ LDFLAGS=-lvideo -lwrap -Zcrtdll -lsocket
 NYAOS=	nyaos.o edlin.o complete.o eadir.o shell.o foreach.o script.o \
 	alias.o parse.o execute.o chdirs.o commands.o prepro.o bindkey.o \
 	open.o source.o search.o finds.o getkey.o dbcs.o hash.o command2.o \
-	prompt.o edlin2.o wordseek.o suffix.o filelist.o
+	prompt.o edlin2.o wordseek.o suffix.o filelist.o pathlist.o
 
 nyaos.exe : $(NYAOS)
 	$(CC) $^ -o $@ $(LDFLAGS)
@@ -33,6 +33,7 @@ suffix.o : suffix.cc parse.h hash.h
 wordseek.o : wordseek.cc edlin.h
 nyaos.o : nyaos.cc edlin.h
 hash.o : hash.cc hash.h
+pathlist.o : pathlist.cc pathlist.h
 
 bindkey.o : bindkey.cc bindfunc.cc keynames.cc
 bindfunc.cc : bindfunc.tbl mkbtable.cmd

@@ -1,8 +1,6 @@
 #include <assert.h>
 #include <io.h>
-#include <fcntl.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 
 #include <string.h> /* for memset */
 #include <stdlib.h> /* for _osmode */

@@ -1,7 +1,5 @@
 #include <ctype.h>
-#include <assert.h>
 #include <string.h>
-#include <stdio.h>
 #include <stdarg.h>
 
 #define INCL_VIO
@@ -208,13 +206,13 @@ int Edlin::complete_core(int fntop,int basesize)
   char *buffer=(char*)alloca(basesize+1);
   int  command_complete = (fntop <= 1);
   int  quoted=false;
-
+  
   if( strbuf[fntop] == '"' ){
     fntop++;
     basesize--;
     quoted = 1;
   }
-
+  
   char *bp=buffer;
   while( fntop < pos )
     *bp++ = strbuf[fntop++];

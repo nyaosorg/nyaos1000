@@ -1,10 +1,6 @@
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/nls.h>
-#include <ctype.h>
-#include <fnmatch.h>
 #include <stdarg.h>
 
 #include "complete.h"

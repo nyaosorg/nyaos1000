@@ -1,9 +1,6 @@
-#include <alloca.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <ctype.h>
+#include <stdio.h>
 #include <sys/types.h>
-#include <dirent.h>
 
 #include "hash.h"
 #include "edlin.h"
@@ -69,7 +66,7 @@ void ShellEdlin::complete_list()
 {
   Complete com;
 
-  int fntop=seek_word_top();  
+  int fntop=seek_word_top();
   int basesize=pos-fntop;
   int command_complete=(fntop <= 0) ;
   char *buffer=(char*)alloca(basesize+6);
@@ -83,7 +80,7 @@ void ShellEdlin::complete_list()
     *bp++ = strbuf[fntop++];
   *bp = '\0';
   
-  int nfiles=(command_complete
+  int nfiles=(  command_complete
 	      ? com.makelist_with_path( buffer ) 
 	      : com.makelist( buffer )
 	      );

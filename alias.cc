@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
 #include <ctype.h>
-#include <string.h>
 #include <stdlib.h>
 #include "hash.h"
 #include "nyaos.h"

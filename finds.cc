@@ -1,8 +1,6 @@
 #include <assert.h>
 #include <ctype.h>
-#include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 
 #define INCL_DOSNLS
 #include "macros.h"

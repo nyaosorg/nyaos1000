@@ -1,5 +1,3 @@
-#include <stdio.h>
-#include <string.h>
 #include <sys/kbdscan.h>
 #include <stdlib.h>
 #include <ctype.h>

@@ -1,7 +1,5 @@
 #include <ctype.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <sys/nls.h>
 #include "parse.h"
 #include "Edlin.h"
 #include "macros.h"

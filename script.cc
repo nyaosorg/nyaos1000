@@ -1,9 +1,9 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/nls.h>
+
+#define INCL_DOSSESMGR
+
 #include "macros.h"
 #include "finds.h"
 #include "hash.h"
@@ -13,6 +13,7 @@ int scriptflag=1;
 int option_amp_start=1;
 int option_sos=0;
 int option_script_cache=1;
+int option_auto_close=1;
 
 // ファイル名を、'/' <--> '\\' 変換しながら、コピーする
 // 空白や、ヌルをファイル名末尾とみなす。
@@ -256,6 +257,25 @@ static int insert_interpretor(const char *cache,const char *fname,SmartPtr &dp)
 
 extern int suffix( const char *path , SmartPtr &dp );
 
+static int is_pm_application(const char *fname)
+{
+  ULONG apptype;
+  if( DosQueryAppType(  (const unsigned char *)fname
+		      , &apptype ) != 0 )
+    return -1;
+  return (apptype & 7)==3;
+}
+
+static void insert_close_option(SmartPtr &dp)
+{
+  *dp++ = '/';
+  *dp++ = 'C';
+  *dp++ = ' ';
+  *dp++ = '/';
+  *dp++ = 'F';
+  *dp++ = ' ';
+}
+
 int replace_script( const char *sp , char *dst, int max  )
 {
   SmartPtr dp(dst,max);
@@ -263,6 +283,7 @@ int replace_script( const char *sp , char *dst, int max  )
     while( is_space(*sp) )
       *dp++ = *sp++;
     
+    int start_inserted=0;
     if( option_amp_start ){
       // 先行して、末尾が & かどうかしらべる。
       // もし、そうならば先頭に「start」を追加する。
@@ -283,6 +304,7 @@ int replace_script( const char *sp , char *dst, int max  )
 	    char *s = "start ";
 	    while( *s != '\0' )
 	      *dp++ = *s++;
+	    start_inserted = 1;
 	  }
 	  goto check_script;
 
@@ -316,6 +338,7 @@ int replace_script( const char *sp , char *dst, int max  )
       char fname[FILENAME_MAX];
       char path[FILENAME_MAX];
       
+      // 「$0」→ fname
       copy_filename(sp,SmartPtr(fname,sizeof(fname)),&sp,NULL);
       
       ScriptCache *sc;
@@ -327,12 +350,17 @@ int replace_script( const char *sp , char *dst, int max  )
 	  fputs( "Script cache hit\n",stderr);
 	  fflush(stderr);
 	}
+	if( option_auto_close  &&  start_inserted )
+	  insert_close_option(dp);
 	dp = strcpy_tail(dp,sc->interpreter);
 	*dp++ = ' ';
 	copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
       }else if( type==FILE_EXISTS ){
 	// --- おそらく、スクリプト ---
+	if( option_auto_close  &&  start_inserted )
+	  insert_close_option(dp);
+	
 	if( insert_interpretor(fname,path,dp) < 0 ){
 	  /* -- ext文によるスクリプトの可能性あり */
 	  suffix(path,dp);
@@ -342,9 +370,13 @@ int replace_script( const char *sp , char *dst, int max  )
 	  copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
 	}
 	copyargs(sp,dp,&sp,&dp);
-
+	
       }else if(  type != COM_FILE || sos(sp,dp,path) != 0 ){
 	// --- OS/2 の実行ファイル ---
+	if(    option_auto_close  &&  start_inserted 
+	   &&  ! is_pm_application(fname)  ){
+	  insert_close_option(dp);
+	}
 	copy_filename(fname,dp,NULL,&dp, BACKSLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
       }
@@ -357,6 +389,8 @@ int replace_script( const char *sp , char *dst, int max  )
 	SearchEnv(fname,"SCRIPTPATH",path);
 	copy_filename(path,dp,NULL,&dp);
       }else{
+	if( option_auto_close  &&  start_inserted  &&  !is_pm_application(sp) )
+	  insert_close_option(dp);
 	copy_filename(sp,dp,&sp,&dp);
       }
       copyargs(sp,dp,&sp,&dp);

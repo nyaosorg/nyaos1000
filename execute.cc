@@ -1,11 +1,7 @@
 #include <ctype.h>
-#include <assert.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <process.h>
 #include <signal.h>
-#include <io.h>
 #include <os2.h>
 
 #include "hash.h"
@@ -17,7 +13,7 @@ extern char *cmdexe_path; /* in nyaos.cc */
 extern char drivealias[];
 extern int echoflag;
 
-int option_single_quote=1;
+int option_single_quote=0;
 int option_backquote=1;
 int option_backquote_in_quote=0;
 int option_debug_echo;
@@ -133,7 +129,7 @@ void backquote_replace(const char *sp , char *dp , int max )
 	quote ^= 1;
 	*dp++ = *sp++;
       }
-    }else if( *sp == '\'' && (quote & 1)==0 ){
+    }else if( *sp == '\'' && (quote & 1)==0 && option_single_quote ){
       quote ^= 2;
       *dp++ = '"'; ++sp;
     }else if( is_kanji(*sp) ){

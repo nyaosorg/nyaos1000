@@ -4,10 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
-#include <dirent.h>
-#include <sys/stat.h>
 #include <sys/ea.h>
-#include <conio.h>
 #include <io.h>
 #include <time.h>
 #include <string.h>
@@ -377,6 +374,7 @@ void dir1(FileListT *flist , int max_length , FILE *fout)
   if( flist->attr & A_DIR ){
     smart_copy( headstrp , ls_directory );
     attrstr[ AS_DIR ] = 'd';
+    attrstr[ AS_EXEC ] = 'x';
     tailchar = '/';
   }else if( flist->attr & A_HIDDEN ){
     if( ! ls_flag[ LS_ALL ] )
@@ -397,10 +395,12 @@ void dir1(FileListT *flist , int max_length , FILE *fout)
     attrstr[ AS_EXEC ] = 'x';
   }else if( flist->attr & A_RONLY ){
     smart_copy( headstrp , ls_read_only_file );
-    attrstr[ AS_WRITE ] = '-';
   }else{
     smart_copy( headstrp , ls_normal_file );
   }
+
+  if( flist->attr & A_RONLY )
+    attrstr[ AS_WRITE ] = '-';
   
   if( flist->attr & A_ARCHIVE )
     attrstr[ AS_ARCHIVE ] = 'a';

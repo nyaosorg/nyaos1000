@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <io.h>
 #include <ctype.h>
@@ -37,7 +36,12 @@ int option_cmdlike_crlf=0;
 char comspec[128]="COMSPEC=";
 char *cmdexe_path=comspec+8;
 
-
+int cmd_ver( FILE *source , Parse &argv )
+{
+  spawnl(P_WAIT,cmdexe_path,"CMD","/C","ver",NULL);
+  puts( "Nihongo Yet Another Os/2 Shell is "VERSION );
+  return 0;
+}
 
 static void get_scrsize_with_env(int *wh)
 {
@@ -202,7 +206,7 @@ int main(int argc, char **argv)
 	    perror( argv[0] );
 	    return -1;
 	  }
-	  sprintf( home , "HOME=%s" , argv[++i] );
+	  sprintf( home , "HOME=%s" , argv[i] );
 	  putenv( home );
 	}
 	break;

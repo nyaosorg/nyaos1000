@@ -1,10 +1,7 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <sys/ea.h>
-#include <sys/nls.h>
 #include <sys/video.h>
 #include <ctype.h>
-#include <io.h>
 #include <process.h>
 
 #include "edlin.h"
@@ -27,6 +24,7 @@ extern int option_script_cache;
 extern int option_backquote;
 extern int option_backquote_in_quote;
 extern int option_ignore_cases;
+extern int option_auto_close;
 
 int echoflag=0;
 
@@ -63,13 +61,6 @@ int cmd_mode( FILE *source , Parse &args )
   if( option_vio_cursor_control ){
     v_getctype( &cursor_start , &cursor_end );
   }
-  return 0;
-}
-
-int cmd_ver( FILE *source , Parse &argv )
-{
-  spawnl(P_WAIT,cmdexe_path,"CMD","/C","ver",NULL);
-  puts( "Nihongo Yet Another Os/2 Shell is "VERSION );
   return 0;
 }
 
@@ -190,6 +181,7 @@ struct Option{
 } optlist[]={
   { "amp_start"            , &option_amp_start                 , 1  , 0 },
   { "anywhere_history"     , &option_tcshlike_history          , 1  , 0 },
+  { "auto_close"	   , &option_auto_close                , 1  , 0 },
   { "backquote"            , &option_backquote                 , 1  , 0 },
   { "backquote_in_quote"   , &option_backquote_in_quote        , 1  , 0 },
   { "beep"                 , &ShellEdlin::beep_ok              , 1  , 0 },

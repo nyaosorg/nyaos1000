@@ -1,5 +1,4 @@
 #include <ctype.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/kbdscan.h>
@@ -53,6 +52,7 @@ static struct bind_t{
   { CTRL('J') , Shell::input_terminate,"ENTER","newline  (default)" },
   { CTRL('L') , Shell::repaint,"CTRL_L","clear_screen  (default)" },
   { KEY(HOME) , Shell::go_ahead,"HOME","beginning_of_line  (default)" },
+  { KEY(END)  , Shell::go_tail,"END","end_of_line (default)" },
   { CTRL('U') , Shell::cancel,"CTRL_U","kill_whole_line  (default)" },
   { '\x1B'    , Shell::cancel,"ESC","kill_whole_line  (default)" },
   { CTRL('C') , Shell::abort, "CTRL_C","abort (default)" },

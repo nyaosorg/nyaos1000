@@ -7,15 +7,12 @@
 #include <os2.h>
 
 /* for stat() */
-#include <io.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h> /* for A_DIR */
 
-#include <conio.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
 #include <ctype.h>
 #include <process.h>
 
@@ -28,6 +25,28 @@ extern Hash <Command> command_hash;
 
 int is_hab_initd=0;
 HAB hab;
+
+#if 0
+char *getClipBoard()
+{
+  if( is_hab_initd ){
+    is_hab_initd=0;
+    hab = WinInitialize(0);
+  }
+  char *rc;
+  
+  WinOpenClipbrd(hab);
+  char *cliptext = (char*)WinQueryClipbrdData(hab,CF_TEXT);
+  if( cliptext == NULL )
+    rc = NULL;
+  else
+    rc = strdup(cliptext);
+
+  WinCloseClipBrd(hab);
+  
+  return rc;
+}
+#endif
 
 class SwitchList{
   int count;
