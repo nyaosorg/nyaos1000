@@ -173,15 +173,17 @@ extern "C" {
 static int dbcs_fputs(const char *s,FILE *fout)
 {
   int i=0;
-
+#if 0
   ULONG CpList[8];
   ULONG CpSize;
-
+  
   if( DosQueryCp(sizeof(CpList),CpList,&CpSize)==0 && CpList[0] == 932 ){
+#endif
     while( *s != '\0' ){
       putc( *s++ , fout );
       i++;
     }
+#if 0
   }else{
     while( *s != '\0' ){
       if( *s & ~127 ){
@@ -193,6 +195,7 @@ static int dbcs_fputs(const char *s,FILE *fout)
       i++;
     }
   }
+#endif
   return i;
 }
 
@@ -446,6 +449,7 @@ int print_filelist(struct filelist *cur, int nlists,
   if( cur == NULL )
     return 0;
 
+  /* 「-l」が無い場合の ls */
   if( (flag & PRINT_MASK)==LS_MODE ){
     int files_per_line;
     if( screen_width-1 < max_length+2 || !isatty(fileno(fout)) )
@@ -494,6 +498,7 @@ int print_filelist(struct filelist *cur, int nlists,
       column=0;
     }
   }else{
+    /* -l モード */
     while( cur != NULL ){
       dir1(cur , max_length , flag , fout );
       cur=cur->next;
@@ -570,9 +575,9 @@ int the_dir(const char *dirname,int flag , FILE *fout )
     else
       sprintf(fullpath=fullpathbuffer,"%s/%s",dirname,dirlist->name);
 
-    if( flag & COLOR_MODE )
+    if( flag & COLOR_MODE ){
       fprintf( fout, "\n%s%s:\n",ls_end_code , fullpath );
-    else{
+    }else{
       more(flag,fout);
       dbcs_fputs(fullpath,fout);
       putc(':',fout);

@@ -279,7 +279,7 @@ void edlin::replace_current_word(const char *s)
 
 int Edlin::option_conversion_complete=0;
 
-void Edlin::complete_core(int fntop,int basesize)
+int Edlin::complete_core(int fntop,int basesize)
 {
   Complete com;
 
@@ -306,7 +306,7 @@ void Edlin::complete_core(int fntop,int basesize)
 
   if( nfiles <= 0 ){
     alert();
-    return;
+    return 0;
   }
 
   if( option_conversion_complete ){
@@ -323,7 +323,7 @@ void Edlin::complete_core(int fntop,int basesize)
 	case '\007':
 	case '\033':
 	  cleanmsg();
-	  return;
+	  return 0;
 
 	case '\t':
 	  break;
@@ -356,11 +356,12 @@ void Edlin::complete_core(int fntop,int basesize)
 
 	  if( cur->attr & A_DIR )
 	    insert( com.get_split_char() ?: complete_tail_char );
+
 	  if( quoted ){
 	    insert('"');
 	    forward();
 	  }
-	  return;
+	  return 1;
 	} /* end-switch */
 	cur = com.findnext();
       }/* end-while */
@@ -401,13 +402,14 @@ void Edlin::complete_core(int fntop,int basesize)
     }
     forward();
   }
+  return nfiles;
 }
 
-void Edlin::complete()
+int Edlin::complete()
 {
   int fntop=seek_word_top();
   int basesize=pos-fntop;
-  complete_core(fntop,basesize);
+  return complete_core(fntop,basesize);
 }
 
 void Edlin::insert(int ch1,int ch2)

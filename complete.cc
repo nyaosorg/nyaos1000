@@ -247,16 +247,19 @@ static int compare(struct filelist *X,struct filelist *Y,int method)
     break;
 
   case SORT_BY_SIZE:
-    rc = X->size - Y->size;
+    rc = Y->size - X->size;
+    if( rc == 0 )
+      rc = strcmp(X->name,Y->name);
+
     break;
 
   case SORT_BY_CHANGE_TIME:
   case SORT_BY_LAST_ACCESS_TIME:
   case SORT_BY_MODIFICATION_TIME:
 
-    rc = X->date - Y->date;
+    rc = Y->date - X->date;
     if( rc == 0 )
-      rc = X->time - Y->time;
+      rc = Y->time - X->time;
     if( rc == 0 )
       rc = strcmp(X->name,Y->name);
     break;
@@ -265,6 +268,7 @@ static int compare(struct filelist *X,struct filelist *Y,int method)
     rc = -1;
     break;
   }
+
   if( method & SORT_REVERSE )
     return -rc;
   else
@@ -314,11 +318,16 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
   common_length = strlen(fname);
 
   for(Dir dir(directory) ; dir != NULL ; ++dir ){
+
+    /* 「.」と「..」を除く */
+    if( dir[0]=='.' && ( dir[1]=='.' || dir[1]=='\0' ) )
+      continue;
+    
     if( common_length == 0
        || ( dir.get_name_length() >= common_length
 	   && instrcmp( fname , dir.get_name() , common_length ) == 0 
 	   ) ){
-
+      
       /* コマンド名補完の場合、拡張子が、EXE,CMD,BAT,COM以外は除く。
        * (スクリプト名は、コマンド名補完モ－ドで実行していない)
        *
@@ -330,6 +339,7 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
 	{
 	  continue;
 	}
+
       
       /* HIDDEN属性を除く */
       if( (dir.get_attr() & Dir::HIDDEN) != 0  &&  complete_hidden_file == 0 )

@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/kbdscan.h>
-#include <canna/jrkanji.h>
 #include <stdlib.h>
+
+#ifdef WITH_CANNA
+#  include <canna/jrkanji.h>
+#endif
 
 #include "smartptr.h"
 #include "macros.h"
@@ -56,28 +59,35 @@ static void euc2jms(int c1,int c2,SmartPtr &dp)
 int Edlin2::getkey_with_cursor()
 {
   int key;
+  if( cursor_on == NULL ){
+    fflush(fp);
+    return ::getkey();
+  }
+
   if( pos == len ){
     fprintf(fp," \b\x1b[%sm \b" , cursor_on );
     
     fflush(fp);
     key=::getkey();
-    
-    fprintf(fp,"\x1b[%sm \b",cursor_off);
+    if( cursor_off != NULL)
+      fprintf(fp,"\x1b[%sm \b",cursor_off);
   }else if( atrbuf[pos] == DBC1ST ){
     fprintf(fp,"\x1b[%sm%c%c\b\b" , cursor_on 
 	    , strbuf[pos] , strbuf[pos+1] );
     
     fflush(fp);
     key=::getkey();
-    fprintf(fp,"\x1b[%sm%c%c\b\b" , cursor_off 
-	    , strbuf[pos] , strbuf[pos+1] );
+    if( cursor_off != NULL )
+      fprintf(fp,"\x1b[%sm%c%c\b\b" , cursor_off 
+	      , strbuf[pos] , strbuf[pos+1] );
   }else{
     fprintf(fp,"\x1b[%sm%c\b" , cursor_on , strbuf[pos] );
     
     fflush(fp);
     key=::getkey();
     
-    fprintf(fp,"\x1b[%sm%c\b" , cursor_off , strbuf[pos] );
+    if( cursor_off != NULL )
+      fprintf(fp,"\x1b[%sm%c\b" , cursor_off , strbuf[pos] );
   }
   return key;
 }
@@ -86,13 +96,13 @@ enum{ PREFIX = -1 };
 #define CAN2NYA(c,n)  case CANNA_KEY_##c: *dp++=PREFIX;*dp++ = K_##n;break
 #define NYA2CAN(n,c)  case KEY(n): key= CANNA_KEY_##c ; break
 
-int Edlin2::option_canna=0;
 int Edlin2::canna_inited=0;
 
 void Edlin2::canna_to_alnum()
 {
+#ifdef WITH_CANNA
   /* かんなが初期化されている時のみ「英数モード」へ戻す。*/
-  if( option_canna && canna_inited ){
+  if( canna_inited ){
     jrKanjiStatusWithValue ksv;
     unsigned char buffer[256];
     jrKanjiStatus ks;
@@ -103,12 +113,18 @@ void Edlin2::canna_to_alnum()
     ksv.ks = &ks;
     jrKanjiControl( 0 , KC_CHANGEMODE , (char*)&ksv );
   }
+#endif
 }
+
+int Edlin2::option_canna=1;
 
 int Edlin2::getkey()
 {
+#ifdef WITH_CANNA
   if( option_canna == 0 )
+#endif
     return getkey_with_cursor();
+#ifdef WITH_CANNA
 
   /* 前回の呼び出しで確定している文字列がある場合、
    * それらを順次、呼び出しの度に返す必要がある。
@@ -382,4 +398,5 @@ int Edlin2::getkey()
       use_top_line = 0;
     }
   }
+#endif
 }

@@ -84,7 +84,7 @@ const char *Shell::bindmap_usage_key[0x200];
 const char *Shell::bindmap_usage_func[0x200];
 
 Shell::Shell(ShellEdlin &e)
-: ed(e) , changed(0) , prevchar(0x1FF) , cur(NULL)
+: ed(e) , changed(0) , prevchar(0x1FF) , cur(NULL) , prev_complete_num(0)
 { ed.clean_up(); }
 
 Shell::~Shell()
@@ -305,11 +305,11 @@ Shell::Status Shell::backspace()
 }
 Shell::Status Shell::tcshlike_complete()
 {
-  if( prevchar == '\t' ){
+  if( prevchar=='\t'  &&  prev_complete_num != 1 ){
     if( ed.length() != 0 )
       ed.complete_list();
   }else{
-    ed.complete();
+    prev_complete_num = ed.complete();
     changed = 1;
   }
   return CONTINUE;

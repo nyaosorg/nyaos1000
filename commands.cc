@@ -55,7 +55,7 @@ int cmd_mode( FILE *source , Parse &args )
   }
   char buffer[ 1024 ];
   args.copyall(0,buffer);
-  system( buffer );
+  spawnl(P_WAIT,cmdexe_path,"CMD","/C",buffer,NULL);
   if( option_vio_cursor_control ){
     v_getctype( &cursor_start , &cursor_end );
   }
@@ -182,7 +182,6 @@ struct Option{
   { "backquote"            , &option_backquote                 , 1  , 0 },
   { "backquote_in_quote"   , &option_backquote_in_quote        , 1  , 0 },
   { "beep"                 , &ShellEdlin::beep_ok              , 1  , 0 },
-  { "canna"                , &Edlin2::option_canna             , 1  , 0 },
   { "complete_hidden"      , &Complete::complete_hidden_file   , 1  , 0 },
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
   { "complete_tilda"       , &Complete::complete_tail_tilda    , 1  , 0 },

@@ -177,10 +177,20 @@ int main(int argc, char **argv)
     const char *term;
 
     printf("\x1b[2J\x1b[1m");
-    if( get_current_cp() == 932 ){
-      printf("\n  „¬„­„±„±  „±„¬„ª„­„¬„ª„­„¬„ª„­  " 
+    int cp=get_current_cp();
+    if( cp==932 || cp==942 || cp==943 ){
+      printf(
+#ifdef WITH_CANNA
+	     "\n„¬„ª„­„¬„ª„­„¬„­„±„¬„­„±„±  „±„¬„ª„­„¬„ª„­„¬„ª„­" 
+	     "\n„«    „°„ª„²„«„«„«„«„«„«„¯„ª„²„°„ª„²„«  „«„¯„ª„­"
+	     "\n„¯„ª„®„³  „³„³„¯„®„³„¯„®„¯„ª„®„³  „³„¯„ª„®„¯„ª„®"
+#define TITLEINDENT "\n       "
+#else
+	     "\n  „¬„­„±„±  „±„¬„ª„­„¬„ª„­„¬„ª„­  " 
 	     "\n  „«„«„«„¯„ª„²„°„ª„²„«  „«„¯„ª„­  "
 	     "\n  „³„¯„®„¯„ª„®„³  „³„¯„ª„®„¯„ª„®  "
+#define TITLEINDENT "\n"
+#endif
 	     );
 #if 0
     }else if( (term=getenv("TERM"))==NULL || strcmp(term,"xterm")!=0 ){
@@ -205,10 +215,13 @@ int main(int argc, char **argv)
     }
     
     printf(
-	   "\n          Free Software           "
-	   "\n- Nihongo Yet Another Os/2 Shell -"
-	   "\n   1996,97,98 (c) HAYAMA,Kaoru    "
-	   "\n Ver."VERSION" compiled on "__DATE__
+	   TITLEINDENT"          Free Software           "
+	   TITLEINDENT"- Nihongo Yet Another Os/2 Shell -"
+#ifdef WITH_CANNA
+	   TITLEINDENT"     CANNA Supporting Version     "
+#endif
+	   TITLEINDENT"   1996,97,98 (c) HAYAMA,Kaoru    "
+	   TITLEINDENT" Ver."VERSION" compiled on "__DATE__
 	   "\n\n\x1b[0m"
 	   );
   }

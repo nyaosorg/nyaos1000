@@ -34,7 +34,7 @@ public:
   void right(int n=1);                    /* 右へスクロール             */
   void left(int n=1);                     /* 左へスクロール             */
   int  seek_word_top();
-  void complete_core(int fntop,int basesize);
+  int complete_core(int fntop,int basesize);
 
   virtual void putchr(int c)=0; /* 一文字出力               */
   virtual void putel()=0;       /* カーソル位置以降をクリア */
@@ -77,8 +77,8 @@ public:
   virtual void cls(){};       /* ^L 画面クリア(何もしない) */
 
   /* これらは、導出クラスへ移項すべきもの */
-  virtual void complete();                 /* ^I ファイル名補完     */
-  virtual void complete_list(){}           /* ^D ファイル名リスト   */
+  virtual int complete();           /* ^I ファイル名補完 : 帰り値は候補数 */
+  virtual void complete_list(){}    /* ^D ファイル名リスト   */
   virtual int complete_hook(Complete &){ return 0; }
   /* ↑ ファイル名の他に加える候補があれば、このフック関数を導出する。*/
   
@@ -189,6 +189,8 @@ private:
   int ch;
   int changed;
   int prevchar;
+  int prev_complete_num;
+
   static void bindkey_base();
   static Status (Shell::*bindmap[0x200])();
   static const char *bindmap_usage_key[0x200];

@@ -153,7 +153,9 @@ void backquote_replace(const char *sp , char *dp , int max )
       if( pp != NULL ){
 	int ch,size=0;
 	while( (ch=fgetc(pp)) != EOF  ){
-	  if( !quote && strchr("<>&|^",ch) != NULL ){
+	  if( ch == '\n' ){
+	    *dp++ = ' ';
+	  }else if( !quote && strchr("<>&|^",ch) != NULL ){
 	    *dp++ = '^';
 	    *dp++ = ch;
 	  }else{

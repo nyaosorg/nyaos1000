@@ -413,16 +413,16 @@ void replace_envvar(const char *sp, char *_dp , int max )
    * 公式ヒストリに残す。
    */
 
-  if( is_history_refered == 0 ){
-    PublicHistory *tmp=new PublicHistory;
-    if( tmp != NULL  &&  (tmp->string = strdup(_dp))!=NULL ){
-      tmp->prev = public_history ;
-      tmp->next = public_history->next ;
-      public_history = public_history->next = tmp ;
-      nhistories++;
-    }
-  }else{
+  if( is_history_refered ){
     puts( _dp );
+  }
+
+  PublicHistory *tmp=new PublicHistory;
+  if( tmp != NULL  &&  (tmp->string = strdup(_dp))!=NULL ){
+    tmp->prev = public_history ;
+    tmp->next = public_history->next ;
+    public_history = public_history->next = tmp ;
+    nhistories++;
   }
 }
 
