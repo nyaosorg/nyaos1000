@@ -3,20 +3,11 @@
 #include <string.h>
 #include "finds.h"
 
-void kill_filelist(FileListT *p)
-{
-  while( p != NULL ){
-    FileListT *nxt = p->next;
-    free(p);
-    p = nxt;
-  }
-}
-
 FileListT *new_filelist(Dir &dir)
 {
   FileListT *node=
-    (FileListT*)malloc( sizeof(FileListT)+dir.get_name_length() );
-
+    (FileListT*)malloc( sizeof(FileListT) + dir.get_name_length() );
+  
   if( node == NULL )
     return NULL;
 
@@ -24,13 +15,13 @@ FileListT *new_filelist(Dir &dir)
   node->attr   = dir.get_attr();
   node->length = dir.get_name_length();
   node->size   = dir.get_size();
-  node->write.time =  *(unsigned short *)&dir.get_last_write_time();
-  node->write.date =  *(unsigned short *)&dir.get_last_write_date();
-  node->access.time = *(unsigned short *)&dir.get_last_access_time();
-  node->access.date = *(unsigned short *)&dir.get_last_access_date();
-  node->create.time = *(unsigned short *)&dir.get_create_time();
-  node->create.date = *(unsigned short *)&dir.get_create_date();
-  
+  node->write.setTime(  dir.get_last_write_time()  );
+  node->write.setDate(  dir.get_last_write_date()  );
+  node->access.setTime( dir.get_last_access_time() );
+  node->access.setDate( dir.get_last_access_date() );
+  node->create.setTime( dir.get_create_time()      );
+  node->create.setDate( dir.get_create_date()      );
+
   node->easize = dir.get_easize();
   node->next = NULL;
   node->prev = NULL;
@@ -44,24 +35,50 @@ FileListT *new_filelist(const char *fname)
   char path[256],*p=path;
   int size=sizeof(path);
   try{
-    int lastroot=convroot(p,size,fname);
-    if( lastroot == '\\' || lastroot == ':' )
+    int lastchar = convroot(p,size,fname);
+    if( lastchar=='\\' || lastchar==':' )
       *p++ = '.';
     *p = '\0';
   }catch(...){
-    return 0;
+    return NULL;
   }
-  if( dir._findfirst( path ) == 0 )
-    return new_filelist(dir);
-  else
-    return 0;
+  if( dir._findfirst( path ) != 0 )
+    return NULL;
+
+  /* ここで、return new_filelist(Dir &); を呼べばよさそうだが、
+   * そうすると、パス名のディレクトリ部が消えてしまうので、
+   * 自前で FileListT を作成してやらなくてはいけない。
+   */
+  int length=strlen(fname);
+  
+  FileListT *node = (FileListT*)malloc( sizeof(FileListT*) + length );
+  if( node == NULL )
+    return NULL;
+  
+  strcpy( node->name , fname );
+  node->attr   = dir.get_attr();
+  node->length = length;
+  node->size   = dir.get_size();
+  node->write.setTime(  dir.get_last_write_time()  );
+  node->write.setDate(  dir.get_last_write_date()  );
+  node->access.setTime( dir.get_last_access_time() );
+  node->access.setDate( dir.get_last_access_date() );
+  node->create.setTime( dir.get_create_time()      );
+  node->create.setDate( dir.get_create_date()      );
+  node->easize = dir.get_easize();
+  node->next = NULL;
+  node->prev = NULL;
+  
+  return node;
 }
 
 FileListT *dup_filelist(FileListT *org)
 {
   FileListT *tmp=(FileListT *)
     malloc( sizeof(FileListT) + org->length );
-  assert( tmp != NULL );
+
+  if( tmp != NULL )
+    return NULL;
 
   memcpy( tmp , org , sizeof(FileListT)+org->length );
   tmp->next = NULL;

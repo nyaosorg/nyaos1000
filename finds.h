@@ -5,6 +5,11 @@
 #define INCL_DOSFILEMGR
 #include <os2.h>
 
+#ifndef MALLOC_ERROR
+#define MALLOC_ERROR
+class MallocError{ };
+#endif
+
 /* FindFirst/Next のカバークラス : Dir 
  *   for(Dir dir("*") ; dir ; ++dir )
  *     puts( dir.get_name() );
@@ -120,6 +125,12 @@ typedef struct filelist{
     int getHour()  const { return (int)t.hour; }
     int getMinute()const { return (int)t.minute; }
     int getSecond()const { return (int)t.second; }
+
+    void setTime(const FTIME &t)
+      { time = *(unsigned short *)&t; }
+    void setDate(const FDATE &d)
+      { date = *(unsigned short *)&d; }
+
   } create , access , write ;
   int length;
   char name[1]; /* 可変長 */

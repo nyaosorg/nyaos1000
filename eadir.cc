@@ -997,7 +997,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  }
 	}
 	fnexplode2_free(list);
-      }else{ // _fnexplode ‚Å“WŠJ‚Å‚«‚È‚¢ê‡
+      }else{ /* _fnexplode ‚Å“WŠJ‚Å‚«‚È‚¢ê‡ */
 
 	FileListT *node = new_filelist(argv[i]);
 

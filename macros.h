@@ -24,8 +24,6 @@ extern char tolower_table[128+256];
 #define numof(A) (sizeof(A)/sizeof((A)[0]))
 #define tailof(A) ((A)+numof(A))
 
-#define alloca_char(n) ((char*)alloca(n))
-
 enum{
   NO_FILE = 0,           /* ファイルは存在しない        */
   EXE_FILE = 1,          /* バイナリ実行ファイル	*/
@@ -42,6 +40,9 @@ int get86key(void);
 int getkey(void);
 void ungetkey(int key);
 
-class MemoryAllocationError{ };
+#ifndef MALLOC_ERROR
+#define MALLOC_ERROR
+class MallocError{};
+#endif
 
 #endif

@@ -3,7 +3,10 @@
 #ifndef STRBUFFER_H
 #define STRBUFFER_H
 
-class MallocError { };
+#ifndef MALLOC_ERROR
+#define MALLOC_ERROR
+class MallocError {};
+#endif
 
 class StrBuffer {
   int length;
