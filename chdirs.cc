@@ -8,9 +8,6 @@
 #include "nyaos.h"
 #include "finds.h"
 
-int option_cd_goto_home=0;
-char prevdir[FILENAME_MAX]=".";
-
 enum{
   BIT_CD_PATH      = 1,
   BIT_CD_SHORT_MID = 2,
@@ -19,8 +16,82 @@ enum{
   BIT_CD_LAST	   = 8,
 };
 
-/* ドライブが有効かどうか
- * 
+
+
+int option_cd_goto_home=0;
+char prevdir[FILENAME_MAX]=".";
+
+#if 0 /* ================================================================ */
+
+class StringStack {
+  struct Stack{
+    Stack *prev;
+    int len;
+    char buffer[1];
+  } *stacktop;
+  int n;
+
+public:
+  StringStack() : stacktop(0) , n(0) { }
+  ~StringStack();
+
+  int push( const char *s );
+  void drop() throw();
+  int pop( char *buffer );
+  int getN() const { return n; }
+
+  const char *getTopString() const throw(){ return stacktop->buffer; }
+  int getTopLength() const throw(){ return stacktop->len; }
+
+};
+
+StringStack::~StringStack()
+{
+  while( stacktop != NULL )
+    drop();
+}
+
+int StringStack::push( const char *s )
+{
+  int length=strlen(s);
+  Stack *tmp=static_cast<Stack *>(malloc(sizeof(Stack)+length));
+  if( tmp == NULL )
+    return -1;
+
+  strcpy( tmp->buffer , s );
+  tmp->len = length;
+  tmp->prev = stacktop;
+  stacktop = tmp;
+  ++n;
+  return 0;
+}
+
+void StringStack::drop() throw()
+{
+  if( stacktop == NULL )
+    return;
+  Stack *tmp=stacktop->prev;
+  free(stacktop);
+  stacktop = tmp;
+  --n;
+}
+
+int StringStack::pop( char *buffer )
+{
+  if( stacktop == NULL )
+    return -1;
+  strcpy( buffer , stacktop->buffer );
+  drop();
+  return 0;
+}
+/* カレントディレクトリのヒストリー */
+static StringStack currentDirectories;
+
+#endif /* ================================================================ */
+
+/* エラーウインドウを極力出さないようにした chdir
+ *	s ディレクトリ名
+ * return 0:成功 -1:失敗
  */
 static int changeDir(const char *s)
 {
@@ -29,12 +100,13 @@ static int changeDir(const char *s)
     char buffer[FILENAME_MAX];
     
     DosError( FERR_DISABLEHARDERR );
-    if( _getcwd1(buffer,toupper(s[0])) == 0 ){
+    rc = _getcwd1(buffer,toupper(s[0]));
+    if( rc == 0 ){
       rc = _chdir2( s );
     }else{
       fprintf(stderr,"Drive %c: is not ready\n",s[0]);
     }
-    DosError( FERR_ENABLEHARDERR );    
+    DosError( FERR_ENABLEHARDERR );
   }else{
     rc=_chdir2(s);
   }
@@ -138,7 +210,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
   if(argc<=0&&!(modeflag&BIT_CD_LAST)){
     if( option_cd_goto_home ){
       const char *home=getenv("HOME");
-      if( home == NULL || _chdir2(home) != 0 ){
+      if( home == NULL || changeDir(home) != 0 ){
 	fputs("nyaos: %HOME% does not point a right directory.\n",stderr);
 	return-1;
       }
@@ -150,7 +222,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
   }
   
   char *cwd= ( modeflag & BIT_CD_LAST ) ? prevdir : argv[0] ;
-  if( _chdir2( cwd )==0 ){
+  if( changeDir( cwd )==0 ){
     strcpy(prevdir,wd);
     return 0;
   }

@@ -89,6 +89,7 @@ char **fnexplode2(const char *path);
 void fnexplode2_free(char **list);
 void numeric_sort(char **list);
 int strnumcmp(const char *s1,const char *s2); /* complete.cc */
+int convroot(char *&dp,int &size,const char *sp) throw(size_t);
 
 /* filelist.cc */
 

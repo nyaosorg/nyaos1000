@@ -136,7 +136,7 @@ public:
 
   int is_append_redirect(int i) const { return appendflag[i]; }
 };
-
+#if 0
 class Pipe{
   FILE *fp;
   const char *cmdline;
@@ -151,5 +151,5 @@ class Pipe{
 
   operator FILE * () { return fp; }
 };
-
+#endif
 #endif

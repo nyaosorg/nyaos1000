@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <io.h>
+#include <fcntl.h>
 #include <sys/types.h>
 
 #include <string.h> /* for memset */
@@ -31,6 +32,15 @@ void raw_mode(void)
     tcgetattr(tty=2,&s);
     orig = s;
   }
+
+  /* 機能を off にする */
+  s.c_iflag &= ~(  ISTRIP /* Clear bit 7 of all input characters */
+		 | INLCR  /* Translate linefeed into carriage return */
+		 | IGNCR  /* Ignore carrige return */
+		 | ICRNL  /* Translate carriage return into linefeed */
+		 | IUCLC  /* Convert upper case letters into lower case */
+		 );
+
   /* 機能を off にする */
   s.c_lflag &= ~(  ICANON /* line editing */
 		 | ECHO   /* echo input */
@@ -109,13 +119,6 @@ int getkey(void)
     return keybuf[ --left ];
 
   int ch = (get86key() & 0xFF );
-#if 0
-  if( ch == 0 )
-    ch = (get86key()|0x100);
-  else if( is_kanji(ch) )
-    ch = ((ch << 8)|(get86key() & 0xFF));
-#else
-
   switch(ch){
   default: 
     if( is_kanji(ch) )
@@ -203,6 +206,5 @@ int getkey(void)
     }
     break;
   }
-#endif
   return ch & 0xFFFF;
 }

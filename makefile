@@ -1,12 +1,14 @@
 #
-# Nihongo Yet Another Os/2 Shell
+# Free Software : Nihongo Yet Another Os/2 Shell
 # (c) 1996,97,98,99 HAYAMA,Kaoru
 #
-# make clean & make depend & make
+# If you have canna.a, please add '-DCANNA=0' to CFLAGS.
 
+CFLAGS=-Wall -O2
+#CFLAGS=-Wall -O2 -DCANNA=0
+	
+LDFLAGS=-lvideo -lsocket -lwrap -Zcrtdll
 CC=gcc
-CFLAGS=-DWITH_CANNA -Wall -O2
-LDFLAGS=-lvideo -lwrap -Zcrtdll -lsocket
 
 all : nyaos.exe nyaos.doc
 
@@ -31,7 +33,7 @@ NYAOS_SRC=\
 	finds.cc filelist.cc foreach.cc getkey.cc hash.cc nyaos.cc \
 	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script.cc \
 	search.cc shell.cc source.cc suffix.cc wordseek.cc strtok.cc \
-	keynameseek.cc
+	keynameseek.cc fordll.cc
 NYAOS_TBL=\
 	bindfunc.tbl keynames.tbl eadirop.tbl
 NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
@@ -48,7 +50,7 @@ nyaos.tar :
 # ------------- 実行ファイル作成 ----------------
 
 nyaos.exe : $(NYAOS_OBJ)
-	$(CC) $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(NYAOS_OBJ) : %.o : %.cc
 	$(CC) $(CFLAGS) -c $<

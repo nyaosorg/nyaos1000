@@ -4,7 +4,7 @@
 
 #include "macros.h"
 
-#define VERSION "1.50"
+#define VERSION "1.51"
 
 /**** "callcmd.cc" ****/
 
@@ -21,8 +21,8 @@ void set_win_title( const char *title );
 
 int eadir(int argc, char **argv,FILE *fout);
 char *fgets_chop(char *dp,int max,FILE *fp);
-class ShellEdlin;
-void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL);
+bool set_prompt(const char *promptenv,char *dp,int size);
+
 class Parse;
 
 extern struct Command{

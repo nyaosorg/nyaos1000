@@ -23,31 +23,7 @@
 #include "hash.h"
 
 extern Hash <Command> command_hash;
-
-int is_hab_initd=0;
-HAB hab;
-
-#if 0
-char *getClipBoard()
-{
-  if( is_hab_initd ){
-    is_hab_initd=0;
-    hab = WinInitialize(0);
-  }
-  char *rc;
-  
-  WinOpenClipbrd(hab);
-  char *cliptext = (char*)WinQueryClipbrdData(hab,CF_TEXT);
-  if( cliptext == NULL )
-    rc = NULL;
-  else
-    rc = strdup(cliptext);
-
-  WinCloseClipBrd(hab);
-  
-  return rc;
-}
-#endif
+extern HAB hab;
 
 class SwitchList{
   int count;
@@ -62,10 +38,6 @@ public:
 
 SwitchList::SwitchList()
 {
-  if( ! is_hab_initd ){
-    hab = WinInitialize(0);
-    is_hab_initd = 1;
-  }
   count = WinQuerySwitchList(hab,NULL,0);
   int size = count*sizeof(SWENTRY) + sizeof( ULONG );
   
@@ -227,7 +199,7 @@ int cmd_which( FILE *source , Parse &params )
     }else{
       /* 実行ファイルの検索 */
       type=SearchEnv(argv,"PATH",buffer);
-      if( (type != EXE_FILE && type != CMD_FILE ) || print_file(buffer)!=0 ){
+      if( type == NO_FILE || type == FILE_EXISTS || print_file(buffer) !=0 ){
 	printf( "%s : not found %s.\n"
 	       , argv
 	       , scriptflag ? "in PATH and SCRIPTPATH" : "in PATH" );
@@ -241,7 +213,6 @@ static void the_open( char *fname , const char *setup_string , int active )
 {
   char *p=fname;
   char *lastp=NULL , *last2p=NULL;
-
 
   while( *p != '\0' ){
     last2p = lastp;
@@ -267,13 +238,11 @@ static void the_open( char *fname , const char *setup_string , int active )
     WinSetObjectData( hObject , (PCSZ) setup_string );
 }
 extern char *getcwd_case(char *dst);
-extern void truepath(char *dst,const char *src,int size);
+extern void correct_case(char *dst,const char *src,int size);
 
 int cmd_open( FILE *source , Parse &params )
 {
   int argc = params.get_argc();
-
-
   const char *setup_string="OPEN=DEFAULT";
   int nopens=0;
   int active = 0;
@@ -358,7 +327,7 @@ int cmd_open( FILE *source , Parse &params )
 	}
 	fname[ len-1 ] = '>';
       }else{
-	truepath( absfname , fname , sizeof(absfname) );
+	correct_case( absfname , fname , sizeof(absfname) );
 	fname = absfname;
       }
       
@@ -369,7 +338,7 @@ int cmd_open( FILE *source , Parse &params )
   }
   if( nopens == 0 ){
     char cwd[512];
-    truepath( cwd , "." , sizeof(cwd) );
+    correct_case( cwd , "." , sizeof(cwd) );
     fprintf(fout,"open %s\n",cwd);
     the_open(cwd , setup_string , active );
   }

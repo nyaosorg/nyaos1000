@@ -51,6 +51,7 @@ char *Substr::quote(char *dp) const
   return dp;
 }
 
+#if 0
 void Pipe::open(const char *cmdl,const char *modestr)
 {
   mode = modestr;
@@ -90,6 +91,7 @@ Pipe::~Pipe()
     system(buffer);
   }
 }
+#endif
 
 Parse::~Parse()
 {

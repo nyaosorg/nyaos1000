@@ -42,22 +42,16 @@ static FileListT *new_filelist_sub(FILESTATUS4 &buffer,const char *fname)
 static int dos_query_path_info(const char *name,int len,FILESTATUS4 &buffer )
 {
   char *new_name = (char*)alloca( len + 2 );
-
   const char *sp=name;
   char *dp=new_name;
 
-  int lastchar=0;
-
-  while( *sp != '\0' ){
-    if( *sp == '/' ){
-      lastchar = *dp++ = '\\';
-      ++sp;
-    }else{
-      lastchar = *dp++ = *sp++;
-    }
+  try{
+    int lastchar=convroot(dp,len+=2,sp);
+    if( lastchar == '\\' || lastchar == ':' )
+      *dp++ = '.';
+  }catch(...){
+    ;
   }
-  if( lastchar == '\\' || lastchar == ':' )
-    *dp++ = '.';
   *dp = '\0';
 
   return DosQueryPathInfo((PUCHAR)new_name,2,&buffer,sizeof(FILESTATUS4) );

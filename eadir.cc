@@ -39,6 +39,7 @@ enum{
   LS_SORT ,
   LS_SORT_REVERSE ,
   LS_ViRGE ,
+  LS_COMMA ,
   NUM_LS ,
 };
 static char ls_flag[ NUM_LS ];
@@ -81,6 +82,23 @@ union MultiPtr {
   const char *byte;
   const unsigned short *word;
 };
+
+static int print_num_with_comma(int width,int n,FILE *fp)
+{
+  if( width < 1 )
+    width = 1;
+
+  if( n >= 1000 ){
+    int len=print_num_with_comma(width-4,n/1000,fp);
+    putc( ',' , fp );
+    /* 左の桁を 0 で埋めた形式で表示させる */
+    return len+fprintf(fp,"%03d",n % 1000 );
+  }else{
+    /* 左の桁を 空白で埋めた形式で表示させる */
+    return fprintf(fp,"%*d",width,n);
+  }
+}
+
 
 char *get_ea_longname( const char *fname )
 {
@@ -470,24 +488,25 @@ void dir1(  FileListT *flist , int max_length
     datetime = &flist->write;
     break;
   }
-  
+
+  ncolumns += fprintf(fout,"%s" , attrstr );
+  if( ls_flag[ LS_COMMA ] ){
+    ncolumns += print_num_with_comma(11,flist->size,fout);
+    putc(' ',fout); ncolumns++;
+  }else{
+    ncolumns += fprintf(fout,"%9ld ",flist->size);
+  }
+
   if( datetime->d.month > 12  || datetime->d.month < 1   ){
     /* FAT では、最終アクセス時刻を取得することができない。
      * この場合、時刻は 1989/0/0 になってしまう。
      */
-    ncolumns += fprintf(fout,"%s %8ld ??? ??  ???? "
-			, attrstr
-			, flist->size
-			);
   }else{
-    ncolumns += fprintf(fout,"%s %8ld %3s %2d "
-			, attrstr
-			, flist->size
+    ncolumns += fprintf(fout,"%3s %2d "
 			, month[ datetime->d.month-1 ]
 			, datetime->d.day
 			);
     
-  
     if( flist->write.d.year+1980 != thisyear ){
       ncolumns += fprintf(fout," %4d " ,datetime->d.year+1980 );
     }else{
@@ -891,6 +910,9 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  ls_flag[ LS_SORT ] = SORT_BY_MODIFICATION_TIME ; break;
 	case '_':
 	  ls_flag[ LS_IGNORE_UNDERBAR ] = 1; break;
+	case ',':
+	  ls_flag[ LS_COMMA ] =  ls_flag[ LS_LONG  ] = 1;
+	  break;
 	case 'B':
 	  ls_flag[ LS_IGNORE_BACKUP ] = 1; break;
 	case 'E':

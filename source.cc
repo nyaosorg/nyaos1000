@@ -9,6 +9,8 @@
 #include "edlin.h"
 #include "parse.h"
 
+extern int convroot(char *&dp,int &size,const char *sp) throw(size_t);
+
 static ULONG rexx_handler(PRXSTRING source, PUSHORT flags, PRXSTRING result)
 {  
   if( execute(stdin,(const char*)RXSTRPTR(*source))==0 ){
@@ -23,14 +25,15 @@ static ULONG rexx_handler(PRXSTRING source, PUSHORT flags, PRXSTRING result)
 static ULONG rexx_nyaos_input(PCSZ name,  ULONG argc,PRXSTRING argv,
 			      PCSZ qname, PRXSTRING result )
 {
-  ShellEdlin edlin( ">" , (char*)result->strptr , (int)result->strlength );
+  Shell shell;
 
   /* 次の行が無いとバグる。そのうち、なんとかしなくては... */
-  edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
-
-  Shell shell(edlin);
+  shell.setcursor( cursor_on_color_str , cursor_off_color_str );
   
-  (void)shell.line_input( argc >= 1 ? (char*)RXSTRPTR(argv[0]) : "" , 32767 );
+  const char *s;
+  (void)shell.line_input(  argc >= 1 ? (char*)RXSTRPTR(argv[0]) : ""
+			 , "and.." , &s );
+  strncpy( (char*)result->strptr , s , result->strlength );
   result->strlength = strlen( (char*)result->strptr );
   putchar('\n');
   
@@ -50,19 +53,12 @@ int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv )
 
   MAKERXSTRING( rx_rc , return_buffer , sizeof(return_buffer) );
   
-  char *truename=(char*)alloca(strlen(progname)+1);
+  int size=strlen(progname)+1;
+  char *truename=(char*)alloca(size+1);
   char *dp=truename;
-  while( *progname != '\0' ){
-    if( *progname == '/' ){
-      *dp++ = '\\';
-      progname++;
-    }else{
-      if( is_kanji(*progname) )
-	*dp++ = *progname++;
-      *dp++ = *progname++;
-    }
-  }
-  *dp = '\0';
+  
+  /* / の ￥マークへの変換 */
+  convroot(dp,size,progname);
   
   RexxStart(  argc		/* argc */
 	    , rx_argv		/* argv */

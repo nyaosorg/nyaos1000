@@ -427,7 +427,7 @@ int replace_script( const char *sp , char *dst, int max  )
       else if(  type != COM_FILE || sos(sp,dp,path) != 0 ){
 
 	if(    option_auto_close  &&  start_inserted 
-	   &&  getApplicationType(fname) == 2 )
+	   &&  (getApplicationType(fname) == 2 || type == CMD_FILE)  )
 	  insert_close_option(dp);
 	copy_filename(fname,dp,NULL,&dp, BACKSLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);

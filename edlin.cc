@@ -7,13 +7,28 @@
 #define INCL_VIO
 #include <os2.h>
 
-#include "Edlin.h"
+#include "edlin.h"
 #include "complete.h"
 #include "macros.h"
 #include "keyname.h"
 
 #define KEY(x)	(0x100 | K_##x )
 #define CTRL(x)	((x) & 0x1F )
+
+Edlin::Edlin()
+{
+  pos = len = markpos = msgsize = 0;
+  max = DEFAULT_BUFFER_SIZE;
+
+  strbuf = (char*)malloc(max);
+  atrbuf = (char*)malloc(max);
+}
+
+Edlin::~Edlin()
+{
+  if( strbuf ) free(strbuf);
+  if( atrbuf ) free(atrbuf);
+}
 
 /* at の位置に bytes 分だけのスペースを確保する。
  * 空白文字を入れるわけではなく、空間を作るという意味。
@@ -25,11 +40,22 @@
 int Edlin::makeRoom(int at,int bytes)
 {
   if( bytes > 0 ){
-    if( len+bytes >= max ){
-      /* もし、自動的にバッファを増やすコードが必要なら、
-       * ここに入れる。*/
-      return -1;
+    while( len+bytes >= max ){
+      char *new_strbuf=(char*)realloc(strbuf,max*2);
+      if( new_strbuf == NULL )
+	return -1;
+      char *new_atrbuf=(char*)realloc(atrbuf,max*2);
+      if( new_atrbuf == NULL ){
+	free(new_strbuf);
+	return -1;
+      }
+      strbuf = new_strbuf;
+      atrbuf = new_atrbuf;
+      max *= 2;
     }
+    if( markpos > at )
+      markpos += bytes;
+
     strbuf[ len+bytes ] = '\0';
     atrbuf[ len+bytes ] = SBC;
     for(int i=len-1 ; i >= at ; i-- ){
@@ -40,6 +66,16 @@ int Edlin::makeRoom(int at,int bytes)
     if( at+(-bytes) > len )
       return -1;
     
+    if( markpos > at ){
+      if( markpos >= at+(-bytes) ){
+	/* マークが削除範囲より右なら、左へ削除バイト分ずれる */
+	markpos -= (-bytes);
+      }else{
+	/* マークが削除範囲内なら、削除範囲の先頭に移動する */
+	markpos = at;
+      }
+    }
+
     for(int i=at ; i<len+bytes ; i++ ){
       strbuf[ i ] = strbuf[ i+(-bytes) ];
       atrbuf[ i ] = atrbuf[ i+(-bytes) ];
@@ -50,42 +86,7 @@ int Edlin::makeRoom(int at,int bytes)
   len += bytes;
   return 0;
 }
-#if 0
-int Edlin::getCurrentWordPos(int at,int &top,int &bytes)
-{
-  int wordTop=0;
-  int i=0;
-  for(;;){
-    /* 空白を読み飛ばす */
-    for(;;){
-      if( i >= len )
-	return -1;
-      if( ! isspace(strbuf[i] & 255) )
-	break;
-      ++i;
-    }
-    wordTop = i;
-    int quote=0;
 
-    for(;;){
-      if( i >= len )
-	break;
-      if( strbuf[i] == '"' )
-	quote ^= 1;
-#if 0
-      if( strbuf[i] == '\'' )
-	quote ^= 2;
-#endif
-      if( atrbuf[i] != SBC )
-	i++;
-      i++;
-    }
-    if( i >= at )
-
-  }
-
-}
-#endif
 int Edlin::complete_tail_char='\\';
 
 /* tcsh の C-t に相当する処理を行う。
@@ -93,9 +94,9 @@ int Edlin::complete_tail_char='\\';
  */
 void Edlin::swapchars()  /* DOSモード未対応メソッド */
 {
-  if( pos < len ){
+  if( pos < len )
     forward();
-  }
+
   if( pos < 2 ) return;
   
   if( atrbuf[pos-1]==SBC ){
@@ -116,6 +117,9 @@ void Edlin::swapchars()  /* DOSモード未対応メソッド */
       atrbuf[pos-2] = DBC1ST;
       putchr( strbuf[pos-1] = tmp2 );
       atrbuf[pos-1] = DBC2ND;
+
+      if( markpos == pos-1 ) /* 全角の 2byte目にマークが移動しないように */
+	markpos = pos-2;
     }
   }else if( pos >= 3 ){
     if( atrbuf[pos-3] == SBC ){
@@ -128,6 +132,9 @@ void Edlin::swapchars()  /* DOSモード未対応メソッド */
       atrbuf[pos-2] = DBC2ND;
       putchr( strbuf[pos-1] = tmp );
       atrbuf[pos-1] = SBC;
+
+      if( markpos == pos-2 ) /* 全角の 2byte目にマークが移動しないように */
+	markpos = pos-1;
     }else{
       /* 全角全角 */
       int tmp1=strbuf[pos-4];
@@ -140,61 +147,6 @@ void Edlin::swapchars()  /* DOSモード未対応メソッド */
     }
   }
 }
-
-#if 0
-/* right , left は本来はウインドウ処理の関数だった。
- * つまり、80文字以上入力した際に、そのうちの80字だけを覗き穴的に
- * 表示させるための関数の一つだった。
- * 元々は、DOS の BSコードで、前の行へカーソルを移動させられない為に
- * 作成したのだが、DOS のサポートを放棄したため、意味がなくなった。
- */
-void Edlin::right(int n)
-{
-  /* 右へ top が移動する --> 全体が左へ移動する。*/
-  putbs( pos-top );
-
-  while( n > 0 ){
-    if( atrbuf[top] == DBC1ST ){
-      top += 2;
-      n -= 2;
-    }else if( top < pos ){
-      top++;
-      n--;
-    }
-  }
-
-  int i=0;
-  while( i<windowsize &&  top+i < len )
-    putchr( strbuf[top+(i++)] );
-  
-  putel();
-  putbs( i-(pos-top) );
-}
-
-void Edlin::left(int n)
-{
-  /* 左へtopを移動する ---> 右へ全体が動く */
-  
-  /* 最初にカーソルを戻しておく */
-  putbs( pos-top );
-  
-  /* n 文字分 top を後退させる */
-  while( n > 0  &&  top > 0 ){
-    if( atrbuf[top-1] == SBC ){
-      top--;
-      n--;
-    }else{
-      top -= 2;
-      n -= 2;
-    }
-  }
-  int i=0;
-  while( i<windowsize  &&  top+i < len )
-    putchr( strbuf[top + i++] );
-  putel();
-  putbs( i-(pos-top) );
-}
-#endif
 
 void Edlin::insert(int ch)
 {
@@ -728,11 +680,14 @@ void Edlin::erase()
   after_repaint(ndels);
 }
 
-void Edlin::_repaint(int termclear)
+void Edlin::repaint(int termclear)
 {
+  /* 表示している一文字目までカーソルを戻す */
+  putbs( pos );
+
   int i=0;
-  while( i<windowsize  &&  top+i < len )
-    putchr( strbuf[top+i++] );
+  while( i < len )
+    putchr( strbuf[i++] );
 
   if( termclear >= 0 ){
     while( termclear-- > 0 ){
@@ -742,33 +697,15 @@ void Edlin::_repaint(int termclear)
   }else{
     putel();
   }
-  putbs( i - (pos-top) );
-}
-
-void Edlin::repaint(int termclear)
-{
-  /* 表示している一文字目までカーソルを戻す */
-  putbs( pos-top );
-  _repaint(termclear);
+  putbs( i - pos );
 }
 
 void Edlin::after_repaint(int termclear)
 {
   int i=0;
   if( pos < len ){
-    while( pos+i < len ){
-      if( i == windowsize-1 ){
-	if( atrbuf[pos+i] != SBC ){
-	  /* 末端で漢字の左側だけが表示されそうな場合は、空白を表示 */
-	  putchr(' ');
-	}else{
-	  putchr(strbuf[pos+i]);
-	}
-	i++;
-	break;
-      }
+    while( pos+i < len )
       putchr( strbuf[pos + i++] );
-    }
   }
   if( termclear >= 0 ){
     while( termclear-- > 0 ){
@@ -810,11 +747,11 @@ void Edlin::eraseline()
   putbs(i);
 
   len = pos ;
+  if( markpos > pos )
+    markpos = pos;
+
   strbuf[ pos ] = '\0';
   atrbuf[ pos ] = SBC;
-#if 0
-  putel();
-#endif
 }
 
 void Edlin::forward_word()
@@ -832,30 +769,8 @@ void Edlin::forward_word()
       return;
     ++nextpos;
   }
-  if( nextpos < top+windowsize ){
-    /* スクロールの必要なし */
-    while( pos < nextpos )
-      putchr(strbuf[pos++]);
-  }else{
-    /* スクロールしなければならない
-     * で、windowsizeは有限の値と仮定できるわけだ。
-     */
-    putbs( pos-top );
-    top = nextpos - windowsize;
-    if( atrbuf[top] == DBC2ND )
-      top++;
-
-    int i=0;
-    while( i < windowsize ){
-      if( top+i >= len ){
-	while( i++ < windowsize )
-	  putchr(' ');
-	break;
-      }
-      putchr( strbuf[top+i++] );
-    }
-    putbs( top+windowsize-(nextpos=pos) );
-  }
+  while( pos < nextpos )
+    putchr(strbuf[pos++]);
 }
 void Edlin::backward_word()
 {
@@ -866,37 +781,18 @@ void Edlin::backward_word()
   while( nextpos > 0  &&  !is_space(strbuf[nextpos-1]) )
     --nextpos;
 
-  if( top <= nextpos ){
-    /* スクロールの必要なし */
-    putbs( pos-nextpos );
-    pos = nextpos;
-  }else{
-    /* 右方向へのスクロールの必要があるが、右端をクリアする必要はなし */
-    putbs( pos-top );
-    top = pos = nextpos;
-    int i=0;
-    while( i < windowsize && top+i < len )
-      putchr( strbuf[top+i] );
-    putbs(i);
-  }
+  putbs( pos-nextpos );
+  pos = nextpos;
 }
 
 int Edlin::forward()
 {
   if( pos+1 <= len  &&  atrbuf[pos] == SBC ){
-#if 0
-    if( pos+1 >= top+windowsize )
-      right(1);
-#endif
     
     /* 同じ文字の二度打ちによる右移動 */
     putchr( strbuf[pos++] );
     return 1;
   }else if( pos+2 <= len ){
-#if 0
-    if( pos+2 >= top+windowsize )
-      right(2);
-#endif
 
     putchr( strbuf[pos++] );
     putchr( strbuf[pos++] );
@@ -908,18 +804,10 @@ int Edlin::forward()
 int Edlin::backward()
 {
   if( 0 < pos  &&  atrbuf[pos-1] == SBC ){
-#if 0
-    if( pos-1 < top )
-      left(1);
-#endif
     --pos;
     putbs(1);
     return 1;
   }else if( 2 <= pos ){
-#if 0
-    if( pos-2 < top )
-      left(2);
-#endif
     pos -= 2;
     putbs(2);
     return 2;
@@ -929,32 +817,16 @@ int Edlin::backward()
 
 void Edlin::go_ahead()
 {
-  putbs( pos-top );
-  if( top != 0 ){
-    top = pos = 0;
-    repaint(0);
-  }else{
-    pos = 0;
-  }
+  putbs( pos );
+  pos = 0;
 }
 
 
 void Edlin::go_tail()
 {
-  if( len < windowsize ){
-    /* 全文字列が、画面中にでている場合、右移動だけでよい */
-    if( top != 0 ){
-      putbs( pos-top );
-      top = pos = 0;
-    }
-    while( pos < len )
-      putchr( strbuf[pos++] );
-  }else{
-    putbs( pos-top );
-    top = pos = len-windowsize;
-    while( pos < len )
-      putchr( strbuf[pos++] );
-  }
+  /* 全文字列が、画面中にでている場合、右移動だけでよい */
+  while( pos < len )
+    putchr( strbuf[pos++] );
 }
 
 void Edlin::clean_up()
@@ -965,18 +837,15 @@ void Edlin::clean_up()
     putbs( msgsize );
     msgsize = 0;
   }else{
-    putbs( pos-top );
-    if( len < windowsize )
-      cleaning_size = len;
-    else
-      cleaning_size = windowsize;
+    putbs( pos );
+    cleaning_size = len;
   }
 
   for(int i=0; i<cleaning_size ; i++ )
     putchr(' ');
-
+  
   putbs( cleaning_size );
-  top = len = pos = 0;
+  markpos = len = pos = 0;
   strbuf[ 0 ] = '\0';
   atrbuf[ 0 ] = SBC;
 }
@@ -1119,8 +988,27 @@ void Edlin::clean_bottom()
   }
 }
 
+void Edlin::cut()
+{
+  int at,length;
 
-void Edlin::locate(int x)  /* WINDOWモード未対応 */
+  if( pos < markpos ){
+    at = pos;
+    length = markpos - pos;
+    markpos = pos;
+  }else if( pos > markpos ){
+    at = markpos;
+    length = pos - markpos;
+    putbs( length );
+    pos = markpos;
+  }else{
+    return;
+  }
+  makeRoom( at , -length );
+  after_repaint( length );
+}
+
+void Edlin::locate(int x)
 {
   if( x > pos ){
     while( pos < x )
@@ -1130,22 +1018,3 @@ void Edlin::locate(int x)  /* WINDOWモード未対応 */
   }
   pos = x;
 }
-
-#if 0
-
-Edlin::Status Edlin::bind_self_insert(int key)
-{
-  if( (key >= ' ' &&  ch < 0x100 ) || ch >= 200 ){
-    insert(key);
-    forward();
-  }
-  return CONTINUE;
-}
-Edlin::Status Edlin::bind_backspace(int key)
-{
-  backward();
-  erase();
-  return CONTINUE;
-}
-
-#endif

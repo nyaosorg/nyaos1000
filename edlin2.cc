@@ -1,9 +1,22 @@
+/* -*- c++ -*-
+ *
+ * If you will compile NYAOS without CANNA library/header files ,
+ * Please write `#define CANNA 0'
+ *
+ * 「かんな」のライブラリが無い場合は、「#define CANNA 0 」を定義ください。
+ */
+
+#ifndef CANNA
+#  define CANNA 1
+#endif
+
 #include <sys/kbdscan.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <io.h>	/* for access() */
-
-#include <canna/jrkanji.h>
+#if CANNA
+#  include <canna/jrkanji.h>
+#endif
 
 #define INCL_DOSMODULEMGR
 #include <os2.h>
@@ -18,18 +31,21 @@
 
 int option_honest = 0;
 
+#if CANNA
 /* ~/.canna が存在すれば 0 さもなければ 1 */
-static int access_home_canna()
+static bool access_home_canna()
 {
   char fname[ FILENAME_MAX ];
   const char *home=getenv("HOME");
   if( home == NULL  || *home=='\0' )
-    return 1;
+    return true;
   sprintf( fname , "%s/.canna" , home );
-  return access( fname, 0);
+  return access( fname, 0) != 0;
 }
 
-/* %SCRIPTDRIVE%:/usr/local/canna/lib/default.canna が存在すれば 0 */
+/* %SCRIPTDRIVE%:/usr/local/canna/lib/default.canna が存在すれば
+ * そのドライブ番号、さもなければ、-1 を返す。
+ */
 static int access_script_canna()
 {
   static char fname[] = "?:/usr/local/canna/lib/default.canna";
@@ -126,10 +142,11 @@ static void release_canna()
   }
   DosFreeModule(module_handle);
 }
-
+#endif
 
 int canna_init()
 {
+#if CANNA
   /* ------- DLL Loading ------ */
 
   UCHAR errmsg[100];
@@ -144,49 +161,50 @@ int canna_init()
   
   fputs("canna.dll loaded.\n",stdout);  
   atexit(release_canna);
-
+  
   /* ------ CANNA customize file ----- */
 
   char **warning=NULL;
+  /* -- かんな初期化の際に /usr/local/canna/lib のあるドライブに移動する--
+   * set cannya=ドライブ[,初期化ファイル]
+   * --------------------------------------------------------------------*/
   
-  { /* -- かんな初期化の際に /usr/local/canna/lib のあるドライブに移動する--
-     * set cannya=ドライブ[,初期化ファイル]
-     * --------------------------------------------------------------------*/
+  char *dotcanna=getenv("CANNYA");
+  int orgdrv = _getdrive();
+  
+  if( dotcanna != NULL  &&  *dotcanna != '\0' ){
+    if( *dotcanna != ',' ){
+      _chdrive( *dotcanna++ );
+      if( *dotcanna == ':' )
+	++dotcanna;
+    }
+    if( *dotcanna == ',' )
+      (*DLL_jrKanjiControl)(0 , KC_SETINITFILENAME , ++dotcanna);
     
-    char *dotcanna=getenv("CANNYA");
-    int orgdrv = _getdrive();
-    int drv=0; // 無駄なんだけどね、この0は 
-    
-    if( dotcanna != NULL  &&  *dotcanna != '\0' ){
-      if( *dotcanna != ',' ){
-	_chdrive( *dotcanna++ );
-	if( *dotcanna == ':' )
-	  ++dotcanna;
-      }
-      if( *dotcanna == ',' )
-	(*DLL_jrKanjiControl)(0 , KC_SETINITFILENAME , ++dotcanna);
-      
-    }else if( access_home_canna() != 0 && (drv=access_script_canna()) != -1 ){
+  }else if( access_home_canna() != 0  ){
+    int drv=access_script_canna();
+    if( drv != -1 ){
       /* ホームディレクトリに .canna が無くて、
        * %SCRIPTDRIVE%:/usr/local/canna/lib/default.canna
        * が存在する場合、ドライブを一次的に変更する。ああ、こそく...
        */
-      
       _chdrive(drv);
     }
-
-    int rc=(*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
-    _chdrive(orgdrv);
-    if( rc == -1 ){
-      print_warning(warning);
-      return 1;
-    }
   }
+  
+  int rc=(*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
+  _chdrive(orgdrv);
+  if( rc == -1 ){
+    print_warning(warning);
+    return 1;
+  }
+  
   if( warning != NULL ){
     print_warning(warning);
     return 1;
   }
   canna_loaded = 1;
+#endif
   return 0;
 }
 
@@ -209,12 +227,6 @@ void Edlin2::putbs(int n)
     putc('\b',fp);
 }
 
-int Edlin2::getkey_with_cursor()
-{
-  fflush(fp);
-  return ::getkey();
-}
-
 enum{ PREFIX = -1 };
 #define CAN2NYA(c,n)  case CANNA_KEY_##c: *dp++=PREFIX;*dp++ = K_##n;break
 #define NYA2CAN(n,c)  case KEY(n): key= CANNA_KEY_##c ; break
@@ -223,6 +235,7 @@ int Edlin2::canna_inited=0;
 
 void Edlin2::canna_to_alnum()
 {
+#if CANNA
   /* かんなが初期化されている時のみ「英数モード」へ戻す。*/
   if( canna_loaded ){
     jrKanjiStatusWithValue ksv;
@@ -235,7 +248,24 @@ void Edlin2::canna_to_alnum()
     ksv.ks = &ks;
     (*DLL_jrKanjiControl)( 0 , KC_CHANGEMODE , (char*)&ksv );
   }
+#endif
 }
+
+#if CANNA
+/* message が NULL なら *mark を、さもなければ message の内容を dp にコピー */
+static void copy_message( const char *message , int mark , SmartPtr &dp )
+{
+  if( message != NULL && *message != '\0' ){
+    *dp++ = '\033';
+    *dp++ = '[';
+    while( *message != '\0' )
+      *dp++ = *message++;
+    *dp++ = 'm';
+  }else{
+    *dp++ = mark ;
+  }
+}
+#endif
 
 int Edlin2::option_canna=1;
 
@@ -249,21 +279,8 @@ int are_spaces(const char *s)
   return 1;
 }
 
-/* message が NULL なら *mark を、さもなければ message の内容を dp にコピー */
-static void copy_message( const char *message , int mark , SmartPtr &dp )
-{
-  if( message != NULL ){
-    *dp++ = '\033';
-    *dp++ = '[';
-    while( *message != '\0' )
-      *dp++ = *message++;
-    *dp++ = 'm';
-  }else{
-    *dp++ = mark ;
-  }
-}
-
-int Edlin2::print_henkan_koho( jrKanjiStatus &status , const char *mode_string )
+#if CANNA
+int Edlin2::print_henkan_koho( jrKanjiStatus &status ,const char *mode_string)
 {
   /* 何らかの表示を行ったら 文字数、さもなければ 0 を表示する。 */
   if(  (status.info & KanjiGLineInfo)==0
@@ -302,13 +319,19 @@ int Edlin2::print_henkan_koho( jrKanjiStatus &status , const char *mode_string )
   bottom_message("%s%s", mode_string , buffer );
   return column;
 }
+#endif
 
 extern int option_icanna;
 
 int Edlin2::getkey()
 {
-  if( !canna_loaded || option_icanna )
-    return getkey_with_cursor();
+#if CANNA
+  if( !canna_loaded || option_icanna ){
+#endif
+    fflush(fp);
+    return ::getkey();
+#if CANNA /* ================ CANNA ================ */
+  }
 
   /* 前回の呼び出しで確定している文字列がある場合、
    * それらを順次、呼び出しの度に返す必要がある。
@@ -346,12 +369,8 @@ int Edlin2::getkey()
 
     /* ローカルバッファが空の時はカーソルを表示して、
      * キー入力を行う */
-    if( localbuf[0] == '\0' && cursor_on != NULL ){
-      orgkey = getkey_with_cursor();
-    }else{
-      fflush(fp);
-      orgkey=::getkey();
-    }
+    fflush(fp);
+    orgkey=::getkey();
 
     /* IME からの入力があった場合などは、即確定させて、
      * その文字列を確定バッファに放り込む */
@@ -413,9 +432,6 @@ int Edlin2::getkey()
       NYA2CAN(CTRL_RIGHT,Cntrl_Right);
       NYA2CAN(PAGEUP,PageUp);
       NYA2CAN(PAGEDOWN,PageDown);
-
-    case 0x0A:
-      key = 0x0d;	break;
 
     case KEY(DEL):
       key = 0x7F;	break;
@@ -543,4 +559,5 @@ int Edlin2::getkey()
       use_bottom=1;
     }
   }/* 「かんな」の変換ループ */
+#endif /* ================ CANNA ================ */
 }

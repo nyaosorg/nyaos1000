@@ -1,10 +1,16 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <io.h>
 #include <ctype.h>
 #include <process.h>
 #include <sys/video.h>
 
+#define USE_SET_WIN_TITLE 0
+
 #define INCL_VIO
+#define INCL_WIN
+#define INCL_DOSPROCESS
+
 #include <os2.h>
 
 #include "edlin.h"
@@ -14,6 +20,8 @@
 
 #define RED	"" /*"\x1B[31m"*/
 #define WHITE	"" /*"\x1B[37m"*/
+
+HAB   hab, hmq;
 
 int prompt_myself=1;
 int screen_width=80;
@@ -33,6 +41,8 @@ char *cmdexe_path=comspec+8;
 
 int execute_result=0;
 extern int printexitvalue;
+
+extern int killAllPublicHistory(void);
 
 int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 
@@ -56,6 +66,25 @@ static void get_scrsize_with_env(int *wh)
     wh[1] = 25;
 }
 
+/* VIOプログラムから、内部的に PM アプリケーションに化ける
+ * これによって、PM のクリップボードの読み書きを可能とする。
+ */
+static int pretend_pm_application()
+{
+  PTIB  ptib = NULL;
+  PPIB  ppib = NULL;
+  APIRET rc = DosGetInfoBlocks(&ptib, &ppib);
+  if (rc != 0)
+    return rc;
+  ppib->pib_ultype = PROG_PM;
+  hab = WinInitialize(0);
+  hmq = WinCreateMsgQueue(hab, 0);
+  if (hmq == NULLHANDLE)
+    return rc;
+  return 0;
+}
+
+
 void get_scrsize(int *wh,FILE *f)
 {
   if( f==0 )
@@ -72,14 +101,41 @@ void get_scrsize(int *wh,FILE *f)
   }
 }
 
-// ---- fgets と基本は同じ。ただ、末尾の「\n」を読み込まない点が異なる ----
+/* fgets と基本は同じ。ただし
+ *	・末尾の「\n」を読み込まない。
+ *	・「^\n」は無視する(行継続文字だとみなす)
+ */
 char *fgets_chop(char *dp, int max, FILE *fp)
 {
-  int ch=0; // この 0 は不要なんだけどね。ほんとは 
-  while( max-- >= 0  &&  (ch=getc(fp)) != '\n' ){
+  bool kanji=false;    /* 前のcharが、漢字の第1バイトだった。*/
+  int ch=0;
+
+  for(;;){
+    if( max-- <= 1  ||  (ch=getc(fp)) == EOF ){
+      *dp = '\0';
+      return NULL;
+    }
+    if( ch == '\n' )
+      break;
+
+    if( ch == '^'  &&  !kanji  ){
+      if( (ch=getc(fp) == '\n' ) ){
+	ch = getc(fp); /* そのまま「^\n」を無視する。
+			* 「^\n^\n」と連続すると対応できないが、
+			* そんなことする人間はいないだろう…多分 */
+      }else{
+	ungetc( ch , fp );
+	ch = '^';
+      }
+    }
     if( ch==EOF ){
       *dp = '\0';
       return NULL;
+    }
+    if( kanji ){
+      kanji = false;
+    }else if( is_kanji(ch) ){
+      kanji = true;
     }
     *dp++ = ch;
   }
@@ -87,7 +143,7 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   return dp;
 }
 
-#ifdef USE_SET_WIN_TITLE
+#if USE_SET_WIN_TITLE
 /* フラグ : FCF_TASKLIST が VIO ウインドウで立っている場合、
  * 「NYAOS.EXE」の代わりに set_win_title の引数がウインドウタイトルになる。
  * あいにく「start nyaos.exe」で起動した時か、アイコンにタイトルが無い
@@ -99,24 +155,23 @@ extern "C" {
 void set_win_title( const char *title )
 {
   _THUNK_C_PROLOG ( 4 );
-  _THUNK_C_FLAT ( title );
+  _THUNK_C_FLAT ( const_cast<char*>(title) );
   _THUNK_C_CALL ( WinSetTitle );
 }
-#endif
 
+#endif
 
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
-    fputs("NYAOS : Current Version of NYAOS does not support DOS/VDM.\n"
+    fputs(  "NYAOS : Current Version of NYAOS does not support DOS/VDM.\n"
 	  , stderr );
     return -1;
   }
-#ifdef USE_SET_WIN_TITLE
+#if USE_SET_WIN_TITLE
   set_win_title( "Nihongo Yet Another Os/2 Shell "VERSION );
 #endif
   
-
   // ---- DBCS table の初期化 ----
   if( dbcs_table_init() != 0 ){
     fprintf(stderr,"nyaos: DBCS init error\n");
@@ -294,11 +349,11 @@ int main(int argc, char **argv)
       }
     }
   }
+  pretend_pm_application();
 
   if( isatty(fileno(stdin)) && !quite_mode ){
     extern int get_current_cp(void);
     
-
     if( ! warning_mode )
       fputs("\x1b[2J\x1b[1m",stdout);
 
@@ -309,10 +364,10 @@ int main(int argc, char **argv)
 	     "\n  ┻┗┛┗━┛┻  ┻┗━┛┗━┛  "
 	     );
     }else{
-      printf("\n   // /// //  //  ////   ////   /////"
+      printf("\n   //  // //  //  ////   ////   ////"
 	     "\n  /// // ////// //  // //  // ///   "
 	     "\n // ///    /// ////// //  //    /// "
-	     "\n/// //  ////  //  //  ////  /////   ");
+	     "\n//  //  ////  //  //  ////  /////   ");
     }
     
     printf("\n          Free Software           "
@@ -384,19 +439,21 @@ int main(int argc, char **argv)
   if( option_vio_cursor_control )
     v_init();
 
-  char cmdlin[1024]="";
-
   // ---------------------------------------------------------
   // 標準入力が、リダイレクトされている場合の処理(ここで完結)
   // ---------------------------------------------------------
   if( ! isatty(fileno(stdin)) ){
+    char cmdlin[1024]="";
     for(;;){
       if( option_prompt_even_piped ){
+	/* Mule 中から、NYAOS を利用する場合は、
+	 * パイプされている場合でも、プロンプトを表示させなくては
+	 * いけない */
 	char promptstr[2048];
 	const char *promptenv=getenv("NYAOSPROMPT");
 	if( promptenv==NULL && (promptenv=getenv("PROMPT")) == NULL )
 	  promptenv = "$p$g";
-	setprompt(promptenv , promptstr , NULL );
+	(void)set_prompt( promptenv , promptstr , sizeof(promptstr) );
 	fputs( promptstr , stdout );
 	fflush(stdout);
       }
@@ -406,41 +463,38 @@ int main(int argc, char **argv)
     }
   }
 
-  // -------- 入力オブジェクト edlin を用意する ---------------
-  // ここで、用意するのは、ループの内部に置いて
-  // 何回もコンストラクタ・デストラクタを呼ぶコストを省くため。
-  // prompt は、この時点では未定なので、ダミーを放り込んでおく。
-  // ----------------------------------------------------------
-
-  extern int killAllPublicHistory(void);
-
   killAllPublicHistory();
 
   if( option_icanna == 0 ){
     extern int canna_init();
     canna_init();
   }
-  
-  ShellEdlin edlin("NYAOS>",cmdlin,sizeof(cmdlin) );
-  Shell shell(edlin);
-  
+
+  Shell shell;
+  if( !shell ){
+    fputs( "nyaos: memory allocation error for shell.\n" , stderr );
+    return -1;
+  }
+
   // ======================== コマンド毎のループ =========================
   for(;;){
-    // ----- ここから、えんえんと、プロンプト関係の処理がつづく -----
-
-    char promptstr[2048];
+    /* プロンプト文字列の作成 */
+    
+    char promptstr[256];
     const char *promptenv=getenv("NYAOSPROMPT");
     if( promptenv==NULL && (promptenv=getenv("PROMPT")) == NULL )
       promptenv = "$p$g";
     
-    setprompt(promptenv , promptstr , &edlin );
+    /* プロンプト文字列に、最上段を使用するものがあれば、
+     * シェル(Shell)に、その使用を禁止させる。*/
     
-    // ------------------------------------------------------------------
-    // 入力オブジェクト edlin に擬似カーソルの為のエスケープシーケンスを
-    // 伝えておく(って、いちいち、ここで何回もさせることでもないが...)
-    // ------------------------------------------------------------------
-
-    // ---- カーソルを BOX 型にする ----
+    if( set_prompt(promptenv , promptstr , sizeof(promptstr) ) )
+      shell.forbid_use_topline();
+    else
+      shell.allow_use_topline();
+    
+    /* カーソルを BOX 型にする。
+     */
     if( option_vio_cursor_control ){
       VIOCURSORINFO info;
 
@@ -454,25 +508,12 @@ int main(int argc, char **argv)
       info.attr = 0;
       
       VioSetCurType( &info , 0 );
-#if 0
-      if( v_hardware() == V_COLOR_12 )
-	v_ctype( 0 , 14 );
-      else
-	v_ctype( 0 , 6 );
-#endif
     }
-
-    edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
     
-    // ================== 実際の入力 =======================
-    //  _osmode によって処理を変えているのは、DOS では ^H で
-    // 前の行に遡れないため、次の行に繰り越させず、入力文字列を
-    // スクロールさせる。この時に一度に表示できる文字数を与えて
-    // いるわけである。 OS/2 では、そのようなことを気にする必要
-    // がないため ∞ を与える。
-    
-    int rc=shell.line_input(promptstr
-			    ,_osmode==OS2_MODE ? 32767 :screen_width-1 );
+    /* 一行入力 */
+    // int rc=shell.line_input(promptstr);
+    const char *top;
+    int rc = shell.line_input(promptstr,">",&top);
     
     // ============== コマンドの実行 ====================
 
@@ -480,18 +521,17 @@ int main(int argc, char **argv)
     // コマンドを実行し、「終了」の帰り値だったら、終了する。
     // 実行は、高機能system である execute がよしなにしてくれる。
     // ---------------------------------------------------------
-
+    
     if( rc >= 0 ){
       putchar('\n');
-      char *top=cmdlin;
       while( *top != '\0' && is_space(*top) )
 	++top;
       if( top[0] != '\0' ){
 	execute_result = execute(stdin,top);
-
+	
 	if( execute_result == RC_QUIT ){
 	  // --- exitコマンドなどによる終了 ----
-	  fputs("Good bye.\n",stderr);
+	  fputs("Good bye.\n",stdout);
 	  return 0;
 	}
 	if( option_cmdlike_crlf )
@@ -517,17 +557,10 @@ int main(int argc, char **argv)
 	
       default:
 	fputs("\nUnknown error occuerd.\n"
-	      "Please mail to hayama@karl.tis.co.jp\n"
+	      "Please mail to iya-hayamatta@ijk.com\n"
 	      , stdout );
 	break;
       }
     }
   }// ============ コマンド毎のループの末尾 ===========
-}
-
-void unexpected(void)
-{
-  fputs("nyaos: fatal error. unexpected exception occured.\n"
-	"       Please mail to iya-hayamatta@ijk.com\n"
-	, stderr );
 }

@@ -9,6 +9,30 @@
 /* #define is_kanji(x) 0 */
 #define DEBUG(x) x
 
+int convroot(char *&dp,int &size,const char *sp) throw(size_t)
+{
+  int lastchar=0;
+  while( *sp != '\0' ){
+    lastchar = *sp;
+    if( *sp == '/' ){
+      lastchar = *dp++ = '\\';
+      ++sp;
+    }else{
+      if( is_kanji(*sp) ){
+	*dp++ = *sp++;
+	if( --size <= 0 )
+	  throw (size_t)-2;
+      }
+      *dp++ = *sp++;
+    }
+    if( --size <= 0 )
+      throw (size_t)-1;
+  }
+  *dp = '\0';
+  return lastchar;
+}
+
+
 int get_current_cp()
 {
   ULONG CpList[8],CpSize;
@@ -54,24 +78,18 @@ char *strcpy_tail(char *dp,const char *sp)
 // ディレクトリ名は末尾に \ や / がついていてもよい。
 int Dir::findfirst(const char *fname,int attr)
 {
-  char *path=(char*)alloca(strlen(fname));
+  int size=strlen(fname)+3;
+  char *path=static_cast<char*>(alloca(size));
   char *p=path;
-  
-  int lastchar = 0;
-  while( *fname != '\0' ){
-    if( *fname == '/' ){
-      fname++;
-      lastchar = *p++ = '\\';
-      continue;
-    }
-    if( is_kanji(lastchar=*fname) )
-      *p++ = *fname++;
-    *p++ = *fname++;
+  try{
+    int lastchar = convroot(p,size,fname);
+    if( lastchar != '\\'  &&  lastchar != ':' )
+      *p++ = '\\';
+    *p++ = '*';
+  }catch(...){
+    ;
   }
-  if( lastchar != '\\'  &&  lastchar != ':' )
-    *p++ = '\\';
-  *p++ = '*';
-  *p   = '\0';
+  *p = '\0';
   
   return _findfirst(path,attr);
 }
@@ -81,19 +99,13 @@ int Dir::findfirst(const char *fname,int attr)
  */
 int Dir::findfirst_with_wildcard(const char *fname,int attr)
 {
-  char *path=(char*)alloca(strlen(fname));
+  int size=strlen(fname)+1;
+  char *path=static_cast<char*>(alloca(size));
   char *p=path;
-  
-  int lastchar = 0;
-  while( *fname != '\0' ){
-    if( *fname == '/' ){
-      fname++;
-      *p++ = '\\';
-      continue;
-    }
-    if( is_kanji(lastchar=*fname) )
-      *p++ = *fname++;
-    *p++ = *fname++;
+  try{
+    (void)convroot(p,size,fname);
+  }catch( ... ){
+    ;
   }
   *p = '\0';
   return _findfirst(path,attr);

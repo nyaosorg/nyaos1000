@@ -195,7 +195,7 @@ struct Option{
   { "auto_close"	   , &option_auto_close                , 1  , 0 },
   { "backquote"            , &option_backquote                 , 1  , 0 },
   { "backquote_in_quote"   , &option_backquote_in_quote        , 1  , 0 },
-  { "beep"                 , &ShellEdlin::beep_ok              , 1  , 0 },
+  { "beep"                 , &Shell::beep_ok                   , 1  , 0 },
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
   { "cmdlike_crlf"         , &option_cmdlike_crlf              , 1  , 0 },
   { "complete_etc"         , &option_complete_etc              , 1  , 0 },
@@ -203,7 +203,7 @@ struct Option{
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
   { "complete_tilda"       , &Complete::complete_tail_tilda    , 1  , 0 },
   { "ctrl_d_eof"           , &Shell::ctrl_d_eof                , 1  , 0 },
-  { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
+//  { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
   { "debug"                , &option_debug_echo                , 1  , 0 },
   { "direct_key"           , &option_direct_key		       , 1  , 0 },
   { "dots"                 , &option_dots                      , 1  , 0 },
@@ -224,7 +224,7 @@ struct Option{
   { "sos"                  , &option_sos                       , 1  , 0 },
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
-  { NULL , NULL , 1 , 0 }
+  { NULL , NULL , 1 , 0 },
 };
 
 /* option コマンドのオプションをセットする。

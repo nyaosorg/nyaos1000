@@ -250,7 +250,6 @@ void make_command_cache()
 	// 全て登録する。
 	if(   dir[dir.get_name_length()-1] != '~'
 	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
-	
 	  path_cache.insert( new_filelist(dir) ,SORT_BY_NAME_IGNORE );
       }
     }
@@ -303,7 +302,6 @@ int Complete::makelist_with_path(const char *path)
     p++;
   }
 
-  
   /* ASSERT : path には、ディレクトリ名が含まれていない。*/
   strcpy( fname , path );
 
@@ -324,9 +322,10 @@ int Complete::makelist_with_path(const char *path)
   for(Dir dir(".") ; dir != NULL ; ++dir ){
     if(   dir.get_name_length() >= common_length
        && strnicmp( fname , dir.get_name() ,common_length )==0
-       && which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0
+       && ((dir.get_attr() & Dir::DIRECTORY) != 0
+	   || which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0 )
        && dir[dir.get_name_length()-1] != '~'
-       && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  ){
+       && (dir.get_attr() & Dir::HIDDEN)==0  ){
     
       insert( new_filelist(dir) );
       if( dir.get_name_length() > max_length )

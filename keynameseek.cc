@@ -30,6 +30,15 @@ int KeyName::compareWithTop(const void *key,const void *el)
   }
 }
 
+KeyName *KeyName::find( int n )
+{
+  for(unsigned i=0 ; i<numof(keytable) ; i++){
+    if( keytable[i].code == n )
+      return &keytable[i];
+  }
+  return 0;
+}
+
 KeyName *KeyName::find( const char *name )
 {
 #if 1

@@ -7,14 +7,15 @@
 #include "complete.h"
 #include "nyaos.h"
 
-int ShellEdlin::beep_ok=1;
+/* option 命令と クラスEdlinから参照されるのみ */
+int Shell::beep_ok=1;
 
 /* 1.39 で追加した <WP_CONFIG> などを、補完対象に加えるオプション。
  * しかし、使ってみると、実際、使いにくくなるだけなので、デフォルトオフ。
  */
 int option_complete_etc=0;
 
-int ShellEdlin::complete_hook(Complete &com)
+int Shell::complete_hook(Complete &com)
 {
   int n=0;
   if( com.status == Complete::SIMPLE_COMMAND_COMPLETED ){
@@ -64,7 +65,7 @@ int ShellEdlin::complete_hook(Complete &com)
 
 /* ^D や [TAB]^2 など、補完リストの表示を行うキーメソッド
  */
-void ShellEdlin::complete_list()
+void Shell::complete_list()
 {
   Complete com;
 
@@ -145,36 +146,18 @@ void ShellEdlin::complete_list()
   
   fprintf(fp,"\n%s",prompt);
   int i=0;
-  while( top+i<len && i<windowsize ){
-    putchr( strbuf[top + i++] );
-  }
-  putbs( i-(pos-top) );
+  while( i<len )
+    putchr( strbuf[ i++] );
+  putbs( i-pos );
 }
 
-int ShellEdlin::setprompt(const char *sp , int window )
+void Shell::cls()
 {
-  prompt=sp;
-  promptlen=0;
-  while( *sp != '\0' ){
-    /* エスケープシーケンスを除いた文字数を windowsize から引いておく */
-    if( *sp++ == '\x1B' ){
-      while( *sp != '\0' && !is_alpha(*sp) )
-	sp++;
-      sp++;
-    }else{
-      promptlen++;
-    }
-  }
-  windowsize = window - promptlen;
-  return promptlen;
-}
-
-void ShellEdlin::cls()
-{
-  fprintf( fp , (using_i_mark ? "\x1B[2J\x1B[H\n%s" : "\x1B[2J\x1B[H%s")
+  fprintf(  fp 
+	  , topline_permission ? "\x1B[2J\x1B[H%s":"\x1B[2J\x1B[H\n%s"
 	  , prompt );
   int i=0;
-  while( i<windowsize && top+i < len )
-    putchr( strbuf[top+i++] );
-  putbs( i - (pos-top) );
+  while( i < len )
+    putchr( strbuf[i++] );
+  putbs( i - pos );
 }

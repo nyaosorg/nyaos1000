@@ -153,17 +153,15 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
 
   dummyfirst.next = NULL;
 
-  char buffer[1024];
   int org_fd1 = -1;
   Parse *args=NULL;
 
   /** 繰り返す命令群を全て入力させる。 **/
   if( isatty(fileno(srcfil)) ){
     /* キーボード入力 */
-    ShellEdlin edlin("? ",buffer,sizeof(buffer));
-    Shell shell(edlin);
+    Shell shell;
     const char *promptenv=getenv("NYAOSPROMPT2");
-    char prompt[1024];
+    char prompt[256];
     if( promptenv == NULL ){
       prompt[0] = '?';
       prompt[1] = ' ';
@@ -172,11 +170,15 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
     int rc;
     
     for(;;){
-      if( promptenv != NULL )
-	setprompt(promptenv,prompt,&edlin);
-      edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
+      shell.allow_use_topline();
+      if( promptenv != NULL ){
+	if( set_prompt( promptenv , prompt , sizeof(prompt) ) )
+	  shell.forbid_use_topline();
+      }
+      shell.setcursor( cursor_on_color_str , cursor_off_color_str );
       
-      rc=shell.line_input(prompt,32767);
+      const char *buffer;
+      rc=shell.line_input(prompt,"and..",&buffer);
       putchar('\n');
       if( rc < 0 )
 	break;
@@ -213,6 +215,7 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   }else{
     /* ファイル入力 */
     for(;;){
+      char buffer[1024];
       if( fgets_chop(buffer,sizeof(buffer),srcfil) == NULL )
 	break;
       

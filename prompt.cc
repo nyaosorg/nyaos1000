@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -5,7 +6,10 @@
 #include <sys/ea.h>
 #include <sys/video.h>
 
-#include "edlin.h"
+#define INCL_DOSMISC
+#include <os2.h>
+
+// #include "edlin.h"
 #include "nyaos.h"
 #include "finds.h"
 #include "strtok.h"
@@ -13,12 +17,22 @@
 extern int nhistories;
 extern int execute_result;
 
+extern char *get_ea_longname( const char *fname );
+
+char *strcpytail(char *dp,const char *sp)
+{
+  while( *sp != '\0' )
+    *dp++ = *sp++;
+  *dp = '\0';
+  return dp;
+}
+
 /* パスが、ホームディレクトリ名を含んでいれば、「～」に変換する。
  *
  * in/out p ファイル名。直接書き変えられる
  * return 書き変え後のファイル名の末尾
  */
-static char *to_tilda_name(char *p)
+static char *to_tilda_name(char *p,int &size)
 {
   const char *home=getenv("HOME");
   if( home == NULL || *home == '\0' )
@@ -34,21 +48,34 @@ static char *to_tilda_name(char *p)
     ++home ; ++sp;
   }
   
-  *p++ = '~';
-  while( *sp != '\0' )
+  *p++ = '~'; --size;
+  while( *sp != '\0'  &&  --size > 1 )
     *p++ = *sp++;
   *p = '\0';
   return p;
 }
 
+/* 真のファイル名を得る(ファイル名のみ、ディレクトリは含まず)
+ *   return 書き込み後の dp
+ * ファイル名が得られなかった時は NULL を返す。
+ */
+static char *paste_true_name(char *dp,const char *cwd)
+{
+  Dir dir;
+  if( dir._findfirst( cwd ) != 0 )
+    return NULL;
 
+  return strcpytail(dp,dir.get_name());
+}
 
-/* 大文字・小文字を区別した正確なファイル名を得る。
- * in	src オリジナルファイル名(破壊される)
- * out	dst 大文字・小文字を正確にしたファイル名
+/* 大文字・小文字を区別した正確なファイル名を得るが、
+ * 元の SRC を破壊してしまう。破壊したく無い場合は
+ * correct_case() を使うべし。
+ *    in	src オリジナルファイル名(破壊される)
+ *    out	dst 大文字・小文字を正確にしたファイル名
  * return dst の末尾へのポインタ
  */
-char *get_true_name(char *src,char *dst)
+static char *_correct_case(char *src,char *dst)
 {
   /* 元の文字列は
    *    x:\hoge\hoge
@@ -71,65 +98,43 @@ char *get_true_name(char *src,char *dst)
   /* サブディレクトリ名を切り出す。*/
   Strtok tzer(src);
   char *token=tzer.cut_with("\\/");
-  // char *token=strtok(src,"\\/");
   if( token != NULL ){
     for(;;){
+      /* まず、素のファイル名をコピーしておく。 */
+      char *tail_at_normal=strcpytail(dp,token);
 
-      // まず、素のファイル名をコピーしておく。
-      char *p=dp;
-      while( *token != '\0' )
-	*p++ = *token++;
-      *p = '\0';
+      /* 大文字・小文字の正確なファイル名が得られたら、
+       * そちらを先にコピーした上に上書きする。 */
 
-      // 大文字・小文字の正確なファイル名が得られたら、
-      // そちらを先にコピーした上に上書きする。
-      Dir dir;
-      if( dir._findfirst(dst) == 0 ){
-	const char *q=dir.get_name();
-	while( *q != '\0' )
-	  *dp++ = *q++;
-	*dp = '\0';
-      }else{
-	dp = p;
-      }
+      if( (dp=paste_true_name(dp,dst) ) == NULL )
+	dp = tail_at_normal;
 
       if( (token=tzer.cut_with("\\/")) == NULL )
 	break;
-      // if( (token=strtok(NULL,"\\/")) == NULL )
-      //   break;
+
       *dp++ = '\\';
     }
   }
   *dp = '\0';
   return dp;
 }
-void truepath( char *dst , const char *src , int size )
+
+/* SRC の大文字/小文字を正しく修正したパス名を dst へ得る。
+ * SRC は破壊しない。(open.cc から使われる)
+ *	src      元のパス名
+ *	dst,size 変換先のバッファとそのサイズ
+ */
+void correct_case( char *dst , const char *src , int size )
 {
   char *tmp=(char*)alloca(size);
   _fullpath( tmp , src , size );
-  get_true_name( tmp , dst );
+  _correct_case( tmp , dst );
 }
 
-/* 現在のカレントディレクトリを大文字・小文字も正確に得る
- * in/out - dst ファイル名(上書きされる)
- * return ファイル名の末尾の文字
+/* パス名の「￥」を「/」へ変換する
  */
-char *getcwd_case(char *dst)
+void anti_convroot(char *dst)
 {
-  char cwd[ FILENAME_MAX ];
-
-  cwd[0] = _getdrive();
-  cwd[1] = ':';
-
-  if( _getcwd( cwd+2 , sizeof(cwd)-2 ) == NULL ){
-    *dst++ = cwd[0];
-    *dst++ = cwd[1];
-    return dst;
-  }
-  
-  get_true_name(cwd,dst);
-  
-  /* 最後にルートを「/」に戻す */
   while( *dst != '\0' ){
     if( *dst == '\\' ){
       *dst++ = '/';
@@ -139,9 +144,39 @@ char *getcwd_case(char *dst)
       ++dst;
     }
   }
-  return dst;
 }
 
+/* カレントドライブのカレントディレクトリを大文字・小文字も正確に得る
+ * in/out - dst ファイル名(上書きされる)
+ * return ファイル名の末尾の位置
+ */
+char *getcwd_case(char *dst)
+{
+  char cwd[ FILENAME_MAX ];
+
+  cwd[0] = _getdrive();
+  cwd[1] = ':';
+
+  DosError( FERR_DISABLEHARDERR );
+  char *rc = _getcwd( cwd+2 , sizeof(cwd)-2 );
+  DosError( FERR_ENABLEHARDERR );
+  if( rc == NULL ){
+    *dst++ = cwd[0];
+    *dst++ = cwd[1];
+    *dst   = '\0';
+    return dst;
+  }
+  
+  char *tail = _correct_case(cwd,dst); // パス名の大文字・小文字を修正
+  anti_convroot(dst);	  // パス名の「￥」を「/」へ修正
+  return tail;
+}
+
+/* ファイルシステムを調べる。
+ *	drivenum : ドライブ番号
+ * return
+ *   0:FAT  , 1:HPFS , 2:CDFS
+ */
 int query_filesystem(int drivenum)
 {
   static unsigned char buffer[ sizeof(FSQBUFFER2)+(3*CCHMAXPATH) ];
@@ -169,31 +204,27 @@ int query_filesystem(int drivenum)
   }
 }
 
-static char *paste_true_name(char *dp,const char *cwd)
-{
-  Dir dir;
-  dir._findfirst( cwd );
-  for(const char *ssp=dir.get_name(); *ssp != '\0' ; ssp++ )
-    *dp++ = *ssp;
-  return dp;
-}
 
 char *get_cwd_long_name(char *dp)
 {
+  int rc=0;
   char cwd[ FILENAME_MAX ];
   *dp++ = cwd[0] = _getdrive();
   *dp++ = cwd[1] = ':';
-  if( _getcwd1( cwd+2 , toupper(cwd[0]) ) != 0 )
+  DosError( FERR_DISABLEHARDERR );    
+  rc = _getcwd1( cwd+2 , toupper(cwd[0]) ) ;
+  DosError( FERR_ENABLEHARDERR );
+  if( rc != 0 )
     return dp;
 
-  /* パス名の/を￥に変換する。*/
-  for(char *p=cwd+2;*p != '\0';p++){
-    if( *p=='/' )
-      *p = '\\';
-    else if( is_kanji(*p) )
-      ++p;
+  try{
+    char *p=cwd+2;
+    int size=sizeof(cwd)-2;
+    (void)convroot(p,size,p);
+  }catch(...){
+    ; /* これぢゃあ、例外処理にした意味ないなぁ… (^^;;) */
   }
-
+  
   /* A:\
      0123 */
   
@@ -205,47 +236,42 @@ char *get_cwd_long_name(char *dp)
 
   int filesystem=query_filesystem(cwd[0]);
 
-  for(char *sp=cwd+3; ;sp++ ){
+  for(char *sp=cwd+3 ; ; sp++ ){
     if( *sp == '/' || *sp == '\\' || *sp == '\0' ){
       int org=*sp;
       *sp = '\0'; /* 一時的にルートを 0 にする */
       *dp++ = '/';
-
-      struct _ea ea;
-
-      if(   filesystem < 0 || filesystem > 1
-	 || _ea_get( &ea , cwd , 0 , ".LONGNAME" ) != 0 ){
-	dp = paste_true_name( dp , cwd );
-      }else{
-	if( ea.size == 0 || ea.value == NULL ){
-	  dp = paste_true_name( dp , cwd );
-	}else{
-	  union{
-	    void  *value;
-	    const char *byte;
-	    const unsigned short *word;
-	  }ptr;
-	  
-	  ptr.value = ea.value;
-	  if( *ptr.word++ == 0xFFFD ){
-	    int size = *ptr.word++;
-	    for(int i=0;i<size;i++){
-	      if( *ptr.byte == '\r' ){
-		ptr.byte++;
-	      }else if( *ptr.byte == '\n' ){
-		*dp++ = ' '; ptr.byte++;
-	      }else if( 0 <= *ptr.byte && *ptr.byte < ' ' ){
-		*dp++ = '^';
-		*dp++ = '@' + *ptr.byte++;
-	      }else{
-		*dp++ = *ptr.byte++;
-	      }
-	    }
+      
+      char *longname=0;
+      if( filesystem != 2  &&  (longname=get_ea_longname(cwd)) != NULL ){
+	/* .LONGNAME が存在する場合は、そちらを使う */
+	const char *sp=longname;
+	while( *sp != '\0' ){
+	  if( *sp == '\r' ){
+	    ++sp;
+	  }else if( *sp == '\n' ){
+	    *dp++ = '\r';
+	    ++sp;
+	  }else if( '\0' <= *sp && *sp < ' ' ){
+	    *dp++ = '^';
+	    *dp++ = '@' + *sp++;
 	  }else{
-	    dp = paste_true_name( dp , cwd );
+	    *dp++ = *sp++;
 	  }
 	}
-	_ea_free( &ea );
+	free(longname);
+      }else{
+	/* さもなければ、ファイル名を大文字・小文字を修正するだけ */
+	char *save_dp=dp;
+	if( (dp = paste_true_name( dp , cwd )) == NULL ){
+	  /* 真のファイル名が得られなかった場合、
+	   * 単純にパス名から切り出す。
+	   */
+	  dp = save_dp;
+	  const char *sq=_getname(cwd);
+	  while( *sq != '\0' )
+	    *dp++ = *sq;
+	}
       }
       if( (*sp=org) == '\0' )
 	break;
@@ -257,48 +283,60 @@ char *get_cwd_long_name(char *dp)
   return dp;
 }
 
-
-void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
+/* プロンプトを作成する。
+ *     promptenv プロンプトの元文字列
+ *     dp        プロンプトの変換後文字列の入れるバッファ
+ *     size      バッファサイズ
+ * return
+ *     false: 画面最上段を使用しなかった。
+ *     true:  画面最上段を使用した。
+ */
+bool set_prompt(const char *promptenv , char *dp , int size)
 {
+  bool used_topline=false;
+
   const char *sp;
   time_t now;
   time( &now );
   struct tm *thetime = localtime( &now );
-  if( edlin != NULL )
-    edlin->using_i_mark=0;
-  
-  while( *promptenv != '\0' ){
+
+  while( *promptenv != '\0'  &&  size >= 3 ){
     if( *promptenv == '$' ){
+      int n;
       switch( promptenv++ , to_upper(*promptenv) ){
 	
       case '!': /* ヒストリ番号 */
-	dp += sprintf(dp,"%d",nhistories+1 );
+	n = snprintf(dp,size,"%d",nhistories+1 );
+	dp += n;
 	break;
+
       case '@': /* ボリュームラベル */
 	sp = _getvol(0);
 	if( sp != NULL ){
-	  while( *sp != '\0' )
+	  while( *sp != '\0' &&  --size > 0 )
 	    *dp++ = *sp++;
 	}
 	break;
-
-      case '$': *dp++ = '$';	  break;
-      case '_': *dp++ = '\n';	  break;
-      case 'A': *dp++ = '&';	  break;
-      case 'B': *dp++ = '|';	  break;
-      case 'C': *dp++ = '(';	  break;
+	
+      case '$': *dp++ = '$';  --size;  break;
+      case '_': *dp++ = '\n'; --size;  break;
+      case 'A': *dp++ = '&';  --size;  break;
+      case 'B': *dp++ = '|';  --size;  break;
+      case 'C': *dp++ = '(';  --size;  break;
 	
       case 'D':/* 現在の日付 */
-	dp += sprintf(dp,"%4d-%02d-%02d" ,
-		      thetime->tm_year+1900 ,
-		      thetime->tm_mon+1 ,
-		      thetime->tm_mday );
+	n = sprintf(dp,"%4d-%02d-%02d" ,
+		    thetime->tm_year+1900 ,
+		    thetime->tm_mon+1 ,
+		    thetime->tm_mday );
+	dp += n;
+	size -= n;
 	break;
 	
-      case 'E': *dp++ = '\x1b'; break;
-      case 'F': *dp++ = ')';	  break;
-      case 'G': *dp++ = '>';	  break;
-      case 'H': *dp++ = '\b';	  break;
+      case 'E': *dp++ = '\x1b'; --size; break;
+      case 'F': *dp++ = ')';	--size; break;
+      case 'G': *dp++ = '>';	--size; break;
+      case 'H': *dp++ = '\b';	--size; break;
 	
       case 'I':
 	{
@@ -306,13 +344,16 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	  if( option_vio_cursor_control )
 	    a = v_getattr();
 	
-	  dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
-			, screen_width ,
-			" Nihongo Yet Another Os/2 Shell "VERSION
-			" (c) 1996-99 HAYAMA,Kaoru "
-			);
-	  if( edlin != NULL )
-	    edlin->using_i_mark = 1;
+	  n = snprintf(dp,size
+		       ,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
+		       , screen_width ,
+		       " Nihongo Yet Another Os/2 Shell "VERSION
+		       " (c) 1996-99 HAYAMA,Kaoru "
+		       );
+	  dp += n;
+	  size -= n;
+	  used_topline = true;
+	  
 	  if( option_vio_cursor_control )
 	    v_attrib(a);
 	}
@@ -330,12 +371,16 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	      && length < screen_width-1 ;){
 	    if( isalpha(*promptenv) ){
 	      int drv=toupper(*promptenv);
-	      dp += sprintf(dp,"\x1B[1;%s;37m%c:"
-			    ,(drv==curdrv ? "41" : "44")
-			    ,drv);
+	      n = sprintf(dp,"\x1B[1;%s;37m%c:"
+			  ,(drv==curdrv ? "41" : "44")
+			  ,drv);
+	      dp += n;
+	      size -= n;
 	      length += 3;
 	      
+	      DosError( FERR_DISABLEHARDERR );    
 	      _getcwd1(dp,drv);
+	      DosError( FERR_ENABLEHARDERR );
 	      int len=strlen(dp);
 	      if( length + len < screen_width-1 ){
 		length += len;
@@ -349,22 +394,29 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 		  ++dp;
 		}
 		if( length < 74 ){
+		  if( size <= 3 )
+		    goto promptend;
 		  *dp++ = '.';
 		  *dp++ = '.';
 		  *dp++ = '.';
+		  size -= 3;
 		}
 		dp += sprintf(dp,"\x1b[0m ");
 		while( *promptenv != '}' && *promptenv != '\0' )
 		  ++promptenv;
 		goto driveloop;
 	      }
-	      dp += sprintf(dp,"\x1b[0m ");
+	      if( size > 0 ){
+		n = snprintf(dp,size,"\x1b[0m ");
+		dp += n; size -= n;
+	      }
 	    }
 	  }
 	driveloop:
-	  dp += sprintf(dp,"\x1b[K\x1b[u");
-	  if( edlin != NULL )
-	    edlin->using_i_mark = 1;
+	  n = snprintf(dp,size,"\x1b[K\x1b[u");
+	  dp += n;
+	  size -= n;
+	  used_topline = true;
 	  if( option_vio_cursor_control )
 	    v_attrib(a);
 	  
@@ -373,62 +425,74 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	}
 	break;
 	
-      case 'L': *dp++ = '<';	  break;
+      case 'L': *dp++ = '<';	--size;  break;
 	
       case 'N':/* カレントドライブ */
 	*dp++ = _getdrive();
+	--size;
 	break;
 	
       case 'P':/* カレントディレクトリ */
+	/* !!!! サイズチェック !!!!! */
 	dp = getcwd_case(dp);
 	break;
 	
-      case 'Q': *dp++ = '=';	  break;
+      case 'Q': *dp++ = '='; --size;  break;
 
       case 'R':
-	dp += sprintf(dp,"%d",execute_result);
+	n = snprintf(dp,size,"%d",execute_result);
+	dp += n;
+	size -= n;
 	break;
 
       case 'S': *dp++ = ' ';	  break;
 	
       case 'T':/* 現在の時刻 */
-	dp += sprintf(dp,"%02d:%02d:%02d",
-		      thetime->tm_hour ,
-		      thetime->tm_min ,
-		      thetime->tm_sec );
+	n = sprintf(dp,"%02d:%02d:%02d",
+		    thetime->tm_hour ,
+		    thetime->tm_min ,
+		    thetime->tm_sec );
+	dp += n;
+	size -= n;
 	break;
       case 'V':/* OS/2のバージョン */
 	if( _osmode == OS2_MODE )
-	  dp += sprintf(dp,"The Operating System/2 Version is %d.%d"
-			, _osmajor/10 , _osminor );
+	  n = snprintf(dp,size,"The Operating System/2 Version is %d.%d"
+		       , _osmajor/10 , _osminor );
 	else
-	  dp += sprintf(dp,"PC DOS Version is %d.%d"
-			, _osmajor , _osminor );
+	  n = snprintf(dp,size,"PC DOS Version is %d.%d"
+		       , _osmajor , _osminor );
+	dp += n;
+	size -= n;
 	break;
 
       case 'W':/* カレントディレクトリ:ホームディレクトリを「~」に変換する */
 	{
 	  char *tail=getcwd_case(dp);
-	  if( (dp=to_tilda_name(dp))==NULL )
+	  if( (dp=to_tilda_name(dp,size))==NULL )
 	    dp = tail;
 	}
 	break;
 
       case 'Z':
 	switch( ++promptenv , to_upper(*promptenv) ){
-	case 'A': *dp++ = '\a';	  break;
+	case 'A':
+	  *dp++ = '\a';	  --size;  break;
+
 	case 'H': /* ヒストリ番号 */
-	  dp += sprintf(dp,"%d",nhistories+1);
+	  n = snprintf(dp,size,"%d",nhistories+1);
+	  dp += n; size -= n;
 	  break;
 
 	case 'V': /* ボリュームラベル */
 	  sp = _getvol(0);
 	  if( sp != NULL ){
-	    while( *sp != '\0' )
+	    while( *sp != '\0' &&  --size > 1 )
 	      *dp++ = *sp++;
 	  }
 	  break;
 	case 'P': /* LONGNAME */
+	  /* !!!!! 容量チェック !!!!! */
 	  dp = get_cwd_long_name(dp);
 	  break;
 	case '\0':
@@ -438,11 +502,15 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
       }
       promptenv++;
     }else{
-      if( is_kanji(*promptenv) )
+      if( is_kanji(*promptenv) ){
 	*dp++ = *promptenv++;
+	--size;
+      }
       *dp++ = *promptenv++;
+      --size;
     }
   }
  promptend:    
-    *dp = '\0';
+  *dp = '\0';
+  return used_topline;
 }

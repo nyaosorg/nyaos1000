@@ -4,10 +4,9 @@
 extern int option_single_quote;
 
 /*
- * Vz Editor like な ヒストリ参照っすよ。
+ * Vz Editor like な ヒストリ参照
  */
-
-struct WHist{
+struct Shell::WHist{
   WHist *prev,*next;
   const char *buffer;
 };
@@ -18,12 +17,12 @@ Shell::Status Shell::vz_next_history()
 }
 
 /* 帰り値  0:確定/やんぴ  1:次の新候補を要求 */
-int Shell::vz_history_core(WHist *tmp)
+int Shell::vz_history_core(Shell::WHist *tmp)
 {
   for(;;){ /* キー入力 */
-    ed.message("%s",tmp->buffer);
+    message("%s",tmp->buffer);
     int key=::getkey();
-    ed.cleanmsg();
+    cleanmsg();
     
     if( bindmap[key]==&next_history || bindmap[key]==&vz_next_history ){
       if( tmp->next != NULL )
@@ -33,7 +32,7 @@ int Shell::vz_history_core(WHist *tmp)
     }else if(   bindmap[key] != &vz_prev_history 
 	     && bindmap[key] != &previous_history ){
       /* 単語もバッチソ。大団円 */
-      ed.insert_and_forward(tmp->buffer);
+      insert_and_forward(tmp->buffer);
       ungetkey(key);
       return 0;
     }else if( tmp->prev != NULL ){
@@ -95,12 +94,12 @@ Shell::Status Shell::vz_prev_history()
   for(int i=0;;){
     /* 空白スキップ */
     for(;;){
-      if( i >= ed.position() ){
+      if( i >= getPos() ){
 	wordtop = i;
 	wordlen = 0;
 	goto Break;
       }
-      if( !isspace(ed[i] & 255 ) )
+      if( !isspace(getText()[i] & 255 ) )
 	break;
       i++;
     }
@@ -108,16 +107,16 @@ Shell::Status Shell::vz_prev_history()
     wordtop = i;
     wordlen = 0;
     for(int quote=0;;){
-      if( i >= ed.position() )
+      if( i >= getPos() )
 	goto Break;
-      if( isspace(ed[i] & 255 ) && quote==0 )
+      if( isspace(getText()[i] & 255 ) && quote==0 )
 	break;
-      if( ed[i] == '"' && (quote & 2)==0 )
+      if( getText()[i] == '"' && (quote & 2)==0 )
 	quote ^= 1;
-      if( ed[i] == '\'' && (quote & 1)==0  &&  option_single_quote )
+      if( getText()[i] == '\'' && (quote & 1)==0  &&  option_single_quote )
 	quote ^= 2;
 
-      if( is_kanji(ed[i]) ){
+      if( is_kanji(getText()[i]) ){
 	i++; wordlen++;
       }
       i++; wordlen++;
@@ -156,7 +155,7 @@ Shell::Status Shell::vz_prev_history()
 	  else
 	    break;
 	}
-	if( *sp == '\0' || *sp++ != ed[i] )
+	if( *sp == '\0' || *sp++ != getText()[i] )
 	  goto nextline;
       }
       
@@ -209,7 +208,7 @@ Shell::Status Shell::vz_prev_history()
 	  }
 	  if( *sp == '\0' )
 	    goto nextline;
-	  if( *sp != ed[wordtop+i] )
+	  if( *sp != getText()[wordtop+i] )
 	    break;
 	}
 	while( *sp != '\0' && !isspace(*sp & 255) )
