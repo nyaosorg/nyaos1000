@@ -73,6 +73,45 @@ void replace_envvar(const char *sp, char *dp )
   if( *sp=='!' )
     dp = history_copy(sp,dp,0);
 
+  if( isalpha(*sp) ){
+    /* 「cd/usr/local/bin」などという入力に対応するための処理
+     * この場合、cd と「/」の間に空白を挿入する。
+     */
+
+    /* 直後に空白を挿入しなければならないキーワードのリスト */
+    const static char *keyword[]={
+      "cd",
+      "dir",
+    };
+    char buffer[16];
+    char *p=buffer;
+
+    /* dp : 返り値用バッファ と
+     * p  : 比較用一時バッファ に英字以外の文字が来るまで、
+     * まず、コピーする。
+     */
+
+    do{
+      *p++ = *dp++ = *sp++;
+      if( ! isalpha(*sp) ){
+	*p = '\0';
+	for(int i=0; i<numof(keyword); i++){
+	  const char *q=keyword[i];
+	  p=buffer;
+	  while( tolower(*p) == *q ){
+	    if( *p == '\0' ){
+	      *dp++ = ' ';
+	      goto nextstep;
+	    }
+	    p++;q++;
+	  }
+	}
+	goto nextstep; /* 本来のルーチンへ飛べ！ */
+      }
+    } while( p < buffer+sizeof(buffer)-2 );
+  }
+
+ nextstep:  /* ここから、本来のプリプロセス業務を行うってか？ */
   while( *sp != '\0' ){
     switch( *sp ){
     case '"':

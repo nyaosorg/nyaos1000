@@ -4,13 +4,13 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <dirent.h>
-/* #include <sys/stat.h> */
+#include <sys/stat.h>
 #include <sys/ea.h>
 #include <sys/nls.h>
 #include <fnmatch.h>
 #include <conio.h>
 #include <io.h>
-/* #include <time.h> */
+#include <time.h>
 #include <string.h>
 #include <signal.h>
 #include "nyaos.h"
@@ -326,7 +326,7 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 		       flist->d.day,
 		       flist->t.hour,
 		       flist->t.minute,
-		       flist->t.second
+		       flist->t.second*2
 		       );
   }
   
@@ -595,13 +595,98 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	    break;
 	  }/* end switch */
 	}/* end for */
+#if 1
+      }else{
+	/* オプションでない文字列 ... ファイル名 */
+	char **list=_fnexplode(argv[i]);
+	if( list != NULL ){
+	  for(char **ptr=list; *ptr != NULL ; ptr++ ){
 
+	    struct stat stbuf;
+	    int len=strlen(*ptr);
+
+	    if( stat( *ptr , &stbuf ) == 0 ){
+	      struct filelist *node=
+		(struct filelist*)alloca(sizeof(struct filelist)+len);
+	      strcpy( node->name , *ptr );
+	      node->attr   = stbuf.st_attr;
+	      node->length = len;
+	      node->size   = stbuf.st_size;
+	      
+	      struct tm *tmbuf=localtime(&stbuf.st_mtime);
+	      node->t.second = tmbuf->tm_sec/2;   /* 0..59 --> 0..29  */
+	      node->t.minute = tmbuf->tm_min;     /* 0..59  */
+	      node->t.hour   = tmbuf->tm_hour;    /* 0..23  */
+	      node->d.day    = tmbuf->tm_mday;    /* 1..31  */
+	      node->d.month  = tmbuf->tm_mon+1;   /* 0..11 --> 1..12   */
+	      node->d.year   = tmbuf->tm_year-80; /* 0:1900 --> 0:1980 */
+	      
+	      if( stbuf.st_attr & A_DIR ){
+		dirs  = fsort_and_insert(dirs ,node);
+		dircount++;
+	      }else{
+		files = fsort_and_insert(files,node);
+		if( len > max_length )
+		  max_length = len;
+		filecount++;
+	      }
+	    }else{
+	      fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
+	      filefault++;
+	    }
+	  }
+	  _fnexplodefree(list);
+	}else{
+	  struct stat stbuf;
+	  int len=strlen(argv[i]);
+	  char *fn=argv[i];
+
+	  /*「ls A:」にも対応させるため、ドットを末尾に追加する。*/
+	  if( argv[i][1]==':' && argv[i][2]=='\0' ){
+	    static char drv[]="@:.";
+	    drv[0]=argv[i][0];
+	    fn = drv;
+	  }
+
+	  if( stat( fn , &stbuf ) == 0 ){
+	    struct filelist *node=
+	      (struct filelist*)alloca(sizeof(struct filelist)+len);
+	    strcpy( node->name , argv[i] );
+	    node->attr   = stbuf.st_attr;
+	    node->length = len;
+	    node->size   = stbuf.st_size;
+	      
+	    struct tm *tmbuf=localtime(&stbuf.st_mtime);
+	    node->t.second = tmbuf->tm_sec/2;   /* 0..59  --> 0..29 */
+	    node->t.minute = tmbuf->tm_min;     /* 0..59  */
+	    node->t.hour   = tmbuf->tm_hour;    /* 0..23  */
+	    node->d.day    = tmbuf->tm_mday;    /* 1..31  */
+	    node->d.month  = tmbuf->tm_mon+1;   /* 0..11  --> 1..12  */
+	    node->d.year   = tmbuf->tm_year-80; /* 0:1900 --> 0:1980 */
+	    
+	    if( stbuf.st_attr & A_DIR ){
+	      dirs  = fsort_and_insert(dirs ,node);
+	      dircount++;
+	    }else{
+	      files = fsort_and_insert(files,node);
+	      if( len > max_length )
+		max_length = len;
+	      filecount++;
+	    }
+	  }else{
+	    fprintf(stderr,"%s: no such file or directory\n",argv[i]);
+	    filefault++;
+	  }
+	}
+      }/* argv loop */
+#else
       }else if(fnexplode2(files, filecount, dirs, dircount,
 			  max_length,argv[i]) !=0 ){
 	/* オプションでない文字列 ... ファイル名 */
 	fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
 	filefault++;
       }/* argv loop */
+#endif
     }/* if( argc > 1 ) */
     if( ctrl_c ){
       fputs("\nCtrl-C Hit.\n",fout);
@@ -638,6 +723,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	putc('\n',fout);
       }
     }
+
     if( isatty(fileno(fout)) )
       fputs( ls_end_code , fout );
 

@@ -1,7 +1,7 @@
 本パッケ－ジは、葉山 薫の著作物
-	NYAOS : Nihongo Yet Another Os/2 Shell 1.20
+	NYAOS : Nihongo Yet Another Os/2 Shell 1.22
 のソ－スリストです。
-コンパイル済みのバイナリは ZIP で圧縮されたパッケ－ジに含まれています。
+コンパイル済みのバイナリは lha で圧縮されたパッケ－ジに含まれています。
 
 NYAOS のリコンパイルには、0.9c以上の emx/gcc 環境が必要です。
 

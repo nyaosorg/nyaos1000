@@ -188,8 +188,8 @@ Shell::Status Shell::tcshlike_ctrl_d()
   if( ed.position() < ed.length() ){
     changed = 1;
     ed.erase();
-  }else if( ed.length() == 0 && ctrl_d_eof ){
-    return QUIT;
+  }else if( ed.length() == 0 ){
+    return ctrl_d_eof ? QUIT : CONTINUE ;
   }else{
     ed.complete_list();
   }
@@ -233,7 +233,12 @@ Shell::Status Shell::input_terminate()
     
     if( history != NULL )
       history->next = tmp;
-    cur = history = tmp;
+    history = tmp;
+    
+    /* curが NULL の時、次回のヒストリ参照で、
+     * 最初に現れる文字列がトップになる。 */
+
+    cur = NULL;
 
     nhistories++;
 #if 0
@@ -251,6 +256,7 @@ Shell::Status Shell::input_terminate()
     /* 先頭ポインタを合わす */
     history->next = cur;
     history = cur;
+    cur = NULL;
   }
 #endif
   return TERMINATE;
@@ -265,17 +271,21 @@ Shell::Status Shell::go_ahead()
   ed.go_ahead();
   return CONTINUE;
 }
+
 Shell::Status Shell::go_tail()
 {
   ed.go_tail();
   return CONTINUE;
 }
+
 Shell::Status Shell::cancel()
 {
   ed.clean_up();
   changed = 0;
+  cur = NULL;
   return CONTINUE;
 }
+
 Shell::Status Shell::eraseline()
 {
   if( ed.position() < ed.length() ){

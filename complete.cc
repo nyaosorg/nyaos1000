@@ -276,7 +276,7 @@ struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp)
   }
 }
 
-int Complete::makelist_core(int command_complete)
+int Complete::makelist_core(int command_complete, int is_with_dir)
 {
   DIR *dirp=opendir(directory);
   if( dirp == NULL )
@@ -293,11 +293,16 @@ int Complete::makelist_core(int command_complete)
 
       /* コマンド名補完の場合、拡張子が、EXE,CMD,BAT,COM以外は除く。
        * (スクリプト名は、コマンド名補完モ－ドで実行していない)
+       *
+       * is_with_dir が立っていない場合は、ディレクトリも除く。
        */
-      if( command_complete 
-	   && which_suffix(dirbuf->d_name,"EXE","CMD","BAT","COM",NULL)==0 )
-	continue;
-
+      if(    command_complete 
+	 && which_suffix(dirbuf->d_name,"EXE","CMD","BAT","COM",NULL)==0
+	 && !( is_with_dir && (dirbuf->d_attr & A_DIR)) )
+	{
+	  continue;
+	}
+      
       /* HIDDEN属性を除く */
       if( (dirbuf->d_attr & A_HIDDEN) != 0  &&  complete_hidden_file == 0 )
 	continue;
@@ -341,7 +346,7 @@ int Complete::makelist(const char *path)
   nlists = 0;
 
   pathsplit( path , directory , fname );
-  return makelist_core(false);
+  return makelist_core(false,true);
 }
 
 int Complete::makelist_with_path(const char *path)
@@ -352,7 +357,7 @@ int Complete::makelist_with_path(const char *path)
   nlists = 0;
 
   pathsplit( path , directory , fname );
-  int rc=makelist_core(true);
+  int rc=makelist_core(true,true);
 
   const char *p=path;
   while( *p != '\0'){
@@ -380,7 +385,7 @@ int Complete::makelist_with_path(const char *path)
     while( dir != NULL ){
       strcpy( directory , dir );
 
-      makelist_core(true);
+      makelist_core(true,false);
       dir=strtok(NULL,";");
     }
   }
@@ -394,7 +399,7 @@ int Complete::makelist_with_path(const char *path)
     char *dir=strtok(envpath2,";");
     while( dir != NULL ){
       strcpy( directory , dir );
-      makelist_core(false);
+      makelist_core(false,false);
       dir=strtok(NULL,";");
     }
   }

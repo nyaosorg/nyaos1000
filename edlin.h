@@ -110,6 +110,7 @@ class ShellEdlin : public EscEdlin {
   int promptlen;
  public:
   static int beep_ok;
+  int using_i_mark;
  protected:
   void alert(){ if( beep_ok ) putchr('\a'); }
  public:
@@ -117,7 +118,7 @@ class ShellEdlin : public EscEdlin {
 
   ShellEdlin(const char *pro,char *buffer,int max,
 	     int windowsize=32767,FILE *fp=stdout)
-    : EscEdlin(buffer,max,windowsize,fp),prompt(pro)
+    : EscEdlin(buffer,max,windowsize,fp),prompt(pro),using_i_mark(0)
       { }
 
   /* 帰り値 : 文字数 , キャンセル時(-1) 

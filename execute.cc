@@ -550,11 +550,13 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
     return 0;
 
   /* カレントドライブの変更 */
-  if( isalpha(cmdline[0]) && cmdline[1]==':' && cmdline[2]=='\0' ){
-    _chdrive(cmdline[0]);
-    return 0;
-  }
-
+  if(   isalpha(cmdline[0]) && cmdline[1]==':' 
+     && (cmdline[2]=='\0' || isspace(cmdline[2])) )
+    {
+      _chdrive(cmdline[0]);
+      return 0;
+    }
+  
   /* エイリアスの置換処理 */
   char alias_replaced_buffer[1024];
   alias_replace( cmdline , alias_replaced_buffer );

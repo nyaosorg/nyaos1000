@@ -131,9 +131,10 @@ int main(int argc, char **argv)
   char cmdlin[1024]="";
   if( isatty(fileno(stdin)) ){
     printf("\x1b[2J\x1b[1m"
+	   "\n"
 	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "    Os/2 Shell 1.21    ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "   Os/2 Shell 1.22     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	   "                                                          \n"
@@ -152,10 +153,11 @@ int main(int argc, char **argv)
     for(;;){
       char promptstr[256],*dp=promptstr,*sp;
       const char *promptenv=getenv("PROMPT");
-
+      
       time_t now;
       time( &now );
       struct tm *thetime = localtime( &now );
+      edlin.using_i_mark=0;
 
       while( *promptenv != '\0' ){
 	if( *promptenv == '$' ){
@@ -192,6 +194,14 @@ int main(int argc, char **argv)
 	    break;
 	  case 'H':
 	    *dp++ = '\b';
+	    break;
+	  case 'I':
+	    dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
+			  , screen_width ,
+			  " Nihongo Yet Another Os/2 Shell 1.22 "
+			  " (c) 1996,97 HAYAMA,Kaoru "
+			  );
+	    edlin.using_i_mark = 1;
 	    break;
 	  case '!':
 	    dp += sprintf(dp,"%d",Shell::get_history_number() );
@@ -253,7 +263,8 @@ int main(int argc, char **argv)
 	v_ctype( cursor_start , cursor_end );
       }
       
-      int rc=shell.line_input(promptstr,_osmode==OS2_MODE ? 32767:screen_width-1 );
+      int rc=shell.line_input(promptstr,_osmode==OS2_MODE ? 32767 
+			      :screen_width-1 );
 #if 0
       int rc=edlin.simple_input(promptstr,
 				_osmode==OS2_MODE ? 32767:screen_width-1 );

@@ -43,7 +43,7 @@ class Complete {
   struct filelist *list , *findptr ;
   static const char *errmsg[];
 
-  int makelist_core(int command_complete);
+  int makelist_core(int command_complete, int is_with_dir );
 public:
   enum{
     NOT_COMPLETED ,
