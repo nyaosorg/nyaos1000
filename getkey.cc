@@ -83,8 +83,18 @@ int get86key(void)
   /* return _read_kbd(0,1,0); */
 }
 
+static int keybuf[16],left=0;
+
+void ungetkey(int key)
+{
+  keybuf[ left++ ] = key;
+}
+
 int getkey(void)
 {
+  if( left > 0 )
+    return keybuf[ --left ];
+
   int ch = (get86key() & 0xFF );
   if( ch == 0 )
     ch = (get86key()|0x100);

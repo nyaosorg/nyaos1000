@@ -90,6 +90,13 @@ public:
   void cleanmsg();
   void locate(int x);
 
+#if 0
+  /* 単語単位のヒストリ参照用だが、未完成 */
+  char *get_current_word(int *flag=0);
+  void replace_current_word(char char *s);
+  int get_current_char(){ return pos==len ? 0 : strbuf[pos]; }
+#endif
+
   /* リポート関数 */
   int length() const { return len; }    /* 現在入力されている文字列のbytes */
   int position() const { return pos; }  /* カーソルの位置(bytes) */
@@ -97,13 +104,16 @@ public:
   const char *getbuffer() const { return strbuf; }
 
   static int complete_tail_char;
+  static int option_conversion_complete;
   
   int simple_line_input();
 };
 
-/* ANSI エスケープシーケンス版 Edlin */
+/* ANSI エスケープシーケンス/かんな 版 Edlin */
+
 class Edlin2 : public Edlin {
- protected:
+  static int canna_inited;       /* 初期化されていたら not 0 */
+protected:
   FILE *fp;
   const char *cursor_on;
   const char *cursor_off;
@@ -112,15 +122,20 @@ class Edlin2 : public Edlin {
   void putel();
   void putbs(int i);
   void alert(){ putchr('\a'); }
+  int getkey_with_cursor();
  public:
   Edlin2(char *buffer, int max, int windowsize=32767, FILE *Fp=stdout )
     : Edlin(buffer,max,windowsize),fp(Fp),cursor_on(""),cursor_off("")
       { /* no-operation */ }
   int getkey();
-
+  
   void setcursor(char *on,char *off="\x1B[0m")
     { cursor_on = on ; cursor_off = off; }
+
+  static int option_canna;
+  static void canna_to_alnum();  /* 強制的に英数モードへ  */
 };
+
 extern char dbcstable[256];
 int dbcs_table_init();
 
@@ -218,6 +233,10 @@ public:
   Status simple_delete();
   Status abort(){ return ABORT; }
   Status swapchars(){ ed.swapchars(); return CONTINUE; }
+#if 0
+  Status vz_prev_history();
+  Status vz_next_history();
+#endif
 };
 
 /* TERMCAP & エスケープシーケンス メモ

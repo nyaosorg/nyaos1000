@@ -447,11 +447,12 @@ int print_filelist(struct filelist *cur, int nlists,
     return 0;
 
   if( (flag & PRINT_MASK)==LS_MODE ){
-    int files_per_line = 
-      ( screen_width-1 < max_length+2 ? 1:(screen_width-1)/(max_length+2) );
+    int files_per_line;
+    if( screen_width-1 < max_length+2 || !isatty(fileno(fout)) )
+      files_per_line = 1;
+    else
+      files_per_line = (screen_width-1)/(max_length+2);
     
-/*  ( screen_width-1 < max_length+2 ? 1:(screen_width-1)/(max_length+2) );*/
-
     int files_per_column = (nlists+files_per_line-1)/files_per_line; /* >= 1 */
     
     struct filelist **ptr =

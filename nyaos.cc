@@ -12,13 +12,12 @@
 #include "edlin.h"
 #include "nyaos.h"
 #include "complete.h"
+#include "smartptr.h"
 
 #define RED	"" /*"\x1B[31m"*/
 #define WHITE	"" /*"\x1B[37m"*/
 
 int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
-
-
 
 int prompt_myself=1;
 int screen_width=80;
@@ -34,11 +33,6 @@ int option_cmdlike_crlf=0;
 
 char comspec[128]="COMSPEC=";
 char *cmdexe_path=comspec+8;
-
-#undef CACHE
-#ifdef CACHE
-PathCache *script_cache=NULL;
-#endif
 
 static void get_scrsize_with_env(int *wh)
 {
@@ -131,19 +125,24 @@ int main(int argc, char **argv)
       case 'k':
       case 'e':
 	if( i+1 < argc ){
-	  int length=0;
-	  for(int j=i+1;j<argc;j++)
-	    length += strlen(argv[j])+1;
-	  
-	  char *oneline=(char*)alloca(length);
-	  char *dp=oneline;
-	  
+	  char oneline[1024];
+	  SmartPtr dp(oneline,sizeof(oneline));
+
 	  for(int j=i+1;;){
-	    const char *sp=argv[j];
-	    while( *sp != '\0' )
-	      *dp++ = *sp++;
-	    if( ++j >= argc )
-	      break;
+	    int quote=0;
+
+	    for(const char *p=argv[j] ; *p != '\0' ; p++ ){
+	      if( isspace(*p & 255) || *p == '^' || *p == '!' )
+		quote = 1;
+	    }
+	    if( quote ) *dp++ = '"';
+	    
+	    for( const char *sp=argv[j] ; *sp != '\0' ; sp++ )
+	      *dp++ = *sp;
+
+	    if( quote ) *dp++ = '"';
+
+	    if( ++j >= argc )  break;
 	    *dp++ = ' ';
 	  }
 	  *dp = '\0';
@@ -205,7 +204,8 @@ int main(int argc, char **argv)
 	     "\n/// //  ///// //  //  ////  /////   ");
     }
     
-    printf("\n          Free Software           "
+    printf(
+	   "\n          Free Software           "
 	   "\n- Nihongo Yet Another Os/2 Shell -"
 	   "\n   1996,97,98 (c) HAYAMA,Kaoru    "
 	   "\n Ver."VERSION" compiled on "__DATE__

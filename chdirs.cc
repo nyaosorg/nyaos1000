@@ -241,7 +241,13 @@ int cmd_pushd( FILE *srcfil , Parse &params)
   char cwd[FILENAME_MAX];
   getcwd_case(cwd);
   
-  if( params.get_argc() > 1 ){
+  if( params.get_argc() <= 1  &&  dirstack != NULL ){
+    Dirstack *tmp=dirstack;
+
+    _chdir2( dirstack->buffer );
+    dirstack = dirstack->prev;
+    free(tmp);
+  }else{
     if( smart_chdir(srcfil,params) )
       return 0;
   }

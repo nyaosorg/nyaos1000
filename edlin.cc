@@ -1,8 +1,8 @@
+#include <ctype.h>
 #include <assert.h>
-#include <ctype.h>       /*** for isspace             ***/
 #include <string.h>
-#include <stdarg.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 #include "Edlin.h"
 #include "complete.h"
@@ -187,6 +187,98 @@ int Edlin::seek_word_top()
   }
 }
 
+#if 0
+char *Edlin::get_current_word(int *flag)
+{
+  int top=seek_word_top();
+  if( top==pos )
+    return NULL;
+
+  if( flag != NULL )
+    *flag = (top==0 ? 1 : 0);
+  
+  char *s=(char*)malloc(pos-top+1);
+  if( s != NULL ){
+    char *dp=s;
+    for(int i=top;i<pos;i++){
+      if( isspace(strbuf[i] & 255) && flag != NULL )
+	*flag |= 2;
+      *dp++ = strbuf[i];
+    }
+    *dp = '\0';
+  }
+  return s;
+} 
+
+void edlin::replace_current_word(const char *s)
+{
+  int flag;
+  int top=seek_word_top( &len );
+  
+  int wrdlen=pos-top;
+
+  int quote=0;
+  int newlen=0;
+  for(const char *p=s;*p != '\0' ; p++ ){
+    if( isspace(*p) )
+      quote = 1;
+    newlen++;
+  }
+
+  /* カーソルの右側の文字列を保存 */
+  char *right=(char*)alloca((len-pos)*2+1);
+  char *p=right;
+  for(int i=pos;i<len;i++){
+    *p++ = strbuf[i];
+    *p++ = atrbuf[i];
+  }
+  *p = 0;
+  
+  putbs(pos-top);
+  pos = top;
+  
+  if( quote ){
+    putchr( '"' );
+    atrbuf[pos++] = SBC;
+  }
+
+  for(int i=0;i<newlen;i++){
+    if( is_kanji( *s & 255 ) ){
+      putchr( strbuf[pos] = *s++ );
+      atrbuf[pos++] = DBC1ST;
+      putchr( strbuf[pos] = *s++ );
+      astrub[pos++] = DBC2ND;
+    }else{
+      putchr( strbuf[pos] = *s++ );
+      atrbuf[pos++] = SBC;
+    }
+  }
+
+  if( quote ){
+    putchr( '"' );
+    atrbuf[pos++] = SBC;
+    newlen += 2;
+  }
+  
+  int j=0;
+  while( *right != 0 ){
+    putchr( strbuf[pos+j] = *right++ );
+    atrbuf[pos+j] = *right++;
+    j++;
+  }
+  int newlen=pos+j;
+
+  for(; pos+j < len  ; j++ )
+    putchr( ' ' );
+
+  putbs( j );
+
+  len = newlen;
+}
+#endif
+
+int Edlin::option_conversion_complete=0;
+
 void Edlin::complete_core(int fntop,int basesize)
 {
   Complete com;
@@ -217,10 +309,70 @@ void Edlin::complete_core(int fntop,int basesize)
     return;
   }
 
-  const char *nextstr=com.nextchar();
+  if( option_conversion_complete ){
+    /* いわゆる、変換式の補完モードだったら... */
+
+    for(;;){
+      struct filelist *cur=com.findfirst();
+      while( cur != NULL ){
+	message("%s",cur->name+com.get_fname_common_length() );
+		
+	int key;
+	
+	switch( key=::getkey() ){
+	case '\007':
+	case '\033':
+	  cleanmsg();
+	  return;
+
+	case '\t':
+	  break;
+	  
+	default:
+	  ::ungetkey(key);
+	  /* continue to next case */
+	  
+	case '\r':
+	case '\n':
+	  cleanmsg();
+	  for(int i=0;i<basesize;)
+	    i += backward();
+
+	  if( !quoted && strpbrk( cur->name , " ^!") != NULL ){
+	    insert('"');
+	    quoted = 1;
+	    forward();
+	  }
+	  for(int i=0;i<basesize-com.get_fname_common_length(); )
+	    i += forward();
+
+	  /* 補完のベース文字列も、大文字・小文字を合わせるために
+	   * 上書きを行う */
+	  const char *sp=cur->name;
+	  for(int i=0;i<com.get_fname_common_length();i++ )
+	    putchr( strbuf[pos++] = *sp++ );
+
+	  insert_and_forward( sp );
+
+	  if( cur->attr & A_DIR )
+	    insert( com.get_split_char() ?: complete_tail_char );
+	  if( quoted ){
+	    insert('"');
+	    forward();
+	  }
+	  return;
+	} /* end-switch */
+	cur = com.findnext();
+      }/* end-while */
+    }/* end-for */
+  }/* end-if */
+
+  /* tcsh型の補完モード */
 
   for(int i=0 ; i<basesize ;  )
     i += backward();
+  
+  const char *nextstr=com.nextchar();
 
   if( !quoted && strpbrk(nextstr," ^!") != NULL ){
     insert('"');
@@ -532,28 +684,40 @@ int Edlin::message(const char *fmt,...) /* ウインドウモード未対応 */
   va_start(vp,fmt);
 
   /* msgsize は以前に表示したメッセージの長さ */
-  if( msgsize == 0 ){
-    putbs(pos-top);
-    msgsize = len-top;
-  }else{
+  if( msgsize > 0 )
     putbs(msgsize);
-  }
-  int length=vsprintf(msg,fmt,vp);
 
-  int i=0;
-  while( i<length ){
-    putchr(msg[i++]);
-  }
-  if( msgsize > length ){
-    while( i<msgsize ){
-      putchr(' ');
-      i++;
-    }
-    putbs( msgsize - length );
-  }
-  msgsize = length;
-
+  int length=vsprintf(msg,fmt,vp);  
   va_end(vp);
+
+  int columns=0; /* 実際の表示桁数(エスケープシーケンス部分を除く) */
+  int escape=0;  /* エスケープシーケンス内なら not 0 */
+
+  /* メッセージ本体を表示 */
+  for(const char *sp=msg ; *sp != '\0' ; sp++ ){
+    if( *sp == '\x1b' )
+      escape = 1;
+    if( ! escape )
+      columns++;
+    if( isalpha(*sp & 255) )
+      escape = 0;
+
+    putchr(*sp);
+  }
+
+  /* 過去のメッセージの末尾を削除 */
+  if( msgsize > columns ){
+    for(int i=columns ; i < msgsize ; i++ ){
+      if( pos+i < len  &&  atrbuf[pos+i] != DBC2ND )
+	putchr( strbuf[pos+i] );
+      else
+	putchr(' ');
+    }
+    putbs( msgsize - columns );
+  }
+  msgsize = columns;
+  
+  fflush(stdout);
   return len;
 }
 
@@ -561,19 +725,22 @@ void Edlin::cleanmsg() /* ウインドウモード未対応 */
 {
   /* 一時的に表示していたメッセージを消去し、
      本来表示すべき、入力文字列を再表示する */
-
+  
   if( msgsize > 0 ){
     putbs( msgsize );
     int i=0;
-    while( i < len ){
-      putchr( strbuf[i++] );
+    while( pos+i < len ){
+      putchr( strbuf[pos+i++] );
     }
     if( i < msgsize ){
       do{
-	putchr(' ');
+	if( pos+i < len  &&  atrbuf[pos+i] != DBC2ND )
+	  putchr( strbuf[pos+i] );
+	else
+	  putchr(' ');
       }while( ++i < msgsize );
 
-      putbs( msgsize - len );
+      putbs( msgsize - (len-pos) );
     }
     putbs( len - pos );
   }
@@ -590,4 +757,3 @@ void Edlin::locate(int x)  /* WINDOWモード未対応 */
   }
   pos = x;
 }
-

@@ -36,5 +36,6 @@ void raw_mode(void);
 void cocked_mode(void);
 int get86key(void);
 int getkey(void);
+void ungetkey(int key);
 
 #endif

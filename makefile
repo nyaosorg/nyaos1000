@@ -6,9 +6,11 @@
 CC = gcc -O2
 
 .cc.o :
-	$(CC) -c $<
-.c.o :
-	$(CC) -c $<
+	$(CC) -c -g $<
+
+#TSTCAN = tstcan.cc getkey.o dbcs.o
+#tstcan.exe : $(TSTCAN)
+#	$(CC) -o tstcan.exe $(TSTCAN) -lcanna -lsocket
 
 NYAOS=	nyaos.o edlin.o edlin2.o complete.o eadir.o shell.o \
 	foreach.o script.o alias.o parse.o execute.o chdirs.o \
@@ -16,9 +18,14 @@ NYAOS=	nyaos.o edlin.o edlin2.o complete.o eadir.o shell.o \
 	finds.o getkey.o dbcs.o hash.o command2.o prompt.o
 
 nyaos.exe : $(NYAOS)
-	$(CC) $(NYAOS) -o nyaos.out -lvideo -lwrap -Zcrtdll
+	$(CC) $(NYAOS) -o nyaos.out -lvideo -lwrap -Zcrtdll  -lcanna -lsocket
 	emxbind nyaos.out
 	del nyaos.out
+
+nyaosaio.exe : $(NAYOS)
+	$(CC) -Zomf -Zsys -static $(NYAOS) -o nyaosaio.exe -lvideo
+	emxbind nyaosaio.out
+	del nyaosaio.out
 
 prompt.o : prompt.cc
 hash.o : hash.cc hash.h
