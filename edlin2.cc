@@ -3,33 +3,18 @@
 #include <sys/kbdscan.h>
 #include <stdlib.h>
 
-#ifdef WITH_CANNA
-#  include <canna/jrkanji.h>
-#endif
+#include <canna/jrkanji.h>
+
+#define INCL_DOSMODULEMGR
+#include <os2.h>
 
 #include "smartptr.h"
 #include "macros.h"
 #include "Edlin.h"
+#include "nyaos.h"
 
 #define TOP_CLEAN_STR "\x1b[s\x1b[H\x1b[K\x1b[u"
 #define KEY(x) (0x100 | K_##x )
-
-void Edlin2::putchr(int c)
-{
-  putc(c,fp);
-}
-
-void Edlin2::putel()
-{
-  fputs( "\x1B[K" , fp );
-}
-
-void Edlin2::putbs(int n)
-{
-  /* BackSpaceならば、前の行へも移動できる。*/
-  while( n-- > 0 )
-    putc('\b',fp);
-}
 
 static void euc2jms(int c1,int c2,SmartPtr &dp)
 {
@@ -55,6 +40,85 @@ static void euc2jms(int c1,int c2,SmartPtr &dp)
   *dp++ = c1;
   *dp++ = c2;
 }
+
+
+/* -------- CANNA Dynamic Load ------- */
+
+static int (*DLL_jrKanjiString )(int,int,char*,int,jrKanjiStatus *) = 0;
+static int (*DLL_jrKanjiControl)(int,int,char*) = 0;
+
+static HMODULE module_handle;
+static void release_canna()
+{
+  DosFreeModule(module_handle);
+}
+
+static int canna_loaded=0;
+int canna_init()
+{
+  /* ------- DLL Loading ------ */
+
+  UCHAR errmsg[100];
+
+  if(   DosLoadModule(errmsg,sizeof(errmsg),(UCHAR*)"canna",&module_handle )
+     || DosQueryProcAddr(  module_handle , 0 ,(UCHAR*)"jrKanjiString"
+			 , (PFN*)&DLL_jrKanjiString )
+     || DosQueryProcAddr(  module_handle , 0 , (UCHAR*)"jrKanjiControl"
+			 , (PFN*)&DLL_jrKanjiControl )){
+    return 1;
+  }
+
+  atexit(release_canna);
+  fputs("canna.dll loaded.\n",stdout);  
+  canna_loaded = 1;  
+
+  /* ------ CANNA initialize ------- */
+
+  char **warning;
+  
+  (*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
+  if( warning != NULL ){
+    for( ; *warning != NULL ; warning ++ ){
+      char buffer[256];
+      SmartPtr dp(buffer,sizeof(buffer));
+      for(const char *sp=*warning ; *sp != '\0' ; sp++ ){
+	if( *sp & 0x80 ){
+	  euc2jms( sp[0] , sp[1] , dp );
+	  ++sp;
+	}else{
+	  *dp++ = *sp;
+	}
+      }
+      *dp++ = '\n';
+      *dp   = '\0';
+      fputs(buffer,stderr);
+    }
+    return 1;
+  }
+  (*DLL_jrKanjiControl)( 0 , KC_SETMODEINFOSTYLE , (char*)1 );
+
+  return 0;
+}
+
+/* ------------------------------------- */
+
+void Edlin2::putchr(int c)
+{
+  putc(c,fp);
+}
+
+void Edlin2::putel()
+{
+  fputs( "\x1B[K" , fp );
+}
+
+void Edlin2::putbs(int n)
+{
+  /* BackSpaceならば、前の行へも移動できる。*/
+  while( n-- > 0 )
+    putc('\b',fp);
+}
+
 
 int Edlin2::getkey_with_cursor()
 {
@@ -100,9 +164,8 @@ int Edlin2::canna_inited=0;
 
 void Edlin2::canna_to_alnum()
 {
-#ifdef WITH_CANNA
   /* かんなが初期化されている時のみ「英数モード」へ戻す。*/
-  if( canna_inited ){
+  if( canna_loaded ){
     jrKanjiStatusWithValue ksv;
     unsigned char buffer[256];
     jrKanjiStatus ks;
@@ -111,20 +174,16 @@ void Edlin2::canna_to_alnum()
     ksv.buffer = buffer;
     ksv.bytes_buffer = sizeof(buffer);
     ksv.ks = &ks;
-    jrKanjiControl( 0 , KC_CHANGEMODE , (char*)&ksv );
+    (*DLL_jrKanjiControl)( 0 , KC_CHANGEMODE , (char*)&ksv );
   }
-#endif
 }
 
 int Edlin2::option_canna=1;
 
 int Edlin2::getkey()
 {
-#ifdef WITH_CANNA
-  if( option_canna == 0 )
-#endif
+  if( !canna_loaded )
     return getkey_with_cursor();
-#ifdef WITH_CANNA
 
   /* 前回の呼び出しで確定している文字列がある場合、
    * それらを順次、呼び出しの度に返す必要がある。
@@ -148,30 +207,6 @@ int Edlin2::getkey()
 
   char localbuf[256]="\0";
   
-  /* 始めて呼び出された時に「かんな」を初期化する。*/
-  if( canna_inited==0 ){
-    char **warning;
-    jrKanjiControl( 0 , KC_INITIALIZE , (char*)&warning );
-    if( warning != NULL ){
-      char buffer[256];
-      SmartPtr dp(buffer,sizeof(buffer));
-      for(const char *sp=*warning ; *sp != '\0' ; sp++ ){
-	if( *sp & 0x80 ){
-	  euc2jms( sp[0] , sp[1] , dp );
-	  ++sp;
-	}else{
-	  *dp++ = *sp;
-	}
-      }
-      message( "!!! %s !!!",buffer );
-      sleep(2);
-      cleanmsg();
-      return ::getkey();
-    }
-    canna_inited = 1;
-    jrKanjiControl(0,KC_SETMODEINFOSTYLE,(char*)1);
-  }
-
   int use_top_line = 0;
   /* 「かんな」の変換ループ */
   for(;;){
@@ -193,7 +228,7 @@ int Edlin2::getkey()
       ksv.ks = &status;
       ksv.buffer = (unsigned char *)kakbuf;
       ksv.bytes_buffer = sizeof(kakbuf);
-      jrKanjiControl( 0 , KC_KAKUTEI , (char*)&ksv );
+      (*DLL_jrKanjiControl)( 0 , KC_KAKUTEI , (char*)&ksv );
       
       kakbuf[ ksv.val   ] = orgkey >> 8;
       kakbuf[ ksv.val+1 ] = orgkey & 255;
@@ -246,7 +281,7 @@ int Edlin2::getkey()
 
     /* 「かんな」にお任せ */
     char eucbuf[256];
-    int kakutei=jrKanjiString( 0 , key , eucbuf ,sizeof(eucbuf),&status );
+    int kakutei=(*DLL_jrKanjiString)(0 ,key ,eucbuf ,sizeof(eucbuf),&status );
 
     /* 確定文字列の処理 */
     if( kakutei > 0 ){
@@ -360,23 +395,28 @@ int Edlin2::getkey()
     *dp = '\0';
     message( "|%s|",localbuf);
 
+    /* 画面最上段に、変換候補などを表示する */
     if(   (status.info & KanjiGLineInfo) != 0
        &&  status.gline.length > 0  &&  status.gline.line != NULL ){
       fputs("\x1b[s\x1b[H",stdout);
       int column=0;
+      int standout=0;
       for(const unsigned char *p=status.gline.line ; *p != '\0' ; p++ ){
+	/* 反転部分の処理 */
 	if( column == status.gline.revPos ){
 	  if( cursor_on != NULL ){
 	    printf("\x1B[%sm",cursor_on );
 	  }else{
 	    putchar('<');
 	  }
+	  standout = 1;
 	}else if( column == status.gline.revPos + status.gline.revLen ){
 	  if( cursor_off != NULL ){
 	    printf("\x1B[%sm",cursor_off );
 	  }else{
 	    putchar('>');
 	  }
+	  standout = 0;
 	}
 	if( *p & 0x80 ){
 	  char buf[10];
@@ -391,6 +431,12 @@ int Edlin2::getkey()
 	  column++;
 	}
       }
+      if( standout ){
+	if( cursor_off != NULL )
+	  printf("\x1B[%sm",cursor_off );
+	else
+	  putchar('>');
+      }
       fputs("\x1b[K\x1b[u",stdout);
       use_top_line = 1;
     }else{
@@ -398,5 +444,4 @@ int Edlin2::getkey()
       use_top_line = 0;
     }
   }
-#endif
 }

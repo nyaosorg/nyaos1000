@@ -34,6 +34,8 @@ public:
     { return ptr >= border; }
   int ok() const
     { return ptr < border; }
+  int ng() const
+    { return ptr >= border; }
   void set(char *p,int max)
     { ptr=p ; border = p+max-2; }
 };

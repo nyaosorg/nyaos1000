@@ -16,6 +16,7 @@ extern char *cmdexe_path; /* in nyaos.cc */
 
 extern int echoflag;
 
+int option_single_quote=1;
 int option_backquote=1;
 int option_backquote_in_quote=0;
 int option_debug_echo;
@@ -114,8 +115,17 @@ void backquote_replace(const char *sp , char *dp , int max )
   while( *sp != '\0'  &&  dp < border ){
     if( *sp == '"' ){
       /* 引用符の中か外かを一応チェックしておく */
-      quote ^= 1;
-      *dp++ = *sp++;
+      if( quote & 2 ){
+	*dp++ = '\\';
+	*dp++ = '"';
+	++sp;
+      }else{
+	quote ^= 1;
+	*dp++ = *sp++;
+      }
+    }else if( *sp == '\'' && (quote & 1)==0 ){
+      quote ^= 2;
+      *dp++ = '"'; ++sp;
     }else if( is_kanji(*sp) ){
       *dp++ = *sp++;
       *dp++ = *sp++;
@@ -126,18 +136,34 @@ void backquote_replace(const char *sp , char *dp , int max )
       /* 連続する二つの逆クォートは、一つの逆クォートに置換するだけ */
       *dp++ = '`';
       sp += 2;
-    }else if( quote != 0  &&  option_backquote_in_quote == 0 ){
-      /* option によっては、引用符の中の逆クォートは無視する。*/
+    }else if( quote & 2 ){
+      /* シングルクォート内の逆クォートは無視 */
       *dp++ = *sp++;
     }else{
-      char *ddp=buffer[0];
-      
-      while( *++sp != '\0' && ddp < buffer[0]+max ){
-	if( *sp=='`' && *++sp != '`')
-	  break;
-	*ddp++ = *sp;
+
+      { /* 逆クォート内の命令を複写する。*/
+	char *ddp=buffer[0];
+	int qquote=0;
+	while(  *++sp != '\0' && ddp < buffer[0]+max 
+	      && (*sp != '`' || *++sp == '`') ){
+	  
+	  if( *sp == '\''  &&  (qquote & 1)==0  ){
+	    *ddp++ = '"';
+	    qquote ^= 2;
+	  }else if( *sp == '"' ){
+	    if( qquote & 2 ){
+	      *ddp++ = '\\';
+	      *ddp++ = '"';
+	    }else{
+	      *ddp++ = *sp;
+	      qquote ^= 1;
+	    }
+	  }else{
+	    *ddp++ = *sp;
+	  }
+	}
+	*ddp = '\0';
       }
-      *ddp = '\0';
 
       if( option_debug_echo )
 	printf("--> `%s`\n",buffer[0]);
@@ -153,9 +179,16 @@ void backquote_replace(const char *sp , char *dp , int max )
       if( pp != NULL ){
 	int ch,size=0;
 	while( (ch=fgetc(pp)) != EOF  ){
-	  if( ch == '\n' ){
+	  if( !quote  && isspace(ch & 255) ){
 	    *dp++ = ' ';
-	  }else if( !quote && strchr("<>&|^",ch) != NULL ){
+	    do{
+	      ch=fgetc(pp);
+	      if( ch==EOF )
+		goto pclose;
+	    }while( isspace(ch & 255) );
+	  }
+	    
+	  if( !quote && strchr("<>&|^",ch) != NULL ){
 	    *dp++ = '^';
 	    *dp++ = ch;
 	  }else{
@@ -169,6 +202,7 @@ void backquote_replace(const char *sp , char *dp , int max )
 	    break;
 	  }
 	}
+      pclose:
 	pclose(pp);
       }
     }

@@ -317,7 +317,7 @@ int replace_script( const char *sp , char *dst, int max  )
       copy_filename(sp,SmartPtr(fname,sizeof(fname)),&sp,NULL);
       
       ScriptCache *sc;
-      int type;
+      int type=SearchEnv(fname,"SCRIPTPATH",path);
 
       if( option_script_cache  &&  (sc=script_hash[fname]) != NULL ){
 	/* ---- スクリプト(キャッシュヒット) ---- */
@@ -329,7 +329,7 @@ int replace_script( const char *sp , char *dst, int max  )
 	*dp++ = ' ';
 	copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
-      }else if( (type=SearchEnv(fname,"SCRIPTPATH",path))==FILE_EXISTS ){
+      }else if( type==FILE_EXISTS ){
 	// --- おそらく、スクリプト ---
 	insert_interpretor(fname,path,dp);
 	/* dp = strcpy_tail(dp,path); */

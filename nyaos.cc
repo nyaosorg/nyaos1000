@@ -5,6 +5,7 @@
 #include <sys/video.h>
 
 // #define INCL_WINWINDOWMGR
+
 #define INCL_DOSFILEMGR
 #define INCL_RXSUBCOM
 #include <os2.h>
@@ -33,6 +34,8 @@ int option_cmdlike_crlf=0;
 
 char comspec[128]="COMSPEC=";
 char *cmdexe_path=comspec+8;
+
+
 
 static void get_scrsize_with_env(int *wh)
 {
@@ -78,6 +81,7 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   return dp;
 }
 
+
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
@@ -85,6 +89,7 @@ int main(int argc, char **argv)
 	  , stderr );
     return -1;
   }
+
 
   char directory[FILENAME_MAX];
   char thename[FILENAME_MAX];
@@ -180,33 +185,10 @@ int main(int argc, char **argv)
     int cp=get_current_cp();
     if( cp==932 || cp==942 || cp==943 ){
       printf(
-#ifdef WITH_CANNA
-	     "\n┏━┓┏━┓┏┓┳┏┓┳┳  ┳┏━┓┏━┓┏━┓" 
-	     "\n┃    ┣━┫┃┃┃┃┃┃┗━┫┣━┫┃  ┃┗━┓"
-	     "\n┗━┛┻  ┻┻┗┛┻┗┛┗━┛┻  ┻┗━┛┗━┛"
-#define TITLEINDENT "\n       "
-#else
 	     "\n  ┏┓┳┳  ┳┏━┓┏━┓┏━┓  " 
 	     "\n  ┃┃┃┗━┫┣━┫┃  ┃┗━┓  "
 	     "\n  ┻┗┛┗━┛┻  ┻┗━┛┗━┛  "
-#define TITLEINDENT "\n"
-#endif
 	     );
-#if 0
-    }else if( (term=getenv("TERM"))==NULL || strcmp(term,"xterm")!=0 ){
-      /*      N                   Y                   A
-       *      O               S    */
-      printf("\n   "
-	     "\xC9\xCD\xBB\x20\xCB\xCB\xCD\x20\xCD\xCB\xC9\xCD\xCD\xCD\xBB"
-	     "\xC9\xCD\xCD\xCD\xBB\xC9\xCD\xCD\xCD\xBB"
-	     "\n   "
-	     "\xBA\x20\xBA\x20\xBA\xC8\xCD\xCD\xCD\xB9\xCC\xCD\xCD\xCD\xB9"
-	     "\xBA\x20\x20\x20\xBA\xC8\xCD\xCD\xCD\xBB"
-	     "\n   "
-	     "\xCA\x20\xC8\xCD\xBC\xC8\xCD\xCD\xCD\xBC\xCA\xCD\x20\xCD\xCA"
-	     "\xC8\xCD\xCD\xCD\xBC\xC8\xCD\xCD\xCD\xBC"
-	     );
-#endif
     }else{
       printf("\n   // /// //  //  ////   ////   /////"
 	     "\n  /// // ////// //  // //  // ///   "
@@ -214,14 +196,10 @@ int main(int argc, char **argv)
 	     "\n/// //  ///// //  //  ////  /////   ");
     }
     
-    printf(
-	   TITLEINDENT"          Free Software           "
-	   TITLEINDENT"- Nihongo Yet Another Os/2 Shell -"
-#ifdef WITH_CANNA
-	   TITLEINDENT"     CANNA Supporting Version     "
-#endif
-	   TITLEINDENT"   1996,97,98 (c) HAYAMA,Kaoru    "
-	   TITLEINDENT" Ver."VERSION" compiled on "__DATE__
+    printf("\n          Free Software           "
+	   "\n- Nihongo Yet Another Os/2 Shell -"
+	   "\n   1996,97,98 (c) HAYAMA,Kaoru    "
+	   "\n Ver."VERSION" compiled on "__DATE__
 	   "\n\n\x1b[0m"
 	   );
   }
@@ -309,6 +287,9 @@ int main(int argc, char **argv)
   // 何回もコンストラクタ・デストラクタを呼ぶコストを省くため。
   // prompt は、この時点では未定なので、ダミーを放り込んでおく。
   // ----------------------------------------------------------
+
+  extern int canna_init();
+  canna_init();
   
   ShellEdlin edlin("NYAOS>",cmdlin,sizeof(cmdlin) );
   Shell shell(edlin);

@@ -295,10 +295,16 @@ void replace_envvar(const char *sp, char *_dp , int max )
 
   while( *sp != '\0' ){
     switch( *sp ){
-    case '"':
-      quote ^= 1;
+    case '\'':
+      if( (quote & 1)==0 )
+	quote ^= 2;
       break;
       
+    case '"':
+      if( (quote & 2)==0 )
+	quote ^= 1;
+      break;
+
     case ';': /* 空白＋「；」を「&;」に変換する */
       ++sp;
       if( Parse::option_semicolon_terminate && !quote && is_space(prevchar) ){
@@ -308,7 +314,8 @@ void replace_envvar(const char *sp, char *_dp , int max )
       continue;
 
     case '.': /* 空白＋「...」を「..\..」に変換する */
-      if(   option_dots && !quote
+      if(   option_dots 
+	 && !quote 
 	 && is_space(prevchar) && sp[1]=='.' && sp[2]=='.' ){
 	
 	++sp;
@@ -325,7 +332,9 @@ void replace_envvar(const char *sp, char *_dp , int max )
       break;
 
     case '~':
-      if( option_tilda_is_home  &&  !quote  &&  is_space(prevchar) ){
+      if(    option_tilda_is_home  
+	 &&  (quote & 2)==0
+	 &&  is_space(prevchar) ){
 	if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
 	  ++sp;
 	  const char *system_ini = getenv("SYSTEM_INI");
@@ -335,9 +344,8 @@ void replace_envvar(const char *sp, char *_dp , int max )
 	    *dp++ = *system_ini;
 	  }
 	}else{ /* 普通の UNIX 的チルダの変換 */
-	  /* is_space で _nls_is_dbcs_lead も兼ねている。*/
 	  dp = insert_env("HOME",dp);
-	  if( *++sp != '/' && *sp != '\\' && *sp != '\0' && !is_space(*sp) ){
+	  if( isalnum(*++sp&255) || is_kanji(*sp&255) ){
 	    *dp++ = Edlin::complete_tail_char;
 	    *dp++ = '.';
 	    *dp++ = '.';
@@ -369,14 +377,14 @@ void replace_envvar(const char *sp, char *_dp , int max )
       break;
 
     case '!':
-      if( !quote  &&  option_tcshlike_history ) {
+      if( (quote & 2)==0  &&  option_tcshlike_history ) {
 	dp = history_copy(sp,dp);
 	/* is_history_refered = 1; */
       }
       break;
 
     case '%':
-      if( !quote  &&  isalpha(sp[1] & 255) ){
+      if( (quote & 2)==0  &&  isalpha(sp[1] & 255) ){
 	char envname[128];
 	
 	++sp;

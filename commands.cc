@@ -12,6 +12,7 @@
 #include "complete.h"
 #include "nyaos.h"
 
+extern int option_single_quote;
 extern int option_cd_goto_home;
 extern int option_debug_echo;
 static int option_dir_tail_is_forward_slash;
@@ -198,6 +199,7 @@ struct Option{
   { "script"               , &scriptflag                       , 1  , 0 },
   { "script_cache"         , &option_script_cache              , 1  , 0 },
   { "semicolon"            , &Parse::option_semicolon_terminate, 1  , 0 },
+  { "single_quote"         , &option_single_quote              , 1  , 0 },
   { "sos"                  , &option_sos                       , 1  , 0 },
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
   { "slash_to_backslash_after_tilda"

@@ -8,37 +8,18 @@ CC = gcc -O2
 .cc.o :
 	$(CC) -c $<
 
-COMMON=	edlin.o complete.o eadir.o shell.o foreach.o script.o \
+NYAOS=	edlin.o complete.o eadir.o shell.o foreach.o script.o \
 	alias.o parse.o execute.o chdirs.o commands.o prepro.o bindkey.o \
 	open.o source.o search.o finds.o getkey.o dbcs.o hash.o command2.o \
-	prompt.o
-
-NYAOS= $(COMMON) edlin2.o nyaos.o 
-CANNYAOS= $(COMMON) edlin2c.o cannyaos.o
-
-mkcannya.com : cannyaos.exe nyaos.exe
-	wsp.com -W nyaos.exe cannyaos.exe mkcannya.com
-
-cannyaos.exe : $(CANNYAOS)
-	$(CC) $(CANNYAOS) -o cannyaos.out \
-		-lvideo -lwrap -Zcrtdll -lcanna -lsocket
-	emxbind cannyaos.out
-	del cannyaos.out
+	prompt.o edlin2.o nyaos.o
 
 nyaos.exe : $(NYAOS)
-	$(CC) $(NYAOS) -o nyaos.out \
-		-lvideo -lwrap -Zcrtdll
-	emxbind nyaos.out
-	del nyaos.out
+	$(CC) $(NYAOS) -o nyaos.exe -lvideo -lwrap -Zcrtdll -lsocket
 
 edlin2.o : edlin2.cc edlin.h
-edlin2c.o : edlin2.cc edlin.h
-	$(CC) -DWITH_CANNA -c $< -o edlin2c.o
+	$(CC) -DWITH_CANNA -c $< -o edlin2.o
 
 nyaos.o : nyaos.cc edlin.h
-cannyaos.o : nyaos.cc edlin.h
-	$(CC) -DWITH_CANNA -c $< -o cannyaos.o
-
 prompt.o : prompt.cc
 hash.o : hash.cc hash.h
 dbcs.o : dbcs.cc

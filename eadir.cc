@@ -390,7 +390,7 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
     }
     more(flag,fout);
   }
-  
+
   /* EA‚ÌƒRƒƒ“ƒg‚ð•\Ž¦‚·‚é */
   if(   (flag & PRINT_MASK)!=DIR_MODE
      && _ea_get( &ea , flist->name , 0 , ".COMMENTS" ) == 0 ){
@@ -413,6 +413,8 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 	    }
 	    if( flag & COLOR_MODE )
 	      fputs(ls_end_code,fout);
+	    if( (flag & PRINT_MASK ) == INDEX_MODE )
+	      break;
 	    more(flag,fout);
 	  }else{
 	    ptr.byte += (*ptr.word + 2);
@@ -422,9 +424,9 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
       }
     }
     _ea_free( &ea );
-  }else if( (flag & PRINT_MASK) == INDEX_MODE ){
-      more(flag,fout);
   }
+  if( (flag & PRINT_MASK) == INDEX_MODE )
+    more(flag,fout);
 }
 
 int is_file_print(struct filelist *f,int flag)
