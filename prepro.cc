@@ -156,45 +156,31 @@ char *replace_envvar(const char *sp, char *_dp )
     is_history_refered = 1 ;
   }
 
-  if( is_alpha(*sp) ){
-    /* 「cd/usr/local/bin」などという入力に対応するための処理
-     * この場合、cd と「/」の間に空白を挿入する。
-     */
-
-    /* 直後に空白を挿入しなければならないキーワードのリスト */
-    const static char *keyword[]={
-      "cd",
-      "dir",
-    };
-
-    char buffer[16],*p=buffer;
-
-    /* dp : 返り値用バッファ と
-     * p  : 比較用一時バッファ に英字以外の文字が来るまで、
-     * まず、コピーする。
-     */
-
-    do{
-      *p++ = *dp++ = *sp++;
-      if( ! is_alpha(*sp) ){
-	*p = '\0';
-	for(int i=0; i<numof(keyword); i++){
-	  const char *q=keyword[i];
-	  p=buffer;
-	  while( to_lower(*p) == *q ){
-	    if( *p == '\0' ){
-	      *dp++ = ' ';
-	      goto nextstep;
-	    }
-	    p++;q++;
-	  }
-	}
-	goto nextstep; /* 本来のルーチンへ飛べ！ */
-      }
-    } while( p < buffer+sizeof(buffer)-2 );
+  // ---------------- CD と DIR に対する例外処理 -------------
+  
+  //「cd/usr/local/bin」などという入力に対応するための処理
+  // この場合、cd と「/」の間に空白を挿入する。
+  
+  if(   (sp[0]=='c' || sp[0]=='C')
+     && (sp[1]=='d' || sp[1]=='D')
+     && (sp[2]=='.' || sp[2]=='\\' || sp[2]=='/' ) ){
+    *dp++ = *sp++; // c
+    *dp++ = *sp++; // d
+    *dp++ = ' ';
+    *dp++ = *sp++; // 「.」「/」or「\」
+  }else if(   (sp[0]=='d' || sp[0]=='D')
+	   && (sp[1]=='i' || sp[1]=='I')
+	   && (sp[2]=='r' || sp[2]=='R')
+	   && (sp[3]=='.' || sp[3]=='\\' || sp[3]=='/' ) ){
+    *dp++ = *sp++; // d
+    *dp++ = *sp++; // i
+    *dp++ = *sp++; // r
+    *dp++ = ' ';
+    *dp++ = *sp++; // 「.」「/」or「\」
   }
+  
+  // ------------------- 本来のプリプロセス業務 ----------------
 
- nextstep:  /* ここから、本来のプリプロセス業務を行うってか？ */
   while( *sp != '\0' ){
     switch( *sp ){
     case '"':

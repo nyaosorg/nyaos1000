@@ -164,7 +164,7 @@ int main(int argc, char **argv)
 	 "\n"
 	 "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	 "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	 "   Os/2 Shell 1.26     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	 "   Os/2 Shell 1.27     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	 "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	 "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	 "                                                          \n"
@@ -229,7 +229,7 @@ int main(int argc, char **argv)
 	  
 	  dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
 			, screen_width ,
-			" Nihongo Yet Another Os/2 Shell 1.26 "
+			" Nihongo Yet Another Os/2 Shell 1.27 "
 			" (c) 1996,97 HAYAMA,Kaoru "
 			);
 	  edlin.using_i_mark = 1;
