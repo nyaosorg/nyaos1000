@@ -3,6 +3,12 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 #include "macros.h"
+#include "finds.h"
+
+#undef CACHE
+#ifdef CACHE
+extern PathCache *script_cache;
+#endif
 
 /* ファイルが存在していて、しかもディレクトリ名でなければ、真(1)を返す。*/
 
@@ -48,8 +54,9 @@ static int _SearchEnv(const char *fname,const char *envname,char *path)
 
   const char *period = NULL;
   char *dp=path;
+  int fnlen=0;
   
-  for( const char *p=fname ; *p != '\0' ; p++ ){
+  for( const char *p=fname ; *p != '\0' ; p++,fnlen++ ){
     if( *p=='\\' || *p=='/' || *p==':' ){
       absolute_path = 1;
       period = NULL;
@@ -106,46 +113,96 @@ static int _SearchEnv(const char *fname,const char *envname,char *path)
     return NO_FILE;
 
   /* ファイル名のみの記述の場合、検索する */
-  const char *env=getenv(envname);
-  if( env == NULL )
-    return NO_FILE;
+#ifdef CACHE
+  if( script_cache != NULL ){
+    /* キャッシュ有りの場合 */
+    if( period == NULL ){
+      char *buf=(char*)alloca(fnlen+5);
+      const char *sp=fname;
+      char *dp=buf;
 
-  int lastchar=0;
-  dp=path;
+      while( *sp != '\0' )
+	*dp++ = *sp++;
 
-  for(;;){
-    if( *env != '\0' && *env != ';' ){
-      if( is_kanji(lastchar=*env) )
-	*dp++ = *env++;
-      *dp++ = *env++;
-      continue;
-    }
-    if( lastchar != '/' && lastchar != '\\' )
-      *dp++= '\\';
-
-    /* ファイル名をコピー */
-    for( const char *sp=fname ; *sp != '\0' ; sp++ ){
-      *dp++ = *sp;
-    }
-    *dp = '\0';
-
-    if( period != NULL ){
-      /* 拡張子がある場合は、そのままで Ok! */
-      if( is_file_not_dir(path) )
-	return suffix_type;
+      dp[0]='.'; dp[1]='E'; dp[2]='X'; dp[3]='E'; dp[4]='\0';
+      const char *result=script_cache->find(fname);
+      if( result != NULL ){
+	strcpy( path , result );
+	return EXE_FILE;
+      }
+      dp[1]='C'; dp[2]='M'; dp[3]='D';
+      result = script_cache->find(fname);
+      if( result != NULL ){
+	strcpy( path, result );
+	return CMD_FILE;
+      }
+      dp[2]='O'; dp[3]='M';
+      result = script_cache->find(fname);
+      if( result != NULL ){
+	strcpy( path, result );
+	return COM_FILE;
+      }
+      dp[0] = '\0';
+      result = script_cache->find(fname);
+      if( result != NULL ){
+	strcpy( path , result );
+	return FILE_EXISTS;
+      }
+      return NO_FILE;
     }else{
-      /* 拡張子が無い場合は、EXE , CMD , 拡張子無しについて調べる */
-      int rc=cmdexe_check(path,dp);
-      if( rc != NO_FILE )
-	return rc;
+      const char *p = script_cache->find(fname);
+      if( p != NULL){
+	strcpy( path , p);
+	return suffix_type;
+      }
+      return NO_FILE;
     }
-    if( *env == '\0' )
+  }else{
+#endif
+    /* キャッシュ無しの場合 */
+    const char *env=getenv(envname);
+    if( env == NULL )
       return NO_FILE;
     
-    ++env;           /* ; をスキップ */
-    dp = path;
-    lastchar = 0;
-  }
+    int lastchar=0;
+    dp=path;
+    
+    for(;;){
+      if( *env != '\0' && *env != ';' ){
+	if( is_kanji(lastchar=*env) )
+	  *dp++ = *env++;
+	*dp++ = *env++;
+	continue;
+      }
+      if( lastchar != '/' && lastchar != '\\' )
+	*dp++= '\\';
+      
+      /* ファイル名をコピー */
+      for( const char *sp=fname ; *sp != '\0' ; sp++ ){
+	*dp++ = *sp;
+      }
+      *dp = '\0';
+      
+      if( period != NULL ){
+	/* 拡張子がある場合は、そのままで Ok! */
+	if( is_file_not_dir(path) )
+	  return suffix_type;
+      }else{
+	/* 拡張子が無い場合は、EXE , CMD , 拡張子無しについて調べる */
+	int rc=cmdexe_check(path,dp);
+	if( rc != NO_FILE )
+	  return rc;
+      }
+      if( *env == '\0' )
+	return NO_FILE;
+      
+      ++env;           /* ; をスキップ */
+      dp = path;
+      lastchar = 0;
+    }
+#ifdef CACHE
+  }/* キャッシュ無しの場合の終了 */
+#endif
 }
 
 int SearchEnv(const char *fname,const char *envname,char *path)

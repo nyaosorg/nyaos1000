@@ -13,8 +13,8 @@
 #include "complete.h"
 #include "edlin.h"
 
-#define ECHODEBUG(x)     /* */
-/* #define ECHODEBUG(x) (x) /* */
+#define ECHODEBUG(x)		/* 通常モード */
+/* #define ECHODEBUG(x) (x)	/* デバッグモード*/
 
 extern int echoflag;
 int cmd_exec  (FILE *source , Parse &params );
@@ -511,6 +511,10 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
     if(   hashtable[key]->name[0] == params.get_argv(0)[0]
        && wrdcmp(hashtable[key]->name, params.get_argv(0) )==0 ){
 
+      if( params==NULL ){
+	fputs("Too near terminate charactor.\n",stderr);
+	return 0;
+      }
       int rc=(*hashtable[key]->func)(srcfil,params);
       if( rc == RC_HOOK ){
 	break;

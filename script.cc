@@ -5,21 +5,11 @@
 #include <string.h>
 #include <sys/nls.h>
 #include "macros.h"
+#include "finds.h"
 
 int scriptflag=1;
 int option_amp_start=1;
 int option_sos=0;
-
-// strcpy_tail 
-// : 帰り値がコピーした文字列の末尾である以外は、strcpy と同じ
-
-char *strcpy_tail(char *dp,const char *sp)
-{
-  while( *sp != '\0' )
-    *dp++ = *sp++;
-  *dp = '\0';
-  return dp;
-}
 
 // copyargs :
 //	全ての引数をコピーする
@@ -168,14 +158,23 @@ static int insert_interpretor(const char *fname , char *&dp)
   return 0;
 }
 
-// ファイル名を、'/' --> '\\ 変換しながら、コピーする
+// ファイル名を、'/' <--> '\\' 変換しながら、コピーする
 // 空白や、ヌルをファイル名末尾とみなす。
+
+enum{
+  SPACE_TERMINATE	= 1,
+  SLASH_DEMILITOR	= 2,
+  BACKSLASH_DEMILITOR	= 4,
+};
 
 static void copy_filename(  const char *sp , char *dp
 			  , const char **sp_tail=NULL 
-			  , char **dp_tail=NULL )
+			  , char **dp_tail=NULL 
+			  , int flag=SPACE_TERMINATE )
 {
-  while( *sp != '\0' && *sp != '|' && *sp != '&' && !is_space(*sp) ){
+  while(    *sp != '\0' && *sp != '|' && *sp != '&' 
+	&& ! ((flag & SPACE_TERMINATE)!=0 && is_space(*sp)) ){
+
     /* コマンド名 : "/"-->"\\"に置換 */
     if( *sp == '"' ){
       do{
@@ -184,8 +183,11 @@ static void copy_filename(  const char *sp , char *dp
 	  goto exit;
       }while( *sp != '"' );
     }
-    if( *sp == '/' ){
+    if( *sp == '/' && (flag & BACKSLASH_DEMILITOR) !=0 ){
       *dp++ = '\\';
+      sp++;
+    }else if( *sp == '\\' && (flag & SLASH_DEMILITOR) !=0 ){
+      *dp++ = '/';
       sp++;
     }else{
       if( is_kanji(*sp) )
@@ -259,11 +261,13 @@ int replace_script( const char *sp , char *dp )
       if( type == FILE_EXISTS ){
 	// --- おそらく、スクリプト ---
 	insert_interpretor(path,dp);
-	dp = strcpy_tail(dp,path);
+	/* dp = strcpy_tail(dp,path); */
+	copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
       }else if( type != COM_FILE  || sos(sp,dp,path) != 0 ){
 	// --- OS/2 の実行ファイル ---
-	dp = strcpy_tail(dp,path);
+	/* dp = strcpy_tail(dp,path); */
+	copy_filename(path,dp,NULL,&dp, BACKSLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
       }
     }else{

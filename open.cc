@@ -130,6 +130,7 @@ int cmd_open( FILE *source , Parse &params )
   int argc = params.get_argc();
   int number = 0; /* OPEN する種類 */
   BOOL flag=TRUE; /* すでに open しているウインドウを利用するのか？*/
+  const char *setup_string="OPEN=DEFAULT";
 
   FILE *fout=params.open_stdout();
 
@@ -138,38 +139,79 @@ int cmd_open( FILE *source , Parse &params )
     
     if( arg[0] == '-' ){
       switch( arg[1] ){
-      case '0':
-      case '1':
-      case '2':
-      case '3':
-      case '4':
-      case '5':
-      case '6':
-      case '7':
-      case '8':
-      case '9':
-	number = atoi(arg+1);
-	break;
-	
       default:
 	fprintf(fout,"open: bad option `%s'\n",arg);
 	break;
-
+	
       case 'p': /* プロパティーオプション */
-	number = 2;
+      case 's':
+	setup_string = "OPEN=SETTINGS";
 	break;
 
-      case 'n': /* 新規ウインドウ */
-	flag = FALSE;
+      case 't':
+	setup_string = "OPEN=TREE";
+	break;
+
+      case 'd':
+	setup_string = "OPEN=DETAILS";
+	break;
+	
+      case 'i':
+	setup_string = "OPEN=ICON";
+	break;
+
+      case 'o':
+	if( i+1 < argc ){
+	  int len=params.get_length(++i);
+	  char *tmp=(char*)alloca(len+7);
+	  for(int j=0;j<5;j++){
+	    tmp[j] = "OPEN="[j];
+	  }
+	  params.copy(i,tmp+5);
+	  for(char *q=tmp+5 ; *q != '\0' ; ){
+	    if( is_kanji(*q) ){
+	      q += 2;
+	    }else{
+	      *q = toupper(*q);
+	      q++;
+	    }
+	  }
+	  setup_string = tmp;
+	}
 	break;
       }
     }else{
-      char *fname=(char*)alloca(params.get_length(i)+3);
+      int len=params.get_length(i);
+      char *fname=(char*)alloca(len+3);
       char absfname[512];
       char *p=absfname;
 
       params.copy(i,fname);
-      _abspath( absfname , fname , sizeof(absfname) );
+      if( fname[0] == '[' ){
+	fname[0] = '<';
+	for(char *q=fname+1; *q != '\0' ; ){
+	  if( is_kanji(*q) ){
+	    *q += 2;
+	  }else{
+	    *q = toupper(*q);
+	    q++;
+	  }
+	}
+	fname[ len-1 ] = '>';
+      }else if( fname[0] == '<' ){
+	for(char *q=fname+1; *q != '\0' ; ){
+	  if( is_kanji(*q) ){
+	    *q += 2;
+	  }else{
+	    *q = toupper(*q);
+	    q++;
+	  }
+	}
+	fname[ len-1 ] = '>';
+      }else{
+	_abspath( absfname , fname , sizeof(absfname) );
+	fname = absfname;
+      }
 
       char *lastp=NULL , *last2p=NULL;
       while( *p != '\0' ){
@@ -190,10 +232,10 @@ int cmd_open( FILE *source , Parse &params )
 	*lastp = '\0' ;
       }
       
-      fprintf(fout,"open %s\n", absfname );
-
-      HOBJECT hObject=WinQueryObject( (PSZ)absfname );
-      WinOpenObject( hObject , number , flag );
+      fprintf(fout,"open %s\n", fname );
+      
+      HOBJECT hObject=WinQueryObject( (PSZ)fname );
+      WinSetObjectData( hObject , (PCSZ) setup_string );
     }
   }
   return 0;

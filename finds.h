@@ -111,4 +111,34 @@ public:
 char **fnexplode2(const char *path);
 void fnexplode2_free(char **list);
 
+#undef CACHE
+#ifdef CACHE
+class PathCache{
+  struct FileList {
+    FileList *next;
+    char *fname;
+    char *interpret;
+    char fullpath[1];
+  } **hash;
+
+  struct DirTree{
+    enum{ ONE_FILE , FULL_DIR } type;
+    union{
+      FileList *one;
+      FileList **tree;
+    };
+    int add(const char *s);
+  };
+  
+  void rehash_1_dir(const char *dirname);
+public:
+  PathCache(int n=1024) : hashsize(n),hash(NULL) {}
+  ~PathCache();
+  void rehash(const char *env);
+  const char *find(const char *fname);
+};
+#endif
+char *strcpy_tail(char *dp,const char *sp);
+
+
 #endif

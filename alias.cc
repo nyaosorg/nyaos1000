@@ -114,13 +114,14 @@ void alias_replace(const char *sp , char *destinate  )
       }
       ptr = ptr->next;
     }/* alias search loop */
-
+    
     if( ptr == NULL )
       dp = params.betacopy(dp);
     
     sp = params.get_tail();
     if( *sp == '\0' )
       break;
+
     while( sp < params.get_nextcmds() )
       *dp++ = *sp++;
     if( *sp == '\0' )

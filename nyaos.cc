@@ -5,6 +5,8 @@
 #include <ctype.h>
 #include <time.h>
 
+#define VERSION "1.31"
+
 // #define INCL_WINWINDOWMGR
 #define INCL_DOSFILEMGR
 #define INCL_RXSUBCOM
@@ -13,12 +15,16 @@
 #include "edlin.h"
 #include "nyaos.h"
 #include "complete.h"
+#include "finds.h"
 
 #define USE_VIDEO_H  1
 
 #if USE_VIDEO_H
 #  include <sys/video.h>
 #endif
+
+#define RED "" /*"\x1B[31m"*/
+#define WHITE "" /*"\x1B[37m"*/
 
 int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 
@@ -32,6 +38,11 @@ int cursor_end;
 char *cursor_on_color_str=NULL;
 char *cursor_off_color_str=NULL;
 int option_nyaos_rc=1;
+
+#undef CACHE
+#ifdef CACHE
+PathCache *script_cache=NULL;
+#endif
 
 // ---- fgets と基本は同じ。ただ、末尾の「\n」を読み込まない点が異なる ----
 char *fgets_chop(char *dp, int max, FILE *fp)
@@ -89,7 +100,7 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin)
 	
 	dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
 		      , screen_width ,
-		      " Nihongo Yet Another Os/2 Shell 1.30  "
+		      " Nihongo Yet Another Os/2 Shell "VERSION
 		      " (c) 1996,97 HAYAMA,Kaoru "
 		      );
 	edlin.using_i_mark = 1;
@@ -210,6 +221,11 @@ int main(int argc, char **argv)
     fprintf(stderr,"nyaos: DBCS init error\n");
     return -1;
   }
+  
+#ifdef CACHE
+  script_cache = new PathCache;
+  script_cache->rehash("SCRIPTPATH");
+#endif
 
   // ---- 画面表示は、fflush せずとも、ただちにやれ！ -----
   setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
@@ -240,6 +256,7 @@ int main(int argc, char **argv)
   
   // -------- オプション分析 ----------
 
+  int quite_mode=0;
   for(int i=1;i<argc;i++){
     if( argv[i][0] == '-' || argv[i][0] == '/' ){
       switch(argv[i][1]){
@@ -275,25 +292,36 @@ int main(int argc, char **argv)
       case 'f':
 	option_nyaos_rc = 0;
 	break;
+
+      case 'q':
+	quite_mode = 1;
+	break;
       }
     }else{
-      fprintf(stderr,"%s: %s:invalid argument.\n",argv[0],argv[i]);
-      return -1;
+      if( _chdir2(argv[i]) != 0 ){
+	fprintf(stderr,"%s: %s:invalid argument.\n",argv[0],argv[i]);
+	return -1;
+      }
     }
   }
 
-  if( isatty(fileno(stdin)) ){
+  if( isatty(fileno(stdin)) && !quite_mode ){
     printf("\x1b[2J\x1b[1m"
 	   "\n"
-	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
-	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "   Os/2 Shell 1.30     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
-	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
-	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
-	   "                                                          \n"
-	   "    This version is compiled on " __DATE__ " " __TIME__"  \n"
-	   "    Comments, suggestions, and bug reports are welcome.   \n"
-	   "    Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp     \n"
+	   RED"  oo  oo oo  oo  oooo   oooo   ooooo   "
+	   WHITE"   Free Software     \n"
+	   RED"  ooo oo oo  oo oo  oo oo  oo oo    o  "
+	   WHITE"Nihongo Yet Another  \n"
+	   RED"  oooooo  oooo  oooooo oo  oo   ooo    "
+	   WHITE" Os/2 Shell "VERSION"\n"
+	   RED"  oo ooo   oo   oo  oo oo  oo o    oo  "
+	   WHITE"       (C)           \n"
+	   RED"  oo  oo   oo   oo  oo  oooo   ooooo   "
+	   WHITE"1996,97 HAYAMA,Kaoru \n"
+	   "                                                            \n"
+	   "    This version is compiled on " __DATE__ " " __TIME__"    \n"
+	   "    Comments, suggestions, and bug reports are welcome.     \n"
+	   "    Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp       \n"
 	   "\x1b[0m\n"
 	   );
   }

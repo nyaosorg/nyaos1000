@@ -76,8 +76,8 @@ int Parse::check_redirect()
 
   const char *top=sp;
 
-  if( *sp == '&' || *sp == '|'  ||  *sp == '\0' )
-    return -1;
+  if( tailcheck() )
+    return err=-1;
 
   do{
     if( is_kanji(*sp) )
@@ -161,7 +161,7 @@ int Parse::check()
        * エラーを返すべく終了する。
        */
       if( check_redirect() != 0 )
-	return -1;
+	return err=-1;
       continue;
     }
     
@@ -395,7 +395,7 @@ char *Parse::copyall(int n, char *dp, int flag)
 
     int lastchar = -1;
 
-    while( ssp < sp ){
+    while( ssp < tail ){
       if( *ssp == '"' ){
 	/* 引用符は、フラグを反転させる。*/
 

@@ -40,6 +40,9 @@ public:
 	      { check(); }
 
   ~Parse();
+  
+  operator const void* () const { return err ? NULL : this; }
+  int operator ! () const { return err; }
 
   enum{
     QUOTE_NOT_COPY = 0,
