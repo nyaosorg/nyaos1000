@@ -4,12 +4,13 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <dirent.h>
-#include <sys/stat.h>
+/* #include <sys/stat.h> */
 #include <sys/ea.h>
+#include <sys/nls.h>
 #include <fnmatch.h>
 #include <conio.h>
 #include <io.h>
-#include <time.h>
+/* #include <time.h> */
 #include <string.h>
 #include <signal.h>
 #include "nyaos.h"
@@ -31,6 +32,99 @@ enum{
   COLOR_MODE = 8,
   HIDDEN_MODE= 16, /* HIDDEN属性も表示する。*/
 };
+
+static char *ls_left_code="\033[";
+static char *ls_right_code="m";
+static char *ls_end_code="\033[0m";
+static char *ls_normal_file="1";
+static char *ls_directory="32;1";
+static char *ls_system_file="31;1";
+static char *ls_read_only_file="33;1";
+static char *ls_hidden_file="44;37;1";
+static char *ls_executable_file="35;1";
+
+struct {
+  const char *xx;
+  char **where_to_code;
+} ls_color_table[]= {
+  { "lc",&ls_left_code },
+  { "rc",&ls_right_code },
+  { "ec",&ls_end_code },
+  { "fi",&ls_normal_file },
+  { "di",&ls_directory },
+  { "sy",&ls_system_file },
+  { "ro",&ls_read_only_file },
+  { "hi",&ls_hidden_file },
+  { "ex",&ls_executable_file },
+};
+
+void set_ls_color_table(const char *s)
+{
+  if( s==NULL )
+    return;
+
+  while( isalpha(s[0] & 255 ) && isalpha(s[1] & 255) && s[2]=='=' ){
+    int s0=tolower(s[0] & 255) , s1=tolower(s[1] & 255 );
+    s += 3;    
+    for(int i=0;i<numof(ls_color_table);i++){
+      if( s0==ls_color_table[i].xx[0]  &&  s1==ls_color_table[i].xx[1] ){
+	char buffer[1024],*p=buffer;
+	while( *s != ':' ){
+	  assert( p < buffer+sizeof(buffer) );
+
+	  if( *s == '\0' || *s == '\n' ){
+	    *p = '\0';
+	    if( buffer[0] != '\0' )
+	      *ls_color_table[ i ].where_to_code = strdup( buffer );
+	    else
+	      *ls_color_table[ i ].where_to_code = "";
+	    return;
+	    
+	  }else if( *s == '\\' ){ 
+	    if( *++s == 'e' || *s=='E' ){ /* "\e"形式 */
+	      s++;
+	      *p++ = '\x1b';
+	    }else if( '0' <= *s && *s < '8' ){ /* "\033" : 8進形式 */
+	      int n=0,j=1;
+	      do{
+		n = (n*8) + (*s-'0');
+	      }while( '0' <= *++s && *s < '8' && ++j <= 3 );
+	      *p++ = n;
+	    }else if( *s=='x' ){  /* "\x1b": 16進形式 */
+	      int n=0,j=0;
+	      while( isxdigit(*++s) && ++j <= 3 ){
+		n *= 16;
+		if( islower(*s) )
+		  n += (*s-'a'+10);
+		else if( isupper(*s) )
+		  n += (*s-'A'+10);
+		else
+		  n += (*s-'0');
+	      }
+	      *p++ = n;
+	    }
+
+	  }else{ /* 普通の文字コ－ド */
+	    *p++ = *s++;
+	  }
+	}
+	*p = '\0';
+	s++;     /* skip ':' */
+	if( buffer != '\0' )
+	  *ls_color_table[ i ].where_to_code = strdup( buffer );
+	else
+	  *ls_color_table[ i ].where_to_code = "";
+
+	goto next_colomn;
+      }/* endif hit! */
+    }/* 検索ル－プ */
+    printf("LS_COLORS: %c%c: Bad code name\n",s0,s1);
+    return;
+  next_colomn:
+    ;
+  }/* : で区切られたル－プ */
+}
+
 int column=0;
 
 int nprintlines=0;
@@ -47,10 +141,10 @@ void kill_filelist(struct filelist *p)
 void more(int flag,FILE *fout)
 {
   putc('\n',fout);
-  if(   isatty(fileno(fout)) && (flag & MORE_MODE) 
+  if(   (flag & COLOR_MODE)  &&  (flag & MORE_MODE) 
      && ++nprintlines >= screen_height-1 ){
 
-    fputs("\x1B[0;30;1;47m[more]\x1b[0;1;37m",fout);
+    fprintf(fout,"%s[more]",ls_end_code);
     fflush(fout);
     (void)getch();
     fputs("\r      \r",fout);
@@ -58,6 +152,102 @@ void more(int flag,FILE *fout)
   }
 }
 
+int fnexplode2(struct filelist *&list   , int &count ,
+	       struct filelist *&dirlist, int &dircount ,
+	       int &max_length ,
+	       const char *path )
+{
+  char dir[ FILENAME_MAX ]    , *dir_p    = dir;
+  char rawdir[ FILENAME_MAX ] , *rawdir_p = rawdir;
+  char fname[ FILENAME_MAX ]  , *fname_p  = fname;
+  
+  const char *lastroot=NULL;
+  if( path[0]=='~' ){
+    lastroot = path;
+  }
+  for(const char *sp=path ; *sp != '\0' ; sp++ ){
+    if( _nls_is_dbcs_lead( *sp & 255 ) ){
+      ++sp;
+    }else if( *sp=='\\' || *sp=='/' || *sp==':' ){
+      lastroot = sp;
+    }
+  }
+  
+  const char *p=path;
+  if( lastroot != NULL ){
+    while( p <= lastroot ){
+      *rawdir_p++ = *p;
+      *dir_p++ = *p++;
+    }
+  }
+  /* '.'を付けることで 末尾が ':','/'でも有効に働く (^_^) */
+  *dir_p++ = '.';
+  *dir_p   = '\0';
+  *rawdir_p = '\0';
+
+  while( *p != '\0' )
+    *fname_p++ = *p++;
+  *fname_p = '\0';
+
+  if( fname[0] == '\0' ){
+    struct filelist *tmp =
+      (struct filelist *)malloc(sizeof(struct filelist)	+ (dir_p-dir) );
+    const char *sp=dir;
+    char *dp=tmp->name;
+    while( sp < dir_p )
+      *dp++ = *sp++;
+    *dp = '\0';
+    dirlist = fsort_and_insert(dirlist,tmp);
+    dircount++;
+    return 0;
+  }
+
+  DIR *dirp=opendir(dir);
+  if( dirp == NULL )
+    return -1;
+  
+  struct dirent *dirbuf;
+  while( (dirbuf=readdir(dirp)) != NULL ){
+    if( _fnmatch( fname , dirbuf->d_name , _FNM_OS2 | _FNM_IGNORECASE )!=0 )
+      continue;
+
+    struct filelist *tmp =
+      (struct filelist *)malloc(sizeof(struct filelist)
+				+ dirbuf->d_namlen
+				+ (rawdir_p-rawdir)
+				);
+    char *dp=tmp->name;
+    /** ディレクトリ部をコピ－ **/
+    const char *sp=rawdir;
+    while( sp < rawdir_p )
+      *dp++ = *sp++;
+
+    /** ファイル名部をコピ－ **/
+    sp = dirbuf->d_name;
+    for(int i=0; i<dirbuf->d_namlen ; i++ )
+      *dp++ = *sp++;
+    *dp = '\0';
+    
+    tmp->length = dirbuf->d_namlen + (rawdir_p-rawdir) ;
+
+    tmp->date   = dirbuf->d_date;
+    tmp->time   = dirbuf->d_time;
+    tmp->attr   = dirbuf->d_attr;
+    tmp->size   = dirbuf->d_size;
+
+    if( tmp->attr & A_DIR ){
+      dirlist = fsort_and_insert(dirlist,tmp);
+      dircount++;
+    }else{
+      list = fsort_and_insert(list,tmp);
+      count++;
+      if( tmp->length > max_length )
+	max_length = tmp->length;
+    }
+  }
+  closedir(dirp);
+  return 0;
+}
 
 void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 {
@@ -67,61 +257,63 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
   char attrstr[]="-rw--";
   /*              drwxa 
    *              01234 */
-  if( flist->name[0] == '.'  &&  (HIDDEN_MODE & flag)==0 )
+
+  const char *top=flist->name;
+  for(const char *p=flist->name ; *p != '\0' ; p++ ){
+    if( *p == '\\' || *p == '/' )
+      top = p+1 ;
+  }
+  if( (HIDDEN_MODE & flag)==0  &&  *top=='.' )
     return;
 
   if( flist->attr & A_DIR ){
-    headstr  = "\x1B[1;32m";
+    headstr = ls_directory;
     attrstr[0] = 'd';
     tailchar = Complete::directory_split_char;
   }else if( flist->attr & A_HIDDEN ){
     if( (flag & HIDDEN_MODE)==0 )
       return;
-    headstr  = "\x1B[1;34m";
+    headstr = ls_hidden_file;
   }else if( flist->attr & A_SYSTEM ){
-    headstr  = "\x1B[1;31m";
+    headstr = ls_system_file;
   }else if( flist->attr & A_RONLY ){
-    headstr  = "\x1B[1;33m";
+    headstr = ls_read_only_file;
     attrstr[2] = '-';
   }else if( flist->attr & A_LABEL ){
-    headstr  = "\x1B[1;34m";
+    headstr = ls_system_file;
   }else if( which_suffix(flist->name,"EXE","COM","CMD","BAT",NULL) != 0 ){
-    headstr  = "\x1B[1;35m";
+    headstr = ls_executable_file;
     tailchar = '*';
     attrstr[3] = 'x';
   }else{
-    headstr  = "\x1B[1;37m";	
+    headstr = ls_normal_file;
   }
   
   if( flist->attr & A_ARCHIVE )
     attrstr[4] = 'a';
   
   if( flag & COLOR_MODE )
-    fputs("\x1B[0m",fout);
+    fputs(ls_end_code,fout);
+
 
   int ncolumns=0;
 
   /* lsモードの時は、このブロックだけで return する */
   if( (flag & PRINT_MASK) == LS_MODE ){
     if( flag & COLOR_MODE )
-      fputs(headstr,fout);
+      fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
     
-    int i=fprintf(fout,"%s%c ",
-		 flist->name,
-		 tailchar
-		 );
-    while( i < max_length+2 ){
+    fputs(flist->name , fout );
+    if( flag & COLOR_MODE )
+      fputs(ls_end_code,fout);
+    putc(tailchar,fout);
+
+    int i=strlen(flist->name);
+    while( i < max_length+1 ){
       ++i;
       putc(' ',fout);
     }
-
     column += i;
-#if 0  /* 縦型 ls にしてからは不要になった。*/
-    if( column + max_length >= screen_width ){
-      more(flag,fout);
-      column = 0;
-    }
-#endif
     return;
   }
 
@@ -138,13 +330,13 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 		       );
   }
   
+  if( flag & COLOR_MODE ){
+    fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
+  }
+  fputs(flist->name,fout);
   if( flag & COLOR_MODE )
-    fputs( headstr , fout );
-
-  ncolumns += fprintf(fout,"%s%c ",flist->name , tailchar );
-
-  if( flag & COLOR_MODE )
-    fputs("\x1B[0;37m",fout );
+    fputs(ls_end_code,fout);
+  putc(tailchar,fout);
 
   if( (flag & PRINT_MASK)==DIR_MODE ){
     more(flag,fout);
@@ -231,41 +423,16 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
   _ea_free( &ea );
 }
 
-/* ファイル情報をstatで自前で調べる場合 */
-void dir1(const char *filename,int max_length,int flag,FILE *fout)
-{
-  struct stat stbuf;
-  if( stat( filename , &stbuf ) != 0 ){
-    return;
-  }
-
-  int length=strlen(filename);
-
-  struct filelist *flist=
-    (struct filelist*)alloca(sizeof(struct filelist)+length);
-
-  strcpy( flist->name , filename );
-
-  flist->attr = stbuf.st_attr;
-  flist->length = length;
-  flist->size   = stbuf.st_size;
-
-  struct tm *t=localtime(&stbuf.st_mtime);
-  flist->d.year   = t->tm_year-80;
-  flist->d.month  = t->tm_mon;
-  flist->d.day    = t->tm_mday;
-  flist->t.hour   = t->tm_hour;
-  flist->t.minute = t->tm_min;
-  flist->t.second = t->tm_sec;
-
-  dir1(flist,max_length,flag,fout);
-}
-
 int is_file_print(struct filelist *f,int flag)
 {
   if( flag & HIDDEN_MODE )
     return 1;
-  if( f->name[0] == '.' || (f->attr & A_HIDDEN) )
+  const char *top=f->name;
+  for(const char *p=f->name ; *p != '\0' ; p++ ){
+    if( *p=='/' || *p=='\\' )
+      top=p+1;
+  }
+  if( *top == '.' || (f->attr & A_HIDDEN) )
     return 0;
   return 1;
 }
@@ -372,44 +539,6 @@ int the_dir(const char *dir,int flag , FILE *fout )
   return nlists;
 }
 
-void eadir1(const char *cmdname,const char *arg,int max_length,
-	    int flag,FILE *fout)
-{
-  if( arg[1] == ':'  && arg[2] == '\0' ){
-    static char arg_[]="?:.";
-    arg_[0] = arg[0];
-    arg = arg_;
-  }
-  struct stat stat_buffer;
-
-  if( stat( arg , &stat_buffer ) != 0 ){
-    fprintf(stderr,"%s: %s: no such file or directory\n",cmdname,arg );
-  }else{
-    if( stat_buffer.st_attr & A_DIR ){ /**** ディレクトリ名 ****/
-      putc('\n',fout);
-      if( flag & COLOR_MODE )
-	fputs("\x1B[0m",fout);
-      fputs(arg,fout);
-      fputs(":\n",fout);
-      
-      int curdrv=_getdrive();
-      if( arg[1]==':' )
-	_chdrive(arg[0]);
-      
-      char curdir[FILENAME_MAX];
-      getcwd( curdir , sizeof(curdir) );
-      _chdir2( arg );
-      
-      the_dir(".",flag,fout);
-      
-      chdir( curdir );
-      _chdrive( curdrv );
-    }else{ /**** ファイル名 ****/
-      dir1( arg , max_length , flag , fout);
-    }
-  }
-}
-
 int eadir( int argc, char **argv,FILE *fout=stdout)
 {
   int flag=0;
@@ -434,6 +563,8 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 
   struct filelist *files=NULL;
   struct filelist *dirs =NULL;
+
+  set_ls_color_table( getenv("LS_COLORS") );
 
   if( argc > 1 ){
     column=0;
@@ -465,74 +596,13 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  }/* end switch */
 	}/* end for */
 
-      }else{
+      }else if(fnexplode2(files, filecount, dirs, dircount,
+			  max_length,argv[i]) !=0 ){
 	/* オプションでない文字列 ... ファイル名 */
-
-	char **list=_fnexplode(argv[i]);
-	if( list != NULL ){
-	  for(char **ptr=list; *ptr != NULL ; ptr++ ){
-	    struct stat stbuf;
-	    int len=strlen(*ptr);
-	    
-	    if( stat( *ptr , &stbuf ) == 0 ){
-	      struct filelist *node=
-		(struct filelist*)alloca(sizeof(struct filelist)+len);
-	      strcpy( node->name , *ptr );
-	      node->attr   = stbuf.st_attr;
-	      node->length = len;
-	      node->size   = stbuf.st_size;
-	      
-	      if( stbuf.st_attr & A_DIR ){
-		dirs  = fsort_and_insert(dirs ,node);
-		dircount++;
-	      }else{
-		files = fsort_and_insert(files,node);
-		if( len > max_length )
-		  max_length = len;
-		filecount++;
-	      }
-	    }else{
-	      fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
-	      filefault++;
-	    }
-	  }
-	  _fnexplodefree(list);
-	}else{
-	  struct stat stbuf;
-	  int len=strlen(argv[i]);
-	  char *fn=argv[i];
-
-	  /*「ls A:」にも対応させるため、ドットを末尾に追加する。*/
-	  if( argv[i][1]==':' && argv[i][2]=='\0' ){
-	    static char drv[]="@:.";
-	    drv[0]=argv[i][0];
-	    fn = drv;
-	  }
-
-	  if( stat( fn , &stbuf ) == 0 ){
-	    struct filelist *node=
-	      (struct filelist*)alloca(sizeof(struct filelist)+len);
-	    strcpy( node->name , argv[i] );
-	    node->attr   = stbuf.st_attr;
-	    node->length = len;
-	    node->size   = stbuf.st_size;
-	    
-	    if( stbuf.st_attr & A_DIR ){
-	      dirs  = fsort_and_insert(dirs ,node);
-	      dircount++;
-	    }else{
-	      files = fsort_and_insert(files,node);
-	      if( len > max_length )
-		max_length = len;
-	      filecount++;
-	    }
-	  }else{
-	    fprintf(stderr,"%s: no such file or directory\n",argv[i]);
-	    filefault++;
-	  }
-	}
+	fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
+	filefault++;
       }/* argv loop */
-    }
+    }/* if( argc > 1 ) */
     if( ctrl_c ){
       fputs("\nCtrl-C Hit.\n",fout);
       ctrl_c = 0;
@@ -540,19 +610,26 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
       return 0;
     }
   }
-
+  
   if( filecount > 0 || dircount > 0  ){
     /* ファイル名が指定された */
     if( filecount > 0 ){
+      assert( files != NULL );
+
       print_filelist( files , filecount , max_length , flag , fout );
+
       if( dircount > 0 )
 	putc('\n',fout);
     }
     struct filelist *p=dirs;
     if( p != NULL ){
       for(;;){
-	if( dircount+filecount > 1 )
-	  fprintf(fout,"\x1b[0m%s : \n",p->name);
+	if( dircount+filecount > 1 ){
+	  if( flag & COLOR_MODE )
+	    fprintf(fout,"%s%s : \n",ls_end_code,p->name);
+	  else
+	    fprintf(fout,"%s : \n",p->name);
+	}
 	
 	the_dir( p->name , flag , fout );
 	
@@ -561,21 +638,22 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	putc('\n',fout);
       }
     }
-    fprintf(fout,"\x1b[0m" );
+    if( isatty(fileno(fout)) )
+      fputs( ls_end_code , fout );
 
   }else if( filefault <= 0 ){
     /* ファイル名が指定されていない ---> カレントディレクトリ */
 
     the_dir( "." , flag , fout );
     if( ctrl_c ){
-      fputs("\nCtrl-C Hit.\n",fout);
+      fputs("\nCtrl-C Hit.\n",stderr);
       ctrl_c = 0;
       signal(SIGINT,ctrl_c_signal);
       return 0;
     }
   }
-  if( flag & COLOR_MODE )
-    fputs("\x1B[0m",fout);
+  if( (flag & COLOR_MODE) && isatty(fileno(fout)) )
+    fputs( ls_end_code ,fout);
 
   fflush(fout);
   return 0;

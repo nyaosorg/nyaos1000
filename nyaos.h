@@ -16,6 +16,13 @@ int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
 int eadir(int argc, char **argv,FILE *fout);
 char *fgets_chop(char *dp,int max,FILE *fp);
 
+class Parse;
+
+extern struct commandtable_tag {
+  const char *name;
+  int (*func)( FILE *srcfil, Parse &params );
+} jumptable[];
+
 extern struct Alias{
   Alias *next;
   char *base;
@@ -57,7 +64,11 @@ int replace_script( const char *source , char *destinate );
 
 extern int option_tilda_is_home;
 int replace_envvar( const char *source , char *destinate );
+void buildin_command_to_complete_table(void);
 
 extern int option_vio_cursor_control;
+
+/**** bindkey.cc *****/
+
 
 #endif

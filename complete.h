@@ -36,27 +36,30 @@ int which_suffix(const char *path,...);
 class Complete {
   char directory[ 256 ];
   char fname[ 256 ];
+  int common_length;
   int nlists;
   int max_length;
-  int common_length;
 
   struct filelist *list , *findptr ;
   static const char *errmsg[];
 
   int makelist_core(int command_complete);
-
 public:
   enum{
-    NO_PROBLEM,
-    MEMORY_ERROR,
-  } err ;
+    NOT_COMPLETED ,
+    COMMAND_COMPLETED ,
+    FILENAME_COMPLETED ,
+    SIMPLE_COMMAND_COMPLETED ,
+    ERROR
+  } status;
 
-  Complete() : common_length(0) , nlists(0) , err(NO_PROBLEM) 
-    , list((struct filelist*)0) {  }
+  Complete() : common_length(0) , nlists(0)
+     , list((struct filelist*)0) , status(NOT_COMPLETED){  }
   ~Complete(){ cleanup(); }
 
   int makelist          (const char *path);
   int makelist_with_path(const char *path);
+  int add_buildin_command(const char *name); /* after makelist only */
 
   void cleanup();
   char *nextchar();
@@ -66,10 +69,6 @@ public:
   struct filelist *findfirst(){ return findptr=list; }
   struct filelist *findnext(){  return findptr=findptr->next; }
   int get_max_name_length() const { return max_length; }
-
-  operator const void*() const { return err ? NULL : this ;}
-  int operator!() const { return err; }
-  const char *get_errmsg() const { return errmsg[err]; }
 
   static int directory_split_char;
   static int complete_tail_tilda;

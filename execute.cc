@@ -8,17 +8,97 @@
 #include <io.h>
 #include <sys/nls.h>
 
-#include "params.h"
+#include "parse.h"
 #include "nyaos.h"
+#include "complete.h"
+#include "edlin.h"
 
 extern int echoflag;
-int cmd_pwd   (FILE *source , Params &params );
-int cmd_chdir (FILE *srcfil, Params &params);
-int cmd_option(FILE *source, Params &params);
-int cmd_comment(FILE *source, Params &params);
-int cmd_alias(FILE *source, Params &);
-int cmd_unalias(FILE *source, Params &);
+int cmd_pwd   (FILE *source , Parse &params );
+int cmd_chdir (FILE *srcfil, Parse &params);
+int cmd_option(FILE *source, Parse &params);
+int cmd_comment(FILE *source, Parse &params);
+int cmd_alias(FILE *source, Parse &);
+int cmd_unalias(FILE *source, Parse &);
+int cmd_mkdir(FILE *source, Parse &);
+int cmd_rmdir(FILE *source, Parse &);
 void alias_replace(const char *sp,char *dp);
+
+int cmd_bind(FILE *source, Parse &param )
+{
+  struct{
+    const char *name;
+    void (*func)();
+    const char *usage;
+  } table2[]={
+    { "emacs" , Shell::bindkey_tcshlike , "key-bindings like emacs" },
+    { "tcsh"  , Shell::bindkey_tcshlike , "same as emacs" },
+    { "ws"    , Shell::bindkey_wordstar , "key-bindings like wordstar" },
+    { "vz"    , Shell::bindkey_wordstar , "same as ws" },
+  };
+
+  if( param.get_argc() < 2 ){
+    FILE *fout=param.open_stdout();
+    for(int i=0;i<numof(table2);i++)
+      fprintf(fout,"%s\t: %s\n",table2[i].name,table2[i].usage);
+  }else{
+    char *buffer=(char*)alloca(param.get_length(1)+1);
+    param.copy(1,buffer);
+    for(int i=0;i<numof(table2);i++){
+      if(   tolower(buffer[0])==table2[i].name[0]
+	 && stricmp(buffer,table2[i].name)==0 ){
+	(*table2[i].func)();
+	return 0;
+      }
+    }
+    fprintf(stderr,"%s : no such bindings\n",buffer);
+  }
+  return 0;
+}
+
+int cmd_bindkey(FILE *source,Parse &param)
+{
+  if( param.get_argc() < 3 ){
+    Shell::bindlist(param.open_stdout());
+    return 0;
+  }
+
+  char *key  = (char*)alloca(param.get_length(1)+1);
+  param.copy(1,key);
+  char *func = (char*)alloca(param.get_length(2)+1);
+  param.copy(2,func);
+
+  switch( Shell::bindkey(key,func) ){
+  case 1:
+    fprintf(stderr,"bindkey: %s: invalid key name.\n",key);
+    break;
+  case 2:
+    fprintf(stderr,"bindkey: %s: invalid function name.\n",func);
+    break;
+  }
+  return 0;
+}
+
+int cmd_history(FILE *source,Parse &param)
+{
+  int n=10;
+  if( param.get_argc() >= 2 ){
+    char *arg1=(char*)alloca(param.get_length(1)+1);
+    param.copy(1,arg1);
+    if( (n=atoi(arg1)) < 1 )
+      n = 10;
+  }
+  int hisnum=Shell::get_history_number();
+  if( n > hisnum )
+    n= hisnum;
+  FILE *fout=param.open_stdout();
+  while( n-- ){
+    const char *s=Shell::get_nth_history(n);
+    if( s != NULL )
+      fprintf( fout , "%4d : %s\n",hisnum-n-1,s);
+  }
+  return 0;
+}
 
 volatile int ctrl_c=0;
 void ctrl_c_signal(int sig)
@@ -27,7 +107,7 @@ void ctrl_c_signal(int sig)
   signal(sig,SIG_ACK);
 }
 
-static int compatible(FILE *source , Params &params ,
+static int compatible(FILE *source , Parse &params ,
 		      int (*routine)(FILE *,const char*,int,char**) )
 {
   int argc=params.get_argc();
@@ -42,7 +122,7 @@ static int compatible(FILE *source , Params &params ,
 
 int foreach( FILE *srcfil , const char *parameter, int argc, char **argv);
 
-static int foreach(FILE *source, Params &params )
+static int foreach(FILE *source, Parse &params )
 {
   return compatible(source,params,foreach);
 }
@@ -52,7 +132,7 @@ struct Dirstack{
   char buffer[1];
 } *dirstack=NULL;
 
-static int cmd_dirs( FILE *srcfil , Params &params )
+static int cmd_dirs( FILE *srcfil , Parse &params )
 {
   char cwd[FILENAME_MAX];
   _getcwd2(cwd,sizeof(cwd));
@@ -76,7 +156,7 @@ static int cmd_dirs( FILE *srcfil , Params &params )
   return 0;
 }
 
-static int cmd_pushd( FILE *srcfil , Params &params)
+static int cmd_pushd( FILE *srcfil , Parse &params)
 {
   char cwd[FILENAME_MAX];
   _getcwd2(cwd,sizeof(cwd));
@@ -95,7 +175,7 @@ static int cmd_pushd( FILE *srcfil , Params &params)
   return cmd_dirs(srcfil,params);
 }
 
-static int cmd_popd( FILE *srcfil, Params &params)
+static int cmd_popd( FILE *srcfil, Parse &params)
 {
   if( dirstack != NULL ){
     _chdir2( dirstack->buffer );
@@ -109,17 +189,17 @@ static int cmd_popd( FILE *srcfil, Params &params)
     return 0;
   }
 }
-static int cmd_ls( FILE *srcfil, Params &params )
+static int cmd_ls( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
-static int cmd_dir( FILE *srcfil, Params &params )
+static int cmd_dir( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
-static int cmd_eadir( FILE *srcfil, Params &params )
+static int cmd_eadir( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
-static int cmd_exit( FILE *srcfil, Params &params )
+static int cmd_exit( FILE *srcfil, Parse &params )
 {
   return RC_QUIT;
 }
-static int cmd_set( FILE *srcfil, Params &params )
+static int cmd_set( FILE *srcfil, Parse &params )
 {
   if( params.get_argc() < 2 )
     return RC_HOOK;
@@ -211,7 +291,7 @@ static int cmd_set( FILE *srcfil, Params &params )
   return 0;
 }
 
-static int cmd_source( FILE *srcfil, Params &params )
+static int cmd_source( FILE *srcfil, Parse &params )
 {
   if( params.get_argc() < 2 )
     return 0;
@@ -250,7 +330,7 @@ static int cmd_source( FILE *srcfil, Params &params )
   return 0;
 }
 
-static int cmd_cursor( FILE *fp, Params &params)
+static int cmd_cursor( FILE *fp, Parse &params)
 {
   if( cursor_on_color_str != NULL ){
     free( cursor_on_color_str );
@@ -284,7 +364,7 @@ static int cmd_cursor( FILE *fp, Params &params)
   return 0;
 }
 
-static int cmd_echo(FILE *srcfil, Params &params )
+static int cmd_echo(FILE *srcfil, Parse &params )
 {
   FILE *fout=params.open_stdout();
   if( fout == NULL ){
@@ -346,7 +426,7 @@ static int cmd_echo(FILE *srcfil, Params &params )
   putc( '\n' , fout );
   return 0;
 }
-static int cmd_lecho(FILE *source, Params &params )
+static int cmd_lecho(FILE *source, Parse &params )
 {
   for(int i=0 ; i<params.get_argc() ; i++ ){
     char argv[256];
@@ -357,11 +437,10 @@ static int cmd_lecho(FILE *source, Params &params )
   return 0;
 }
 
-static struct {
-  const char *name;
-  int (*func)( FILE *srcfil, Params &params );
-} jumptable[]={
+struct commandtable_tag jumptable[]={
   {"alias",  cmd_alias   },
+  {"bind",   cmd_bind    },
+  {"bindkey",cmd_bindkey },
   {"cd",     cmd_chdir   },
   {"chdir",  cmd_chdir   },
   {"comment",cmd_comment },
@@ -371,15 +450,21 @@ static struct {
   {"echo",   cmd_echo    },
   {"exit",   cmd_exit    },
   {"foreach",foreach     },
+  {"history",cmd_history },
   {"ls",     cmd_ls      },
+  {"md",     cmd_mkdir   },
+  {"mkdir",  cmd_mkdir   },
   {"option", cmd_option  },
   {"pwd",    cmd_pwd     },
   {"popd",   cmd_popd    },
   {"pushd",  cmd_pushd   },
+  {"rd",     cmd_rmdir   },
+  {"rmdir",  cmd_rmdir   },
   {"set",    cmd_set     },
   {"source", cmd_source  },
   {"lecho",  cmd_lecho   },
   {"unalias",cmd_unalias },
+  { NULL    , NULL },
 }, *hashtable[512];
 
 int wrdcmp(const char *s1,const char *s2)
@@ -436,6 +521,8 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
     for(int i=0;i<numof(jumptable);i++){
       int key=0;
       const char *p=jumptable[i].name;
+      if( p==NULL )
+	break;
       while( *p != '\0' ){
 	key += *p++;
       }
@@ -477,8 +564,10 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
   char env_replaced_buffer[1024];
   replace_envvar( cmdline , env_replaced_buffer );
   cmdline = env_replaced_buffer;
+  if( cmdline[0]=='\0' )
+    return 0;
   
-  Params params(cmdline);
+  Parse params(cmdline);
 
   int key=0;
   {/* ハッシュキーを計算する */
@@ -514,6 +603,6 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
 
   if( echoflag )
     puts( cmdline );
-    
+  
   return system( cmdline );
 }

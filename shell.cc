@@ -7,8 +7,37 @@
 
 #include "edlin.h"
 #include "complete.h"
+#include "nyaos.h"
 
 int ShellEdlin::beep_ok=1;
+
+int ShellEdlin::complete_hook(Complete &com)
+{
+  int n=0;
+  if( com.status == Complete::SIMPLE_COMMAND_COMPLETED ){
+    /* build-in command */
+    struct commandtable_tag *p=jumptable;
+
+    while( p->name != NULL ){
+      if( com.add_buildin_command(p->name) == 0 ){
+	n++;
+      }
+      p++;
+    }
+
+    /* alias */
+    for(int i=0; i<numof(alias_hashtable); i++){
+      struct Alias *q=alias_hashtable[i];
+      while( q != NULL ){
+	if( com.add_buildin_command(q->name) == 0 ){
+	  n++;
+	}
+	q = q->next;
+      }
+    }
+  }
+  return n;
+}
 
 void ShellEdlin::complete_list()
 {
@@ -32,6 +61,8 @@ void ShellEdlin::complete_list()
 	      ? com.makelist_with_path( buffer ) 
 	      : com.makelist( buffer )
 	      );
+
+  nfiles += complete_hook(com);
 
   if( nfiles <= 0 )
     return;
@@ -82,7 +113,7 @@ void ShellEdlin::complete_list()
   putbs( i-(pos-top) );
 }
 
-int ShellEdlin::setprompt(const char *sp)
+int ShellEdlin::setprompt(const char *sp , int window )
 {
   prompt=sp;
   promptlen=0;
@@ -96,17 +127,18 @@ int ShellEdlin::setprompt(const char *sp)
       promptlen++;
     }
   }
+  windowsize = window - promptlen;
   return promptlen;
 }
-
+#if 0
 int ShellEdlin::simple_input(const char *prompt,int window)
 {
-  windowsize = window - setprompt(prompt);
+  windowsize = window - setprompt(prompt,window);
   fputs(prompt,stdout);
   fflush(stdout);
   return simple_line_input();
 }
-
+#endif
 void ShellEdlin::cls()
 {
   fprintf( fp , "\x1B[2J%s" , prompt );

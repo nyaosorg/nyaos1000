@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/ea.h>
+#include <sys/nls.h>
 
 #include "edlin.h"
-#include "params.h"
+#include "parse.h"
 #include "complete.h"
 #include "nyaos.h"
 #include "edlin.h"
@@ -12,11 +13,12 @@ static int option_dir_tail_is_forward_slash;
 
 extern int option_amp_start;
 extern int option_tilda_is_home;
+extern int option_tcshlike_history;
 
 int option_cd_goto_home=0;
 int echoflag=0;
 
-int cmd_pwd( FILE *source , Params &params )
+int cmd_pwd( FILE *source , Parse &params )
 {
   char cwd[FILENAME_MAX];
 
@@ -28,7 +30,46 @@ int cmd_pwd( FILE *source , Params &params )
   return 0;
 }
 
-int cmd_chdir( FILE *srcfil, Params &params)
+static void cut_tail_root(char *p)
+{
+  char *q=NULL;
+  while( *p != '\0' ){
+    q=p;
+    if( _nls_is_dbcs_lead(*p) )
+      p++;
+    p++;
+  }
+  if( q != NULL && (*q=='\\' || *q=='/') )
+    *q = '\0';
+}
+
+int cmd_rmdir( FILE *source, Parse &params )
+{
+  int argc=params.get_argc();
+  for(int i=1;i<argc;i++){
+    char dirname[FILENAME_MAX];
+    params.copy(i,dirname);
+    cut_tail_root(dirname);
+    if( rmdir(dirname) != 0 ){
+      fprintf(stderr,"nyaos: cannot remove directory `%s'\n",dirname);
+    }
+  }
+}
+
+int cmd_mkdir( FILE *source , Parse &params)
+{
+  int argc=params.get_argc();
+  for(int i=1;i<argc;i++){
+    char dirname[FILENAME_MAX];
+    params.copy(i,dirname);
+    cut_tail_root(dirname);
+    if( mkdir(dirname,0777) != 0 ){
+      fprintf(stderr,"nyaos: cannot make directory `%s'\n",dirname);
+    }
+  }
+}
+
+int cmd_chdir( FILE *srcfil, Parse &params)
 {
   char cwd[FILENAME_MAX];
 
@@ -46,7 +87,7 @@ int cmd_chdir( FILE *srcfil, Params &params)
   return 0;
 }
 
-int cmd_comment(FILE *source, Params &params)
+int cmd_comment(FILE *source, Parse &params)
 {
   if( params.get_argc() < 2 ){
     fprintf(stderr,"comment filename comment...\n");
@@ -96,13 +137,14 @@ struct{
   int false_value;
 } optlist[]={
   { "amp_start"            , &option_amp_start                 , 1  , 0 },
+  { "anywhere_history"     , &option_tcshlike_history          , 1  , 0 },
   { "beep"                 , &ShellEdlin::beep_ok              , 1  , 0 },
   { "echo"                 , &echoflag                         , 1  , 0 },
   { "complete_hidden"      , &Complete::complete_hidden_file   , 1  , 0 },
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
   { "complete_tilda"       , &Complete::complete_tail_tilda    , 1  , 0 },
-  { "ctrl_d_eof"           , &Edlin::ctrl_d_eof                , 1  , 0 },
-  { "ctrl_z_eof"           , &Edlin::ctrl_z_eof                , 1  , 0 },
+  { "ctrl_d_eof"           , &Shell::ctrl_d_eof                , 1  , 0 },
+  { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
   { "script"               , &scriptflag                       , 1  , 0 },
@@ -110,7 +152,7 @@ struct{
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
 };
 
-int cmd_option(FILE *source, Params &params)
+int cmd_option(FILE *source, Parse &params)
 {
   FILE *fout=params.open_stdout();
 

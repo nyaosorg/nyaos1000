@@ -10,35 +10,6 @@
 
 int Edlin::complete_tail_char='\\';
 
-void Edlin::push()
-{
-  if( len <= 0 )
-    return;
-
-  Edlin::History *tmp=(Edlin::History*)malloc(sizeof(Edlin::History)+len);
-  if( tmp == NULL )
-    return;
-
-  memcpy(tmp->buffer , strbuf , len );
-  tmp->buffer[len] = '\0';
-  tmp->prev = history;
-  tmp->next = NULL;
-
-  if( history != NULL )
-    history->next = tmp;
-  history = tmp;
-}
-
-Edlin::~Edlin()
-{
-  while( history != 0 ){
-    History *prev=history->prev;
-    free(history);
-    history = prev;
-  }
-  delete atrbuf;
-}
-
 void Edlin::right(int n)
 {
   /* ‰E‚Ö top ‚ªˆÚ“®‚·‚é --> ‘S‘Ì‚ª¶‚ÖˆÚ“®‚·‚éB*/
@@ -190,6 +161,8 @@ void Edlin::complete_core(int fntop,int basesize)
   int nfiles = ( command_complete
 		? com.makelist_with_path( buffer ) 
 		: com.makelist( buffer ) );
+
+  nfiles += complete_hook(com);
 
   if( nfiles <= 0 ){
     alert();

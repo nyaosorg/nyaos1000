@@ -1,30 +1,24 @@
 本パッケ－ジは、葉山 薫の著作物
-	NYAOS : Nihongo Yet Another Os/2 Shell 1.16
+	NYAOS : Nihongo Yet Another Os/2 Shell 1.20
 のソ－スリストです。
-コンパイル済みのバイナリは LHA で圧縮されたパッケ－ジに含まれています。
-
-このソ－スの配布・変更などは、「GNU General Public Licence」に従ってください。
-(詳しくは、添付ファイル COPYING 参照のこと )
+コンパイル済みのバイナリは ZIP で圧縮されたパッケ－ジに含まれています。
 
 NYAOS のリコンパイルには、0.9c以上の emx/gcc 環境が必要です。
 
-readme.1st	このファイル
-readme.116	1.15からの変更点
-nyaos.doc	ドキュメント
-COPYING		GNU General Public Licence
+readme.src	このファイル
 makefile	メイクファイル
 
 complete.h	ファイル名補完クラス Complete
 complete.cc
 
 edlin.h		入力・編集クラス Edlin とその派生クラス
-edlin.cc
-escedlin.cc
-shell.cc
-siminput.cc
+edlin.cc	(Edlin)
+escedlin.cc	(EscEdlin)
+shell.cc	(ShellEdlin)
+bindkey.cc	(Shell)
 
-params.h	構文解析クラス Params
-params.cc
+parse.h		構文解析クラス Parse
+parse.cc
 
 alias.cc	別名機能
 

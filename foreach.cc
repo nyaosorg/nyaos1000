@@ -159,8 +159,9 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   if( isatty(fileno(srcfil)) ){
     /* キーボード入力 */
     ShellEdlin edlin("? ",buffer,sizeof(buffer));
+    Shell shell(edlin);
 
-    while(   edlin.simple_input("? ") >= 0 
+    while(   shell.line_input("? ",32767) >= 0 
 	  && (   (buffer[0] != 'e' && buffer[0] != 'E' )
 	      || (buffer[1] != 'n' && buffer[1] != 'N' )
 	      || (buffer[2] != 'd' && buffer[2] != 'D' )

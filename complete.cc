@@ -310,7 +310,7 @@ int Complete::makelist_core(int command_complete)
 	(struct filelist *)malloc(sizeof(struct filelist)+dirbuf->d_namlen );
       assert(tmp != NULL);
       if( tmp == NULL ){
-	err = MEMORY_ERROR;
+	status = ERROR;
 	closedir(dirp);
 	return -1;
       }
@@ -335,6 +335,7 @@ int Complete::makelist_core(int command_complete)
 
 int Complete::makelist(const char *path)
 {
+  status = FILENAME_COMPLETED;
   max_length=0;
   list = NULL;
   nlists = 0;
@@ -345,6 +346,7 @@ int Complete::makelist(const char *path)
 
 int Complete::makelist_with_path(const char *path)
 {
+  status = COMMAND_COMPLETED;
   max_length=0;
   list = NULL;
   nlists = 0;
@@ -364,7 +366,7 @@ int Complete::makelist_with_path(const char *path)
     }
     p++;
   }
-
+  
   /* ASSERT : path には、ディレクトリ名が含まれていない。*/
   strcpy( fname , path );
   
@@ -396,7 +398,32 @@ int Complete::makelist_with_path(const char *path)
       dir=strtok(NULL,";");
     }
   }
+  status = SIMPLE_COMMAND_COMPLETED;
   return nlists;
+}
+
+int Complete::add_buildin_command(const char *name)
+{
+  int length=strlen(name);
+
+  if( common_length == 0 || ( length >= common_length
+			     && instrcmp(fname,name,common_length)==0 )){
+    struct filelist *tmp=
+      (struct filelist *)malloc(sizeof(struct filelist)+length);
+    
+    if( tmp != NULL ){
+      strcpy( tmp->name , name );
+      tmp->length = length;
+      tmp->attr = 0;
+      tmp->size = 0;
+      if( length > max_length )
+	max_length = length;
+      list = fsort_and_insert(list,tmp);
+      nlists++;
+      return 0;
+    }
+  }
+  return -1;
 }
 
 char *Complete::nextchar()

@@ -48,6 +48,7 @@ int main(int argc, char **argv)
   char thename[FILENAME_MAX];
 
   setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
+  Shell::bindkey_tcshlike();
 
   for(int i=1;i<argc;i++){
     if( argv[i][0] == '-' ){
@@ -132,7 +133,7 @@ int main(int argc, char **argv)
     printf("\x1b[2J\x1b[1m"
 	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "    Os/2 Shell 1.16    ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "    Os/2 Shell 1.20    ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	   "                                                          \n"
@@ -146,7 +147,8 @@ int main(int argc, char **argv)
      * 一行のみの Window モードにする。
      */
     ShellEdlin edlin("NYAOS>",cmdlin,sizeof(cmdlin) );
-
+    Shell shell(edlin);
+    
     for(;;){
       char promptstr[256],*dp=promptstr,*sp;
       const char *promptenv=getenv("PROMPT");
@@ -190,6 +192,9 @@ int main(int argc, char **argv)
 	    break;
 	  case 'H':
 	    *dp++ = '\b';
+	    break;
+	  case '!':
+	    dp += sprintf(dp,"%d",Shell::get_history_number() );
 	    break;
 	  case 'L':
 	    *dp++ = '<';
@@ -248,16 +253,19 @@ int main(int argc, char **argv)
 	v_ctype( cursor_start , cursor_end );
       }
       
+      int rc=shell.line_input(promptstr,_osmode==OS2_MODE ? 32767:screen_width-1 );
+#if 0
       int rc=edlin.simple_input(promptstr,
 				_osmode==OS2_MODE ? 32767:screen_width-1 );
+#endif
       if( rc >= 0 ){
 	putchar('\n');
 	if( cmdlin[0] != '\0' && execute(stdin,cmdlin) == RC_QUIT ){
-	  fputs("Good bye\n",stderr);
+	  fputs("Good bye.\n",stderr);
 	  return 0;
 	}
       }else{
-	fputs("\nGood bye\n",stdout);
+	fputs("\nGood bye!\n",stdout);
 	return 0;
       }
     }

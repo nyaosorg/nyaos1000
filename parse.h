@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-class Params{
+class Parse{
   const char *sp;
 
   int terminal;
@@ -28,7 +28,7 @@ class Params{
   int check_redirect();
 
 public:
-  Params(const char *source)
+  Parse(const char *source)
     : args(argbase) , argc(0) , sp(source) , terminal(-1) , limit(30)
       ,output_redirect(NULL) , output_redirect_length(0) , err(0)
 	,input_redirect(NULL) , input_redirect_length(0)
@@ -36,7 +36,7 @@ public:
 	    ,isappend(false)
       { check(); }
 
-  ~Params();
+  ~Parse();
 
   const char *get_tail(){ return sp; }
   int get_argc(){ return argc; }

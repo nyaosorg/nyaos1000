@@ -3,7 +3,7 @@
 #include <ctype.h>
 #include <sys/nls.h>
 
-#include "params.h"
+#include "parse.h"
 
 void Pipe::open(const char *cmdl,const char *modestr)
 {
@@ -45,7 +45,7 @@ Pipe::~Pipe()
   }
 }
 
-Params::~Params()
+Parse::~Parse()
 {
   /* パイプの後始末 */
   if( input_fp != NULL  &&  input_fp != stdin )
@@ -61,7 +61,7 @@ Params::~Params()
     free(args);
 }
 
-int Params::check_redirect()
+int Parse::check_redirect()
 {
   int mark=*sp;
   if( *++sp == '>' ){
@@ -103,7 +103,7 @@ int Params::check_redirect()
   return 0;
 }
 
-int Params::check()
+int Parse::check()
 {
   argc = 0;
   output_redirect = NULL;
@@ -176,7 +176,7 @@ int Params::check()
   return terminal = *sp;
 }
 
-FILE *Params::open_stdout()
+FILE *Parse::open_stdout()
 {
   if( output_redirect != NULL ){
     if( *sp == '|' )
@@ -194,7 +194,7 @@ FILE *Params::open_stdout()
     return stdout;
 }
 
-FILE *Params::open_stdin()
+FILE *Parse::open_stdin()
 {
   if( input_redirect != NULL ){
     char *fname = (char*)alloca( input_redirect_length+1 );
@@ -206,7 +206,7 @@ FILE *Params::open_stdin()
     return stdin;
 }
 
-int Params::call_as_main(int (*routine)(int argc,char **argv) )
+int Parse::call_as_main(int (*routine)(int argc,char **argv) )
 {
   int i;
   char **argv=(char**)alloca(sizeof(char*)*(argc+1));
@@ -218,7 +218,7 @@ int Params::call_as_main(int (*routine)(int argc,char **argv) )
   return (*routine)(argc,argv);
 }
 
-int Params::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
+int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
 {
   int i;
   char **argv=(char**)alloca(sizeof(char*)*(argc+1));
@@ -240,7 +240,7 @@ int Params::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
   return (*routine)(argc,argv,fout);
 }
 
-char *Params::copy(int n, char *dp, bool quote_copy_flag )
+char *Parse::copy(int n, char *dp, bool quote_copy_flag )
 {
   if( n < argc ){
     const char *sp   = args[n].pointor ;
@@ -280,7 +280,7 @@ char *Params::copy(int n, char *dp, bool quote_copy_flag )
   return dp;
 }
 
-char *Params::copyall(int n, char *dp, bool quote_copy_flag )
+char *Parse::copyall(int n, char *dp, bool quote_copy_flag )
 {
   if( n < argc ){
     
@@ -327,7 +327,7 @@ int main(void)
   char buffer[256];
 
   while( fgets(buffer,sizeof(buffer),stdin) != NULL ){
-    Params params(buffer);
+    Parse params(buffer);
     int argc=params.get_argc();
     printf( "argc == %d\n",argc);
     for(int i=0 ; i<argc ; i++ ){

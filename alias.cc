@@ -4,17 +4,18 @@
 #include <string.h>
 #include <stdlib.h>
 #include "nyaos.h"
-#include "params.h"
+#include "parse.h"
 
 extern int wrdcmp(const char *tblstr,const char *cmdstr);
 struct Alias *alias_hashtable[];
 
 int alias_nesting=0;
 
-void alias_replace(const char *sp , char *dp  )
+void alias_replace(const char *sp , char *destinate  )
 {
+  char *dp=destinate;
   for(;;){ /* 各コマンド単位 */
-    Params params(sp);
+    Parse params(sp);
 
     int key=0;
     {/* ハッシュキーを計算する */
@@ -37,30 +38,43 @@ void alias_replace(const char *sp , char *dp  )
 
 	while( *spa != '\0' ){
 	  if( *spa == '%' ){
-	    if( isdigit(*++spa) ){
-	      percent_used = 1;
-	      int n=0;
-	      do{
-		n *= 10;
-		n += (*spa-'0');
-	      }while( isdigit(*++spa) );
-	      if( n < params.get_argc() )
-		dp = params.copy(n,dp);
-	      
-	      if( *spa == '*' ){
-		while( ++n < params.get_argc() ){
-		  *dp++ = ' ';
+	    switch( *++spa ){
+	    default:
+	      if( isdigit(*spa) ){
+		percent_used = 1;
+		int n=0;
+		do{
+		  n *= 10;
+		  n += (*spa-'0');
+		}while( isdigit(*++spa) );
+		if( n < params.get_argc() )
 		  dp = params.copy(n,dp);
+		
+		if( *spa == '*' ){
+		  while( ++n < params.get_argc() ){
+		    *dp++ = ' ';
+		    dp = params.copy(n,dp);
+		  }
+		  ++spa;
 		}
-		++spa;
 	      }
-	    }else if( *spa == '*' ){
+	      break;
+
+	    case '*':
 	      percent_used = 1;
 	      spa++;
 	      dp = params.copyall(1,dp);
-	    }else if( *spa == '%' ){
+	      break;
+
+	    case '%':
 	      spa++;
 	      *dp++ = '%';
+	      break;
+
+	    case '\\':case '/':/* case ';': */
+	      if( dp==destinate || (dp[-1] != '\\' && dp[-1] != '/') )
+		*dp++ = *spa;
+	      spa++;
 	    }
 	  }else{
 	    *dp++ = *spa++;
@@ -116,7 +130,7 @@ int unalias(int key,const char *name)
   return -1;
 }
 
-int cmd_unalias(FILE *fin, Params &params)
+int cmd_unalias(FILE *fin, Parse &params)
 {
   const char *parameter=params.get_argv(1);
   int argc=params.get_argc();
@@ -138,7 +152,7 @@ int cmd_unalias(FILE *fin, Params &params)
   }
 }
 
-int cmd_alias(FILE *fp, Params &params)
+int cmd_alias(FILE *fp, Parse &params)
 {
   const char *sp=params.get_argv(1);
   int argc=params.get_argc();
