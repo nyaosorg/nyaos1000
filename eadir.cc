@@ -11,6 +11,7 @@
 #include <signal.h>
 
 #include "SmartPtr.h"
+#include "keyname.h"
 
 #define INCL_VIO
 #define INCL_DOSNLS
@@ -22,9 +23,6 @@
 extern volatile int ctrl_c;
 extern int screen_width;
 extern int screen_height;
-
-extern int compare_with_top(const void *key , const void *element);
-/* Å™ at bindkey.cc */
 
 enum{
   LS_LONG ,
@@ -856,7 +854,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 		  , option_table
 		  , numof(option_table)
 		  , sizeof(struct longoption_tg)
-		  , compare_with_top );
+		  , &KeyName::compareWithTop );
 	
 	if( longopt == NULL ){
 	  fprintf(stderr,"builtin-ls: %s: no such option.\n", argv[i]);

@@ -24,13 +24,14 @@ all : nyaos.exe nyaos.doc
 
 NYAOS_HDR=\
 	complete.h edlin.h finds.h hash.h macros.h nyaos.h \
-	parse.h pathlist.h smartptr.h strtok.h
+	parse.h pathlist.h smartptr.h strtok.h keyname.h
 NYAOS_SRC=\
 	alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
 	command2.cc dbcs.cc eadir.cc edlin.cc edlin2.cc execute.cc \
 	finds.cc filelist.cc foreach.cc getkey.cc hash.cc nyaos.cc \
 	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script.cc \
-	search.cc shell.cc source.cc suffix.cc wordseek.cc strtok.cc
+	search.cc shell.cc source.cc suffix.cc wordseek.cc strtok.cc \
+	keynameseek.cc
 NYAOS_TBL=\
 	bindfunc.tbl keynames.tbl eadirop.tbl
 NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
@@ -52,7 +53,8 @@ nyaos.exe : $(NYAOS_OBJ)
 $(NYAOS_OBJ) : %.o : %.cc
 	$(CC) $(CFLAGS) -c $<
 
-bindkey.o : bindkey.cc bindfunc.cc keynames.cc
+keynameseek.o : keynameseek.cc keynames.cc
+bindkey.o : bindkey.cc bindfunc.cc
 eadir.o : eadir.cc eadirop.cc
 
 tables : $(NYAOS_TBL:.tbl=.cc)
@@ -67,6 +69,9 @@ nyaos.doc : nyaosdoc.html
 	nkf -e $< > tmp.html
 	lynx -dump -euc tmp.html | nkf -s >$@
 	rm -f tmp.html
+
+nyaos.eng : nyaoseng.xx
+	xtr -e $< > $@
 
 # ------------- Ç®ë|èú -------------
 

@@ -8,6 +8,23 @@
 #include "edlin.h"
 #include "pathlist.h"
 
+int cmd_hotkey(FILE *source , Parse &parse )
+{
+  if( parse.get_argc() < 3 )
+    return 2;
+
+  char *keyName  = static_cast<char*>(alloca(parse.get_length(1)+1));
+  char *progName = static_cast<char*>(alloca(parse.get_length(2)+1));
+  
+  parse.copy(1,keyName);
+  parse.copy(2,progName);
+  if( Shell::bind_hotkey(keyName,progName) != 0 ){
+    fprintf(stderr,"hotkey: %s: invalid key name.\n",keyName);
+    return 1;
+  }
+  return 0;
+}
+
 int cmd_bind(FILE *source, Parse &param )
 {
   int rc=0;

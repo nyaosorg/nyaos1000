@@ -512,9 +512,9 @@ int main(int argc, char **argv)
 
       case RC_ABORT:
       case Shell::ABORT:
-	fputs("^C\n",stdout);
+	// fputs("^C\n",stdout);
 	break;
-
+	
       default:
 	fputs("\nUnknown error occuerd.\n"
 	      "Please mail to hayama@karl.tis.co.jp\n"

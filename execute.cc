@@ -61,6 +61,7 @@ int cmd_cache(FILE *source,Parse &args);
 int cmd_source( FILE *srcfil, Parse &params );
 
 /* "command2.cc" */
+int cmd_hotkey(FILE *source,Parse &param );
 int cmd_bind(FILE *source, Parse &param );
 int cmd_bindkey(FILE *source,Parse &param);
 /* int cmd_bindcomplete(FILE *source,Parse &param); */
@@ -245,6 +246,7 @@ Command jumptable[]={
   {"fg",     cmd_fg      },
   {"foreach",foreach     },
   {"history",cmd_history },
+  {"hotkey", cmd_hotkey  },
   {"jobs",   cmd_jobs    },
   {"lecho",  cmd_lecho   },
   {"ls",     cmd_ls      },
@@ -304,6 +306,8 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 
   if( cmdline[0] == '#' )
     return 0;
+
+
 
   /* カレントドライブの変更 */
   if(   is_alpha(cmdline[0]) && cmdline[1]==':' 

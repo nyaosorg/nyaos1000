@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/kbdscan.h>
+#include <process.h>
 // #include <sys/video.h>
 
 #define INCL_VIO
@@ -11,6 +12,7 @@
 #include "edlin.h"
 #include "complete.h"
 #include "nyaos.h"
+#include "keyname.h"
 
 #define CTRL(a) ((a) & 0x1F)
 #define KEY(a)  ((K_##a & 0xFF) | 0x100)
@@ -41,7 +43,7 @@ static struct bind_t{
   unsigned key;
   Shell::Status (Shell::*method)();
   const char *name;
-  const char *funcname;
+  char *funcname;
 } base_bind_table[]={
   { CTRL('H') , &Shell::backspace ,
     "CTRL_H"  , "backward_delete_char  (default)"},
@@ -61,7 +63,7 @@ static struct bind_t{
   { KEY(HOME) , &Shell::go_ahead,"HOME","beginning_of_line  (default)" },
   { KEY(END)  , &Shell::go_tail,"END","end_of_line (default)" },
   { CTRL('U') , &Shell::cancel,"CTRL_U","kill_whole_line  (default)" },
-  { '\x1B'    , &Shell::cancel,"ESC","kill_whole_line  (default)" },
+  { '\x1B'    , &Shell::cancel,"ESCAPE","kill_whole_line  (default)" },
   { CTRL('C') , &Shell::abort, "CTRL_C","abort (default)" },
   { KEY(F1)   , &Shell::complete_to_fullpath , "F1","complete_to_fullpath" },
   { KEY(F2)   , &Shell::complete_to_url , "F2","complete_to_url" },
@@ -104,9 +106,9 @@ static struct bind_t{
   { CTRL('F') , &Shell::forward_word,"CTRL_F","forward_word  (ws)" },
 };
 
-Shell::Status (Shell::*Shell::bindmap[0x200])();
-const char *Shell::bindmap_usage_key[0x200];
-const char *Shell::bindmap_usage_func[0x200];
+Shell::Status (Shell::*Shell::bindmap[])();
+const char *Shell::bindmap_usage_key[];
+char *Shell::bindmap_usage_func[];
 
 Shell::Shell(ShellEdlin &e)
 : ed(e) , changed(0) , prevchar(0x1FF) , prev_complete_num(0)
@@ -126,6 +128,18 @@ Shell::~Shell()
 
 void Shell::bindkey_base()
 {
+  static bool firstcalled=true;
+  if( ! firstcalled ){
+    /* hotkey が bindされている場合、bindmap_usage_func には、
+     * ヒープ内の文字列が格納されていることになるので、解放してやる。
+     */
+    for(unsigned i=0; i<numof(bindmap); i++ )
+      if( bindmap[ i ] == &Shell::hotkey ){
+	free( bindmap_usage_func[ i ] );
+      }
+    firstcalled = false;
+  }
+
   for(unsigned i=0;i<numof(bindmap);i++){
     bindmap[ i ] = &self_insert;
     bindmap_usage_key[ i ]  = NULL;
@@ -490,70 +504,68 @@ int Shell::line_input(const char *prompt,int window)
   }
 }
 
-struct keytable_tg {
-  const char *name;
-  int code;
-} keytable[] ={
-#   include "keynames.cc"
-};
-
 struct functable_tg {
-  const char *name;
+  char *name;
   Shell::Status (Shell::*method)();
 } functable[] ={
 #   include "bindfunc.cc"
 };
 
-int compare_with_top(const void *key,const void *el)
+Shell::Status Shell::hotkey()
 {
-  /* この比較関数は、構造体の最初のメンバが
-   * キー文字列へのポインタであるのが前提
-   * (Cでは許されるが、C++でも大丈夫?)
-   */
-  const unsigned char *s1= (const unsigned char *)key;
-  const unsigned char *s2=*(const unsigned char **)el;
-  
-  for(;;){
-    int c1=tolower(*s1) , c2=tolower(*s2);
-    if( c1 != c2 )
-      return c1-c2;
-    if( c1 == '\0' )
-      return 0;
-    ++s1,++s2;
+  if( 0 < ch && ch < 0x200  &&  bindmap_usage_func[ ch ] != NULL ){
+    ed.clean_up();
+    changed = 0;
+    cur = NULL;
+    
+    fputc('\n',stdout);
+    execute( stdin , bindmap_usage_func[ch] );
+    // spawnlp(P_WAIT, bindmap_usage_func[ch],bindmap_usage_func[ch],NULL);
+    // system( bindmap_usage_func[ ch ] );
+    return ABORT;
   }
+  return CONTINUE;
 }
 
-int Shell::keyNameToCode( const char *name )
+int Shell::bind_hotkey(const char *keyname, const char *program )
 {
-  struct keytable_tg *key
-    = (struct keytable_tg *)bsearch(  name
-				    , keytable 
-				    , numof(keytable)
-				    , sizeof(keytable[0])
-				    , compare_with_top );
-  if( key == NULL )
-    return -1;
-  return key->code;
+  KeyName *keyinfo=KeyName::find( keyname );
+  if( keyinfo == NULL )
+    return 1;
+
+  if( bindmap[ keyinfo->code ] == &hotkey )
+    free( bindmap_usage_func[ keyinfo->code ] );
+  
+  bindmap[ keyinfo->code ] = &hotkey;
+  bindmap_usage_key[ keyinfo->code ] = keyinfo->name;
+  bindmap_usage_func[ keyinfo->code ] = strdup(program);
+  return CONTINUE;
 }
 
 int Shell::bindkey(const char *keyname, const char *funcname )
 {
-  int code = keyNameToCode( keyname );
-  if( code < 0 )
+  KeyName *keyinfo=KeyName::find( keyname );
+  if( keyinfo == NULL )
     return 1;
 
   struct functable_tg *func
-    = (struct functable_tg *)bsearch(  funcname
-				     , functable
-				     , numof(functable)
-				     , sizeof(functable[0])
-				     , compare_with_top );
+    = static_cast <functable_tg *>
+      ( bsearch(  funcname
+		, functable
+		, numof(functable)
+		, sizeof(functable[0])
+		, KeyName::compareWithTop )
+       );
+
   if( func == NULL )
     return 2;
+
+  if( bindmap[ keyinfo->code ] == &hotkey )
+    free( bindmap_usage_func[ keyinfo->code ] );
   
-  bindmap[ code ] = func->method;
-  bindmap_usage_key[ code ] = keytable[code].name;
-  bindmap_usage_func[ code ] = func->name;
+  bindmap[ keyinfo->code ] = func->method;
+  bindmap_usage_key[ keyinfo->code ] = keyinfo->name;
+  bindmap_usage_func[ keyinfo->code ] = func->name;
 
   return 0;
 }
@@ -562,8 +574,13 @@ void Shell::bindlist(FILE *fout)
 {
   for(unsigned int i=0;i<numof(bindmap);i++){
     if( bindmap_usage_key[i] != NULL &&  bindmap_usage_func[i] != NULL ){
-      fprintf(fout,"%-8s : %s\n",
-	      bindmap_usage_key[i],bindmap_usage_func[i] );
+      if( bindmap[i] == &hotkey ){
+	fprintf(fout,"%-8s : hotkey to call \"%s\".\n",
+		bindmap_usage_key[i] , bindmap_usage_func[i] );
+      }else{
+	fprintf(fout,"%-8s : %s\n",
+		bindmap_usage_key[i],bindmap_usage_func[i] );
+      }
     }
   }
 }

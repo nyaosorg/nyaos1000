@@ -228,20 +228,22 @@ private:
   int prev_complete_num;
   int overwrite;
 
+  enum{ NUMOF_BINDMAP = 0x200 };
   static void bindkey_base();
-  static Status (Shell::*bindmap[0x200])();
-  static const char *bindmap_usage_key[0x200];
-  static const char *bindmap_usage_func[0x200];
-
+  static Status (Shell::*bindmap[ NUMOF_BINDMAP ])();
+  static const char *bindmap_usage_key[ NUMOF_BINDMAP ];
+  static char *bindmap_usage_func[ NUMOF_BINDMAP ];
+  
   Status search_engine(int isrev);
 public:
   static int ctrl_d_eof;
   static int ctrl_z_eof;
+  // static int keyNameToCode( const char *name );
   static void bindkey_wordstar();
   static void bindkey_tcshlike();
   static void bindkey_nyaos();
   static int bindkey(const char *key,const char *funcname);
-  static int keyNameToCode( const char *name );
+  static int bind_hotkey(const char *key,const char *program);
   static void bindlist(FILE *fp);
 
   Shell(ShellEdlin &e) ;
@@ -280,6 +282,7 @@ public:
   Status vz_prev_history();
   Status vz_next_history();
   Status quoted_insert();
+  Status hotkey();
 private:
   int vz_history_core(struct WHist *);
 

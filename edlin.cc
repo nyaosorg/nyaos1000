@@ -10,6 +10,7 @@
 #include "Edlin.h"
 #include "complete.h"
 #include "macros.h"
+#include "keyname.h"
 
 #define KEY(x)	(0x100 | K_##x )
 #define CTRL(x)	((x) & 0x1F )
@@ -405,8 +406,6 @@ static struct CompleteFuncName {
   { "complete_default"	, Edlin::COMPLETE_FIX_PLUS },
 };
 
-extern int compare_with_top(const void *key,const void *e1);
-
 /* 補完モード時のキーバインドを設定する(静的メンバ関数)
  *	key	キー名称文字列
  *	func	機能名称文字列
@@ -415,20 +414,21 @@ extern int compare_with_top(const void *key,const void *e1);
 int Edlin::bindCompleteKey(const char *key,const char *func )
 {
   initComplete();
-  int code = Shell::keyNameToCode(key);
-  if( code < 0 )
+
+  KeyName *keyinfo=KeyName::find(key);
+  if( keyinfo == NULL )
     return 1;
-  
+
   CompleteFuncName *funcPtr
     = (CompleteFuncName*)bsearch(  func
 				 , completeFuncName
 				 , numof(completeFuncName)
 				 , sizeof(completeFuncName[0])
-				 , compare_with_top );
+				 , &KeyName::compareWithTop );
   if( funcPtr == NULL )
     return 2;
 
-  completeBindmap[ code ] = funcPtr->func;
+  completeBindmap[ keyinfo->code ] = funcPtr->func;
   return 0;
 }
 

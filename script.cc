@@ -124,9 +124,8 @@ static void copyargs(  const char *sp       , SmartPtr dp
   if( dp_tail != NULL ) *dp_tail = dp;
 }
 
-// skipargs:
-//	実際にコピーしない、copyargs
-
+/* 実際にコピーしない、copyargs
+ */
 static void skipargs(  const char *&sp )
 {
   while( ! Parse::is_terminal_char(*sp) ){
@@ -145,43 +144,38 @@ static void skipargs(  const char *&sp )
   }
 }
 
-
 /* SOSスクリプトのチェックを行う。
  *	sp パラメータへポインタ
  *	dp バッファでスクリプト名を書く直前を差す
  *	path スクリプト名の絶対パス
  * return
- *	1  SOS スクリプトではなかったので、何もしなかった。
  *	0  SOS スクリプトだったので、コマンドラインを置換した。
+ *	1  SOS スクリプトではなかったので、何もしなかった。
+ *	2  そもそも、ファイル自体が存在しなかった。
  */
-static int sos(const char *&sp , SmartPtr &dp ,  const char *path )
+static int sos(const char *&sp , SmartPtr &dp ,  const char *path ) throw()
 {
   FILE *fp=fopen(path,"r");
   if( fp==NULL )
-    return 1;
+    return 2;
   
   int ch,nlines=0;
   for(;;){
     ch=getc(fp);
     if( ch=='\n' ){
       int ch=getc(fp); /* 先頭の # を読みとばす */
-      if( ch !='#' && ch !=';' && ch !='%' && ch !=':' && ch !='\'' ){
-	fclose(fp);
-	return 1;
-      }
+      if( ch !='#' && ch !=';' && ch !='%' && ch !=':' && ch !='\'' )
+	goto error;
+
       if( ++nlines==1 ){
 	for( const char *s="soshdr/Nide" ; *s != '\0' ; s++ ){
-	  if( getc(fp) != *s ){
-	    fclose(fp);
-	    return 1;
-	  }
+	  if( getc(fp) != *s )
+	    goto error;
 	}
       }else if( nlines >= 14 ) /* SOS.HDR は 13行 */
 	break;
-    }else if( !isprint(ch) || ch==EOF ){
-      fclose(fp);
-      return 1;
-    }
+    }else if( !isprint(ch) || ch==EOF )
+      goto error;
   }
   
   /* ここで、ポインタは、コマンド名の直前にあるはず */
@@ -207,10 +201,12 @@ static int sos(const char *&sp , SmartPtr &dp ,  const char *path )
     }
   }
   fclose(fp);
-
   skipargs(sp);
-  
   return 0;
+  
+ error:
+  fclose(fp);
+  return 1;
 }
 
 /* インタープリタ名を挿入する */
@@ -266,15 +262,16 @@ static int insert_interpretor(const char *cache,const char *fname,SmartPtr &dp)
 
 extern int suffix( const char *path , SmartPtr &dp );
 
-static int is_pm_application(const char *fname)
+static int getApplicationType(const char *fname) throw()
 {
   ULONG apptype;
   if( DosQueryAppType(  (const unsigned char *)fname , &apptype ) != 0 )
     return -1;
-  return (apptype & 7)==3;
+  return apptype & 7;
 }
 
-static void insert_close_option(SmartPtr &dp)
+/* 「/C /F」を挿入する。*/
+static void insert_close_option(SmartPtr &dp) throw()
 {
   *dp++ = '/';
   *dp++ = 'C';
@@ -291,7 +288,7 @@ static void insert_close_option(SmartPtr &dp)
  *	!0 内臓コマンドだった。
  */
 
-static int is_inner_command( const char *name )
+static int is_inner_command( const char *name ) throw()
 {
   extern Hash <Command> command_hash;
   extern int option_ignore_cases;
@@ -313,8 +310,8 @@ int replace_script( const char *sp , char *dst, int max  )
   for(;;){  /* コマンド毎のループ */
     while( is_space(*sp) )
       *dp++ = *sp++;
-    
-    int start_inserted=0;
+
+    bool start_inserted = false;
     if( option_amp_start || option_amp_detach ){
       // 先行して、末尾が & かどうかしらべる。
       // もし、そうならば先頭に「start」を追加する。
@@ -338,7 +335,7 @@ int replace_script( const char *sp , char *dst, int max  )
 	      s="detach ";
 	    else{
 	      s="start ";
-	      start_inserted=1;
+	      start_inserted=true;
 	    }
 	    while( *s != '\0' )
 	      *dp++ = *s++;
@@ -430,9 +427,8 @@ int replace_script( const char *sp , char *dst, int max  )
       else if(  type != COM_FILE || sos(sp,dp,path) != 0 ){
 
 	if(    option_auto_close  &&  start_inserted 
-	   &&  ! is_pm_application(fname)  ){
+	   &&  getApplicationType(fname) == 2 )
 	  insert_close_option(dp);
-	}
 	copy_filename(fname,dp,NULL,&dp, BACKSLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
       }
@@ -455,9 +451,8 @@ int replace_script( const char *sp , char *dst, int max  )
 	copy_filename(path,dp,NULL,&dp);
       }else{
 	if(    option_auto_close  &&  start_inserted
-	   &&  !is_pm_application(fname) )
+	   &&  getApplicationType(fname) == 2 )
 	  insert_close_option(dp);
-	
 	copy_filename(fname,dp,NULL,&dp);
       }
       copyargs(sp,dp,&sp,&dp);
