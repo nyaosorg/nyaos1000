@@ -125,6 +125,14 @@ bindkey.cc
 	キーボード入力と ShellEdlin を結びつけるクラス Shell を定義していま
 	す。そのうち、ShellEdlin , Edlin などに統合しようと考えています。
 
+bindfunc.tbl
+	bindkey の機能名を定義したファイルです。mkbtable.cmd で加工された後、
+	bindkey.cc で #include されます。
+
+keynames.tbl
+	bindkey のキー名を定義したファイルです。mkbtanle.cmd で加工された後、
+	bindkey.cc で #include されます。
+
 getkey.cc
 	キーボード一文字入力ルーチンです。
 

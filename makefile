@@ -15,7 +15,6 @@ NYAOS=	nyaos.o edlin.o complete.o eadir.o shell.o foreach.o script.o \
 
 nyaos.exe : $(NYAOS)
 	$(CC) $(NYAOS) -o nyaos.exe -lvideo -lwrap -Zcrtdll -lsocket
-#	lxlite nyaos.exe
 
 RMCLONE=rmclone.o finds.o dbcs.o getkey.o
 rmclone.exe : $(RMCLONE)
@@ -36,12 +35,19 @@ dbcs.o : dbcs.cc
 getkey.o : getkey.cc
 finds.o : finds.cc
 chdirs.o : chdirs.cc
-bindkey.o : bindkey.cc
+
+bindkey.o : bindkey.cc bindfunc.cc keynames.cc
+bindfunc.cc : bindfunc.tbl mkbtable.cmd
+	mkbtable.cmd <$< >$@
+keynames.cc : keynames.tbl mkbtable.cmd
+	mkbtable.cmd <$< >$@
 
 edlin.o : edlin.cc edlin.h
 
 complete.o : complete.cc complete.h finds.h
-eadir.o : eadir.cc finds.h
+eadir.o : eadir.cc finds.h eadirop.cc
+eadirop.cc : eadirop.tbl mkbtable.cmd
+	mkbtable.cmd <$< >$@
 
 source.o : source.cc
 shell.o : shell.cc edlin.h

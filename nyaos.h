@@ -4,7 +4,7 @@
 
 #include "macros.h"
 
-#define VERSION "1.40"
+#define VERSION "1.41"
 
 /**** "callcmd.cc" ****/
 

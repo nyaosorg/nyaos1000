@@ -67,7 +67,7 @@ void *HashB::operator[](const char *key)
 
 void *HashB::operator[](const Substr &key)
 {
-  if( table == NULL ) return NULL;
+  if( table==NULL  ||  key.len==0 ) return NULL;
   int index=get_index(key.ptr,key.len);
   
   for(Bullet *cur=table[index] ; cur != NULL ; cur=cur->next ){
@@ -82,10 +82,10 @@ void *HashB::operator[](const Substr &key)
 
 void *HashB::lookup_tolower(const Substr &key)
 {
-  if( table == NULL ) return NULL;
+  if( table==NULL  ||  key.len == 0 ) return NULL;
   int index=get_index_without_cases(key.ptr,key.len);
 
-  int firstletter=tolower(key[0]);
+  int firstletter=tolower(key.ptr[0] & 255 );
   for(Bullet *cur=table[index] ; cur != NULL ; cur=cur->next ){
     if(   cur->key[0]==firstletter 
        && memicmp(cur->key , key.ptr , key.len )==0

@@ -55,7 +55,7 @@ static void euc2jms(int c1,int c2,SmartPtr &dp)
     return;
   }
 
-  c1 &= 0x7F; c2 &= 0x7F;
+l  c1 &= 0x7F; c2 &= 0x7F;
 
   if( c1 & 1 ){
     c1 = (c1 >> 1 ) + 0x71;

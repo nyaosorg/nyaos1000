@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+#define INCL_VIO
+#include <os2.h>
+
 #include "Edlin.h"
 #include "complete.h"
 #include "macros.h"
@@ -673,27 +676,39 @@ void Edlin::cleanmsg() /* ウインドウモード未対応 */
 
 void Edlin::bottom_message( const char *fmt ,...)
 {
-  extern int screen_width , screen_height;
+  extern int screen_width , screen_height , option_vio_cursor_control;
   int bs=0;
 
-  /* 画面サイズ分カーソルを進めることによって、
-   * 次の行へ移動する。
-   */
+  if( option_vio_cursor_control ){
+    unsigned short X,Y;
 
-  if( pos+msgsize < len && atrbuf[pos+msgsize] == DBC2ND ){
-    putchr( strbuf[ pos+msgsize ] );
-    ++bs;
+    VioGetCurPos( &Y , &X , 0 );
+    if( Y >= screen_height-1 ){
+      static BYTE cell[2]={ ' ',0x00 };
+      VioScrollUp(0,0,screen_height-1,screen_width-1,1, cell , 0);
+      fputs("\033[1A",stdout);
+    }
+
+  }else{
+    /* 画面サイズ分カーソルを進めることによって、
+     * 次の行へ移動する。
+     */
+    
+    if( pos+msgsize < len && atrbuf[pos+msgsize] == DBC2ND ){
+      putchr( strbuf[ pos+msgsize ] );
+      ++bs;
+    }
+    
+    for( ; bs < screen_width ; bs++ ){
+      if( pos+msgsize+bs < len )
+	putchr( strbuf[pos+msgsize+bs] );
+      else
+	putchr( ' ' );
+    }    
+    fflush(stdout);
   }
-  
-  for( ; bs < screen_width ; bs++ ){
-    if( pos+msgsize+bs < len )
-      putchr( strbuf[pos+msgsize+bs] );
-    else
-      putchr( ' ' );
-  }    
-  fflush(stdout);
   printf("\033[s\033[%d;1H" , screen_height );
-
+  
   va_list vp;
   va_start(vp,fmt);
   vprintf(fmt,vp);
@@ -702,7 +717,8 @@ void Edlin::bottom_message( const char *fmt ,...)
   printf("\033[K\033[u");
   fflush(stderr);
 
-  putbs( bs );
+  if( ! option_vio_cursor_control )
+    putbs( bs );
 
   bottom_msgsize = 1;
 }

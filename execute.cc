@@ -340,6 +340,12 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   
   for(const char *pointer=buffer[curbuf];;){
     Parse params(pointer);
+
+    /* ヒストリ変換などで文字列が０になることもあるので、
+     * ここでチェックする。 */
+    if( params.get_argc() <= 0 )
+      return 0;
+
     Command *cmd;
 
     if( option_ignore_cases )

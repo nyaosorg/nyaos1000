@@ -13,21 +13,21 @@
 #include <string.h>
 #include <signal.h>
 
-#include <sys/video.h>	/* 3行スクロールモード用 */
-
 #include "SmartPtr.h"
 
+#define INCL_VIO
 #define INCL_DOSNLS
+
 #include "nyaos.h"
 #include "complete.h"
 #include "finds.h"
 
-// #define INCL_VIO
-//   #include <os2.h>
-
 extern volatile int ctrl_c;
 extern int screen_width;
 extern int screen_height;
+
+extern int compare_with_top(const void *key , const void *element);
+/* ↑ at bindkey.cc */
 
 enum{
   LS_LONG ,
@@ -252,12 +252,6 @@ int column=0;
 
 int nprintlines=0;
 
-extern "C" {
-  unsigned short VioGetCurPos(unsigned short *pusRow ,
-			      unsigned short *pusColumn ,
-			      unsigned short hvio );
-}
-
 /* そのファイルは、フラグと照合して、表示してよいかを判定する */
 
 static int is_file_print(FileListT *f)
@@ -314,7 +308,8 @@ static void more( FILE *fout )
     USHORT X,Y;
     VioGetCurPos(&Y,&X ,0 );
     if( Y >= screen_height-1 ){
-      v_scroll(0,0,screen_width-1,Y,3,V_SCROLL_UP);
+      static BYTE cell[2]={' ',0x00};
+      VioScrollUp(0,0,screen_height-1,screen_width-1,3,cell,0);
       fputs("\x1B[3A",fout);
     }
   }
@@ -795,31 +790,19 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  const char *name;
 	  void (*func)();
 	} option_table[]={
-	  { "inline-comment"	, on_inline_comment },
-	  { "multi-comment"	, on_multi_comment },
-	  { "longname"          , on_longname },
-	  { "all"		, on_all },
-	  { "ignore-backups"	, on_ignore_backup },
-	  { "ignore-underbar"	, on_ignore_underbar },
-	  { "color"		, on_color },
-	  { "no-color"		, on_nocolor },
-	  { "more"		, on_more },
-	  { "virge"		, on_virge },
-	  { "numeric-sort"	, on_numeric_sort },
-	  { "reverse"		, on_sort_reverse },
-	  { NULL , (void (*)())0 },
-	};
-
-	for(struct longoption_tg *op=option_table ; ; op++){
-	  if( op->name == NULL ){
-	    fprintf(stderr,"builtin-ls: %s: no such option.\n", argv[i]);
-	    return 0;
-	  }
-	  if( *op->name==argv[i][2]  &&  strcmp(op->name+1,&argv[i][3])==0 ){
-	    (*op->func)();
-	    break;
-	  }
+#include "eadirop.cc"
+	} , *longopt = (struct longoption_tg *)
+	  bsearch(  &argv[i][2]
+		  , option_table
+		  , numof(option_table)
+		  , sizeof(struct longoption_tg)
+		  , compare_with_top );
+	
+	if( longopt == NULL ){
+	  fprintf(stderr,"builtin-ls: %s: no such option.\n", argv[i]);
+	  return 0;
 	}
+	(*longopt->func)();
 
       }else for( const char *p=argv[i]+1 ; *p != '\0' ; p++ ){
 	switch( *p ){
