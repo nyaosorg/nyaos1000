@@ -12,61 +12,6 @@ void kill_filelist(FileListT *p)
   }
 }
 
-static FileListT *new_filelist_sub(FILESTATUS4 &buffer,const char *fname)
-{
-  int len=strlen(fname);  
-  
-  FileListT *node=
-    (FileListT*)malloc(sizeof(FileListT)+len);
-
-  strcpy( node->name , fname );
-  node->attr   = buffer.attrFile;
-  node->length = len;
-  node->size   = buffer.cbFile;
-  node->write.time =  *(unsigned short *)&buffer.ftimeLastWrite;
-  node->write.date =  *(unsigned short *)&buffer.fdateLastWrite;
-  node->access.time = *(unsigned short *)&buffer.ftimeLastAccess;
-  node->access.date = *(unsigned short *)&buffer.fdateLastAccess;
-  node->create.time = *(unsigned short *)&buffer.ftimeCreation;
-  node->create.date = *(unsigned short *)&buffer.fdateCreation;
-  
-  node->easize = buffer.cbList;
-  node->next = NULL;
-  node->prev = NULL;
-  
-  return node;
-}
-
-/* DosQueryPathInfo のフィルター */
-
-static int dos_query_path_info(const char *name,int len,FILESTATUS4 &buffer )
-{
-  char *new_name = (char*)alloca( len + 2 );
-  const char *sp=name;
-  char *dp=new_name;
-
-  try{
-    int lastchar=convroot(dp,len+=2,sp);
-    if( lastchar == '\\' || lastchar == ':' )
-      *dp++ = '.';
-  }catch(...){
-    ;
-  }
-  *dp = '\0';
-
-  return DosQueryPathInfo((PUCHAR)new_name,2,&buffer,sizeof(FILESTATUS4) );
-}
-
-FileListT *new_filelist(const char *fname)
-{
-  FILESTATUS4 buffer;
-
-  if( dos_query_path_info(fname,strlen(fname),buffer) != 0 )
-    return NULL;
-
-  return new_filelist_sub(buffer,fname);
-}
-
 FileListT *new_filelist(Dir &dir)
 {
   FileListT *node=
@@ -91,6 +36,25 @@ FileListT *new_filelist(Dir &dir)
   node->prev = NULL;
   
   return node;
+}
+
+FileListT *new_filelist(const char *fname)
+{
+  Dir dir;
+  char path[256],*p=path;
+  int size=sizeof(path);
+  try{
+    int lastroot=convroot(p,size,fname);
+    if( lastroot == '\\' || lastroot == ':' )
+      *p++ = '.';
+    *p = '\0';
+  }catch(...){
+    return 0;
+  }
+  if( dir._findfirst( path ) == 0 )
+    return new_filelist(dir);
+  else
+    return 0;
 }
 
 FileListT *dup_filelist(FileListT *org)
@@ -284,6 +248,23 @@ void Files::clear()
     top=tmp;
     --n;
   }
-  if( dirname != NULL )
+  if( dirname != NULL ){
     free(dirname);
+    dirname = NULL;
+  }
+}
+
+/* 最も最後尾のファイルを返す。
+ * ファイルが一つも無い時は NULL を返す。
+ */
+FileListT *Files::get_tail() const
+{
+  FileListT *ptr=top;
+  if( ptr == NULL )
+    return NULL;
+
+  while( ptr->next != NULL ){
+    ptr = ptr->next;
+  }
+  return ptr;
 }

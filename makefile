@@ -1,12 +1,14 @@
 #
+# Makefile for GNU Make.
+#
 # Free Software : Nihongo Yet Another Os/2 Shell
 # (c) 1996,97,98,99 HAYAMA,Kaoru
 #
 # If you have canna.a, please add '-DCANNA=0' to CFLAGS.
 
-CFLAGS=-Wall -O2
+CFLAGS=-Wall -O2 -DNDEBUG
 #CFLAGS=-Wall -O2 -DCANNA=0
-	
+
 LDFLAGS=-lvideo -lsocket -lwrap -Zcrtdll
 CC=gcc
 
@@ -26,14 +28,14 @@ all : nyaos.exe nyaos.doc
 
 NYAOS_HDR=\
 	complete.h edlin.h finds.h hash.h macros.h nyaos.h \
-	parse.h pathlist.h smartptr.h strtok.h keyname.h
+	parse.h pathlist.h smartptr.h strtok.h keyname.h strbuffer.h
 NYAOS_SRC=\
 	alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
 	command2.cc dbcs.cc eadir.cc edlin.cc edlin2.cc execute.cc \
-	finds.cc filelist.cc foreach.cc getkey.cc hash.cc nyaos.cc \
-	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script.cc \
+	finds.cc filelist.cc foreach2.cc getkey.cc hash.cc nyaos.cc \
+	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script2.cc \
 	search.cc shell.cc source.cc suffix.cc wordseek.cc strtok.cc \
-	keynameseek.cc fordll.cc
+	keynameseek.cc strbuffer.cc
 NYAOS_TBL=\
 	bindfunc.tbl keynames.tbl eadirop.tbl
 NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
@@ -42,8 +44,9 @@ NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
 
 # pknyaos.cmd から呼び出される。
 # 「make README1ST=readme.XXX nyaos.tar」と呼び出す必要がある。
+
 nyaos.tar :
-	tar cvf $@ readme.src Makefile $(NYAOS_HDR) $(NYAOS_SRC) \
+	tar cvf $@ Makefile $(NYAOS_HDR) $(NYAOS_SRC) \
 		mkbtable.cmd $(README1ST) $(NYAOS_TBL)
 
 
@@ -63,7 +66,6 @@ tables : $(NYAOS_TBL:.tbl=.cc)
 bindfunc.cc : bindfunc.tbl mkbtable.cmd
 keynames.cc : keynames.tbl mkbtable.cmd
 eadirop.cc : eadirop.tbl mkbtable.cmd
-
 
 # ------------- ドキュメント作成 -----------------
 

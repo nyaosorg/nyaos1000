@@ -63,6 +63,18 @@ int Shell::complete_hook(Complete &com)
   return n;
 }
 
+/* プロンプトを再表示する */
+
+void Shell::re_prompt()
+{
+  putchrs(prompt);
+  int i=0;
+  while( i<len )
+    putnth( i++ );
+  putbs( i-pos );
+}
+
+
 /* ^D や [TAB]^2 など、補完リストの表示を行うキーメソッド
  */
 void Shell::complete_list()
@@ -103,7 +115,7 @@ void Shell::complete_list()
       return;
   }
   
-  struct filelist *cur=com.findfirst();
+  Complete::Cursor cur(com);
   putchr('\n');
   
   int scrnsize[2];
@@ -120,13 +132,13 @@ void Shell::complete_list()
   for(int i=0 ; i<files_per_line; i++ )
     ptr[i] = NULL;
   
-  for(int i=0; i<files_per_line-1 && cur != NULL ; i++ ){
-    ptr[i] = cur;
-    for(int j=0 ; cur != NULL && j<files_per_column ; j++){
-      cur = cur->next;      
+  for(int i=0; i<files_per_line-1 && cur.isOk() ; i++ ){
+    ptr[i] = cur.toFileListT();
+    for(int j=0 ; cur.isOk() && j<files_per_column ; j++){
+      ++cur;
     }
   }
-  ptr[files_per_line-1] = cur;
+  ptr[files_per_line-1] = cur.toFileListT();
   
   for(int j=0; j<files_per_column ; j++ ){
     for(int i=0; i<files_per_line  &&  ptr[i] != NULL ; i++ ){
@@ -143,12 +155,7 @@ void Shell::complete_list()
     }
     putchr('\n');
   }
-  
-  fprintf(fp,"\n%s",prompt);
-  int i=0;
-  while( i<len )
-    putnth( i++ );
-  putbs( i-pos );
+  re_prompt();
 }
 
 void Shell::cls()

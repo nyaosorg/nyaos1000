@@ -9,6 +9,7 @@
 #include "complete.h"
 #include "nyaos.h"
 
+extern int option_tilda_without_root;
 extern int option_direct_key;
 extern int option_complete_etc;
 extern int option_single_quote;
@@ -222,6 +223,7 @@ struct Option{
       , &option_replace_slash_to_backslash_after_tilda , 1 , 0 },
   { "sos"                  , &option_sos                       , 1  , 0 },
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
+  { "tilda_without_root"   , &option_tilda_without_root        , 1  , 0 },
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
   { NULL , NULL , 1 , 0 },
 };

@@ -6,15 +6,17 @@
 #include "complete.h"
 #include "macros.h"
 #include "finds.h"
-#include "hash.h"
 #include "nyaos.h"
 
-extern Hash <Alias> alias_hash;
+extern int option_tilda_without_root;
 
 int Complete::directory_split_char='\\';
 int Complete::complete_tail_tilda=0;
 int Complete::complete_hidden_file=0;
 
+/* 最初の候補の真の名前(大文字・小文字が正しい)を得る
+ * 候補が一つも無い場合のみ、NULL を返す。
+ */
 const char *Complete::get_real_name1() const
 {
   FileListT *p=get_top();
@@ -42,7 +44,7 @@ int which_suffix(const char *path,...)
   const char *ext=_getext(path);
   if( ext == NULL )
     return 0;
-
+  
   ++ext; /* ピリオドをスキップ */
 
   /* 拡張子を発見、以下比較 */
@@ -66,7 +68,7 @@ int which_suffix(const char *path,...)
  * out	fname	ファイル名
  * return 最後のパス区切文字('/','\\',or'\0')
  */
-int pathsplit( const char *path, char *dir, char *fname )
+static int pathsplit( const char *path, char *dir, char *fname )
 {
   const char *lastroot=NULL;
   if( path[0]=='~' ){
@@ -82,7 +84,9 @@ int pathsplit( const char *path, char *dir, char *fname )
   const char *p=path;
 
   if( lastroot != NULL ){
-    if( *p == '~' ){
+    if( *p == '~' 
+       && (option_tilda_without_root || *(p+1)=='\\' || *(p+1)=='/' ) ){
+      
       if( *(p+1) == ':' ){
 	const char *system_ini=getenv("SYSTEM_INI");
 	if( system_ini != NULL ){
@@ -103,6 +107,7 @@ int pathsplit( const char *path, char *dir, char *fname )
 	    *dir++ = '.';
 	    *dir++ = '\\';
 	  }
+
 	}else{
 	  *dir++ = '~';
 	  ++p;
@@ -135,11 +140,6 @@ int pathsplit( const char *path, char *dir, char *fname )
   return (lastroot != NULL ? *lastroot : '\0');
 }
 
-const char *Complete::errmsg[]={
-  "no error(s)",
-  "malloc()/new operator error",
-};
-
 /* 絶対パスやカレントディレクトリのファイル名をインスタンスに読み込むメソッド。
  * in	command_complete !0ならば、実行可能ファイル名のみ読み込む
  *	is_with_dir !0ならば、ディレクトリ名も読み込む
@@ -165,13 +165,12 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
        *
        * is_with_dir が立っていない場合は、ディレクトリも除く。
        */
-      if(    command_complete 
-	 && which_suffix(dir.get_name(),"EXE","CMD","BAT","COM",NULL)==0
+      if(    command_complete
+	 && which_suffix(dir.get_name(),"EXE","CMD","BAT","COM","CLASS",0)==0
 	 && !( is_with_dir && (dir.get_attr() & Dir::DIRECTORY)) )
 	{
 	  continue;
 	}
-
       
       /* HIDDEN属性を除く */
       if( (dir.get_attr() & Dir::HIDDEN) != 0  &&  complete_hidden_file == 0 )
@@ -207,12 +206,18 @@ int Complete::makelist(const char *path)
   return makelist_core(false,true);
 }
 
-Files path_cache;
+/* コマンド名補完の為のキャッシュっす。
+ * 本来は、静的メンバ変数にでもすべきところだが、
+ * あまり、ほいほい、ヘッダファイルに宣言するのも
+ * ヘッダファイルが太り過ぎてやなので、
+ * 敢えて、ファイルスコープに陥れるんぢゃよ、ぎゃわ～。
+ */
+static Files path_cache;
 
 /* コマンド名補完の為に、PATH,SCRIPTPATH 上のコマンド名を
  * グローバル変数 path_cache に設定する。
  */
-void make_command_cache()
+void Complete::make_command_cache()
 {
   path_cache.clear();
 
@@ -226,7 +231,7 @@ void make_command_cache()
 	; dirname != NULL
 	; dirname = strtok(NULL,";") ){
       
-      for(Dir dir(dirname); dir ; dir++ ){
+      for( Dir dir(dirname); dir ; dir++ ){
 	if(   which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0
 	   && dir[dir.get_name_length()-1] != '~'
 	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
@@ -235,7 +240,9 @@ void make_command_cache()
       }
     }
   }
-  // 環境変数 SCRIPTPATH 上のコマンドの登録
+  /* 環境変数 SCRIPTPATH 上のコマンドの登録
+   * こんなコード書いている時点で、NYAOS 専用になってしまうのだな
+   */
   envpath=getenv("SCRIPTPATH");
   if( envpath != NULL ){
     char *env=(char*)alloca(strlen(envpath)+1);
@@ -251,6 +258,26 @@ void make_command_cache()
 	if(   dir[dir.get_name_length()-1] != '~'
 	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
 	  path_cache.insert( new_filelist(dir) ,SORT_BY_NAME_IGNORE );
+      }
+    }
+  }
+  /* 環境変数 CLASSPATH 上の Javaアプリケーションの登録
+   * これでは ZIP/JAR ファイルの中などは実行できないが、
+   * そこまでする必要もないであろう。
+   */
+  envpath=getenv("CLASSPATH");
+  if( envpath != NULL ){
+    char *env=(char*)alloca(strlen(envpath)+1);
+    strcpy(env,envpath);
+    for(  const char *dirname=strtok(env,";")
+	; dirname != NULL
+	; dirname = strtok(NULL,";") ){
+      for( Dir dir(dirname) ; dir ; dir++ ){
+	if(   which_suffix(dir.get_name(),"CLASS",0) != 0
+	   && dir[dir.get_name_length()-1] != '~'
+	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0 )
+
+	  path_cache.insert( new_filelist(dir) , SORT_BY_NAME_IGNORE );
       }
     }
   }
@@ -323,7 +350,7 @@ int Complete::makelist_with_path(const char *path)
     if(   dir.get_name_length() >= common_length
        && strnicmp( fname , dir.get_name() ,common_length )==0
        && ((dir.get_attr() & Dir::DIRECTORY) != 0
-	   || which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0 )
+	   || which_suffix(dir.get_name(),"EXE","CMD","COM","CLASS",0) !=0 )
        && dir[dir.get_name_length()-1] != '~'
        && (dir.get_attr() & Dir::HIDDEN)==0  ){
     
@@ -339,7 +366,7 @@ int Complete::makelist_with_path(const char *path)
 int Complete::add_buildin_command(const char *name)
 {
   int length=strlen(name);
-
+  
   if(   length >= common_length
      && strnicmp( fname , name ,common_length )==0 ){
     

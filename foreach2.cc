@@ -6,6 +6,7 @@
 #include "edlin.h"
 #include "nyaos.h"
 #include "parse.h"
+#include "strbuffer.h"
 
 extern volatile int ctrl_c;
 
@@ -21,85 +22,183 @@ enum{
 };
 static unsigned option=0;
 
-static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *line )
+/* value を opt の内容に従って加工し、結果を line に流し込む。
+ *	value 取り出されるベース
+ *	opt 内容は次のものを受けつける。
+ *		NULL等 全体
+ *		h ディレクトリ部分
+ *		t ディレクトリ部分以外
+ *		r 拡張子部分以外
+ *		e 拡張子部分
+ * return
+ *	 0 : 成功
+ *	-1 : opt の内容が不適である。
+ */
+static int word_design(StrBuffer &line ,const char *value,const char *opt)
+     throw(MallocError)
+{
+  if( opt == NULL  ||  opt[0] == '\0' ){
+    line << value;
+    
+  }else if( opt[0] == 'e'  &&  opt[1] == '\0' ){	/* 「:e」拡張子のみ */
+
+    line << _getext2(value);
+
+  }else if( opt[0] == 'r' && opt[1] == '\0' ){	/* 「:r」拡張子除く */
+
+    const char *ext=_getext(value);
+    if( ext != 0 ){
+      line.add( value , ext-value );
+    }else{
+      line << value;
+    }
+
+  }else if( opt[0] == 'h' && opt[1] == '\0' ){	/* 「:h」ディレクトリのみ */
+
+    const char *name=_getname(value);
+    if( name != 0 )
+      line.add( value , name-value );
+    
+  }else if( opt[0] == 't' && opt[1] == '\0' ){	/* 「:t」ディレクトリ除く */
+    
+    line << _getname(value);
+    
+  }else{
+    return -1;
+  }
+  return 0;
+}
+
+
+static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 {
   /* 各命令毎にループ */
-  for( ; line != NULL ; line=line->next ){
-    char buffer[1024];
-    char *dp=buffer;
-    const char *sp=line->buffer;
+  for( ; src != NULL ; src=src->next ){
+    StrBuffer line;
+    const char *sp=src->buffer;
 	
     while( *sp != '\0' ){
-      if( *sp != '$' ){
-	*dp++ = *sp++;
-      }else if( *(sp+1) == '$' ){
-	*dp++ = '$';
+      if( *sp != '$' ){	/* 通常の文字 */
+	line << *sp++;
+      }else if( *(sp+1) == '$' ){ /* 「$$」は「$」へ変換 */
+	line << '$';
 	sp += 2;
-      }else{  /* 環境変数、あるいは、パラメータへの置換 */
-	/* 変数名を word[] にコピー */
-	char word[256],*wp=word;
-	if( *++sp == '{' ){
+      }else{
+	/* $... は、環境変数、あるいは、パラメータへの置換 */
+
+	StrBuffer word;	/* $(VAR:OPT) の VAR を保存する */
+	StrBuffer opt;	/* $(VAR:OPT) の OPT を保存する */
+
+	if( *++sp == '{' ){		/**** ${...} のケース ****/
+
 	  ++sp; /*  '{'を読み飛ばし */
 	  while( *sp != '}' ){
 	    if( *sp == '\0' ){
 	      fputs("foreach : '${' without '}'\n",stderr);
 	      return -1;
+	    }else if( *sp == ':' ){ /* ${VAR:OPT} の場合 */
+	      ++sp;
+	      while( *sp != '}' ){
+		if( *sp == '\0' ){
+		  fputs("foreach : '${' without '}'\n",stderr);
+		  return -1;
+		}
+		opt << *sp++;
+	      }
+	      break;
 	    }
-	    *wp++ = *sp++;
+	    word << *sp++;
 	  }
 	  ++sp; /* '}'を読み飛ばし */
-	}else if( *sp == '(' ){
+
+	}else if( *sp == '(' ){		/**** $(...) のケース ****/
+	  
 	  ++sp; /*  '('を読み飛ばし */
 	  while( *sp != ')' ){
 	    if( *sp == '\0' ){
 	      fputs("foreach : '$(' without ')'\n",stderr);
 	      return -1;
+	    }else if( *sp == ':' ){ /* $(VAR:OPT) の場合 */
+	      ++sp;
+	      while( *sp != ')' ){
+		if( *sp == '\0' ){
+		  fputs("foreach : '$(' without ')'\n",stderr);
+		  return -1;
+		}
+		opt << *sp++;
+	      }
+	      break;
 	    }
-
-	    *wp++ = *sp++;
+	    word << *sp++;
 	  }
 	  ++sp; /* ')'を読み飛ばし */
-	}else{
+
+	}else{				/**** $AAAA のケース *****/
 	  if( *sp != '\0'  &&  (is_alpha(*sp) || *sp=='_' ) ){
 	    do{
-	      *wp++ = *sp++;
+	      word << *sp++;
+	      if( *sp == ':' ){ /**** $VAR:OPT のケース ****/
+		++sp;
+		while( *sp != '\0' && is_alpha(*sp) )
+		  opt << *sp++;
+		break;
+	      }
 	    }while( *sp != '\0' && ( is_alnum(*sp) || *sp=='_' ) );
 	  }
 	}
-	*wp = '\0';
 	
-	const char *sp2;
+	const char *env;
+	const char *value=0;
 	if( strcmp(word,var)==0 ){
-	  sp2=str;
-	  while( *sp2 != '\0' )
-	    *dp++ = *sp2++;
-	}else if( (sp2=getenv(word)) != NULL ){
-	  while( *sp2 != '\0' )
-	    *dp++ = *sp2++;
+	  /* foreach の変数の場合 */
+	  value = str;
+	}else if( (env=getenv(word)) != NULL ){
+	  /* 環境変数の場合 */
+	  value = env;
 	}else{
-	  fprintf(stderr,"foreach : no environment variable $%s\n",word);
+	  /* さもなければ、エラーっすよ */
+	  fprintf(stderr,"foreach : no environment variable $%s\n"
+		  ,word.getTop() );
 	  return -1;
+	}
+
+	if( opt.getLength() <= 0 ){
+	  /* 「：オプションが無い場合は、そのまま展開する */
+	  line << value;
+	}else{
+	  if( word_design( line , value , opt ) != 0 ){
+	    fprintf(  stderr 
+		    , "foreach: %s: no such option for $VAR:OPT\n"
+		    , opt.getTop() );
+	    return -1;
+	  }
 	}
       }
     }
-    *dp = '\0';
     
     if( ctrl_c ){
       puts( "\nCtrl-C Hit." );
       ctrl_c = 0;
       return -1;
     }
-    
+
+    /* 置換して作成した、各コマンドを実行する。
+     * オプション -n が指定されている時は、
+     * 表示のみ行い、実際には実行しない。
+     */
     if( option & OPTION_N ){
-      puts(buffer);
+      puts(line);
     }else{
+      /* execute の帰り値は、prompt で表示する為にグローバル変数に保存する。
+       * この仕様、なんとかした方がいいね！
+       */
       extern int execute_result; /* ← nyaos.cc */
       if( option & OPTION_V ){
-	fputs(buffer,stderr);
+	fputs(line,stderr);
 	if( isatty(fileno(srcfil)) )
 	  fputc('\n',stderr);
       }
-      execute_result = execute(srcfil,buffer,1);
+      execute_result = execute(srcfil,line,1);
       
       if( execute_result != 0  &&  (option & OPTION_I)==0 ){
 	fprintf(stderr,"foreach : error level %d",execute_result );
@@ -182,6 +281,8 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
       putchar('\n');
       if( rc < 0 )
 	break;
+      else if( rc == 0 )
+	continue;
       
       if(   (buffer[0] == 'e' || buffer[0] == 'E' )
 	 && (buffer[1] == 'n' || buffer[1] == 'N' )

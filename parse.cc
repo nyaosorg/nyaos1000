@@ -2,6 +2,10 @@
 #include <assert.h>
 #include <ctype.h>
 #include <process.h>
+#include <signal.h>
+
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "macros.h"
 #include "parse.h"
@@ -51,47 +55,17 @@ char *Substr::quote(char *dp) const
   return dp;
 }
 
-#if 0
-void Pipe::open(const char *cmdl,const char *modestr)
+extern volatile int ctrl_c;
+
+static int pid_to_be_killed;
+static void ctrl_c_to_kill_pipe(int sig)
 {
-  mode = modestr;
-  cmdline = cmdl;
-
-  if( _osmode == OS2_MODE ){
-    fp=popen(cmdline,modestr);
-    return;
-  }
-
-  tmpfname = tempnam("C:/","NYA");
-  assert(tmpfname != NULL );
-
-  if( mode[0] == 'r' ){
-    char buffer[1024];
-    sprintf(buffer , "%s >%s",cmdline,tmpfname);
-    system( buffer );
-  }
-  fp=fopen(tmpfname,modestr);
+  ctrl_c = 1;
+  kill( SIGINT , pid_to_be_killed );
+  kill( SIGBREAK , pid_to_be_killed );
+  kill( SIGPIPE  , pid_to_be_killed );
+  signal(sig,SIG_ACK);
 }
-
-Pipe::~Pipe()
-{
-  if( fp == NULL )
-    return;
-
-  if( _osmode == OS2_MODE ){
-    pclose(fp);
-    return;
-  }
-  
-  fclose(fp);
-
-  if( mode != NULL && mode[0] == 'w' ){
-    char buffer[1024];
-    sprintf(buffer , "%s <%s",cmdline,tmpfname);
-    system(buffer);
-  }
-}
-#endif
 
 Parse::~Parse()
 {
@@ -102,8 +76,35 @@ Parse::~Parse()
     if( pipemode == REDIRECT ){
       fclose(output_fp);
     }else{
+      if( ctrl_c ){
+	fputs("///\a",stderr);
+	kill( output_fp->_pid , SIGBREAK );
+      }
+      fflush( output_fp );
+
+      pid_to_be_killed = output_fp->_pid;
+
+      void (*prev_handler)(int) 
+	= signal(SIGINT,ctrl_c_to_kill_pipe);
+      fputc('\a',stderr);
+      fflush(stderr);
+
+      while( waitpid(output_fp->_pid, NULL ,WNOHANG) != -1 ){
+	if( ctrl_c ){
+	  kill(pid_to_be_killed , SIGBREAK);
+	  break;
+	}
+	sleep(0);
+      }
+      fputc('\a',stderr);
+      fflush(stderr);
+
       pclose(output_fp);
-      wait(NULL);
+
+      if( prev_handler != SIG_ERR )
+	signal( SIGINT , prev_handler );
+
+      // wait(NULL);
     }
   }
   /* à¯êîÇÃå„énññ */

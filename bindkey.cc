@@ -73,6 +73,7 @@ static struct bind_t{
   { KEY(ALT_C) , &Shell::copy , "ALT_C" , "copy" },
   { KEY(ALT_V) , &Shell::paste , "ALT_V" , "paste" },
   { KEY(ALT_N) , &Shell::keyname_insert , "F3" , "name" },
+  { KEY(ALT_Y) , &Shell::paste_test , "ALT_Y" , "paste_test" },
 }, nyaos_bind_table[]={
   { CTRL('P') , &Shell::vz_prev_history,"CTRL_P","vz_prev_history  (nyaos)"},
   { CTRL('N') , &Shell::vz_next_history,"CTRL_N","vz_next_history  (nyaos)" },
@@ -475,7 +476,7 @@ Shell::Status Shell::erasebol()
   return CONTINUE;
 }
 
-static void paste_to_clipboard(const char *s,int length)
+void Shell::paste_to_clipboard(int at,int length)
 {
   char *buffer;
   DosAllocSharedMem( (void**)(&buffer) 
@@ -483,9 +484,16 @@ static void paste_to_clipboard(const char *s,int length)
 		    , (ULONG)length+1
 		    , PAG_COMMIT | PAG_READ | PAG_WRITE 
 		    | OBJ_TILE   | OBJ_GIVEABLE );
-
-  memcpy( buffer , s , length );
-  buffer[ length ]  = '\0';
+  
+  char *dp=buffer;
+  for(int i=at; i<at+length; i++ ){
+    if( strbuf[i]=='^' && atrbuf[i]==DBC1ST ){
+      *dp++ = strbuf[++i] & 0x1F;
+    }else{
+      *dp++ = strbuf[i];
+    }
+  }
+  *dp = '\0';
 
   WinOpenClipbrd(hab);
   WinSetClipbrdOwner(hab,NULLHANDLE);
@@ -500,7 +508,7 @@ Shell::Status Shell::eraseline()
   int pos=getPos();
   int len=getLen();
   if( pos < len ){
-    paste_to_clipboard(getText()+pos , len-pos );
+    paste_to_clipboard( pos , len-pos );
     Edlin::eraseline();
     changed = true;
   }
@@ -837,7 +845,7 @@ Shell::Status Shell::copy()
   }else{
     return CONTINUE;
   }
-  paste_to_clipboard( getText()+at , length );
+  paste_to_clipboard( at , length );
   return CONTINUE;
 }
 
@@ -866,5 +874,33 @@ Shell::Status Shell::paste()
 Shell::Status Shell::marking()
 {
   Edlin::marking();
+  return CONTINUE;
+}
+
+Shell::Status Shell::paste_test()
+{
+  /* クリップボードから取得するテスト	*/
+  WinOpenClipbrd(hab);
+  WinSetClipbrdOwner(hab,NULLHANDLE);
+  ULONG	ulFmtInfo;
+  if( WinQueryClipbrdFmtInfo( hab, CF_TEXT, &ulFmtInfo ) ){
+    char *text = (char*)WinQueryClipbrdData( hab, CF_TEXT );
+    if( text != NULL ){
+      putchr('\n');
+      while( *text ){
+	if( *text == '\r' && *(text+1) == '\n' ){
+	  putchr(*++text);
+	}else if( *text < ' ' && *text >= 0 ){
+	  putchr('^');
+	  putchr('@'+*text);
+	}else
+	  putchr(*text);
+	++text;
+      }
+      putchr('\n');
+      re_prompt();
+    }
+  }
+  WinCloseClipbrd(hab);
   return CONTINUE;
 }

@@ -32,11 +32,9 @@ protected:
   int bottom_msgsize;  /* かんな等の最下段のメッセージのサイズ */
 
   bool has_marked;     /* マークがされていたら、true  */
-
   /*
    * ================ バッファ操作系メソッド ================ 
    */
-
   /* 場所を作る/削減する(バッファ操作のみ)。戻り値 != 0 で失敗 */
   int makeRoom(int at,int bytes);
 
@@ -90,7 +88,9 @@ public:
   void cut();
   void erase();               /* ^D 一文字削除         */
   int  forward();             /* ^F カーソル右移動     */
+  int  forward(int x);        /*    ｘ桁分右移動       */
   int  backward();            /* ^B カーソル左移動     */
+  int  backward(int x);        /*    ｘ桁分左移動       */
   void forward_word();        /* @F カーソル右単語移動 */
   void backward_word();       /* @B カーソル左単語移動 */
   void go_ahead();            /* ^A 先頭へ             */
@@ -190,6 +190,9 @@ class Shell : private Edlin2 {
   void complete_list();
   int complete_hook(Complete &com);
   void cls();
+  void re_prompt();
+  void paste_to_clipboard(int at,int length);
+  
   void alert(){ if( beep_ok ) putchr('\a'); }
 public:
   struct History{
@@ -298,6 +301,7 @@ public:
   Status cut();
   Status paste();
   Status marking();
+  Status paste_test();
 
   /* option命令用。Edlin から参照されるのみ */
   static int beep_ok;

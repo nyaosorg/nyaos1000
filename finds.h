@@ -114,6 +114,12 @@ typedef struct filelist{
 	unsigned year:7;    // 0～127
       }d;
     };
+    int getYear()  const { return (int)d.year+1980; }
+    int getMonth() const { return (int)d.month; }
+    int getDay()   const { return (int)d.day; }
+    int getHour()  const { return (int)t.hour; }
+    int getMinute()const { return (int)t.minute; }
+    int getSecond()const { return (int)t.second; }
   } create , access , write ;
   int length;
   char name[1]; /* 可変長 */
@@ -150,30 +156,11 @@ public:
   
   int get_num() const { return n; }
   FileListT *get_top() const { return top; }
+  FileListT *get_tail() const;
   void clear();
   
   Files() : top(0) , dirname(0) , n(0) { }
   ~Files(){ clear(); }
 };
-
-/* ----- 以下はメモ ----- */
-#if 0
-typedef struct _FILEFINDBUF3
-{
-  ULONG oNextEntryOffset;
-  FDATE fdateCreation;
-  FTIME ftimeCreation;
-  FDATE fdateLastAccess;
-  FTIME ftimeLastAccess;
-  FDATE fdateLastWrite;
-  FTIME ftimeLastWrite;
-  ULONG cbFile;			// ファイルサイズ
-  ULONG cbFileAlloc;		// ファイルに割り振られたサイズ
-  ULONG attrFile;		// アトリビュート
-  UCHAR cchName; 		// ファイル名の長さ
-  CHAR	achName[CCHMAXPATHCOMP];// ファイル名
-  
-} FILEFINDBUF3;
-#endif
 			    
 #endif

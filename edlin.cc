@@ -88,12 +88,19 @@ void Edlin::putnth(int nth)
 
 void Edlin::marking(void)
 {
-  if( has_marked  &&  markpos < pos ){
-    putbs( pos-markpos );
-    for(int i=markpos ; i<pos ; i++ )
+  bool prev_has_marked = has_marked;
+  int prev_markpos = markpos;
+
+  has_marked = true;
+  markpos = pos;
+  
+  if( prev_has_marked  &&  prev_markpos < pos ){
+    /* 前回のマークがカーソル位置より左にある場合に、マークを消す */
+    putbs( pos-prev_markpos );
+    for(int i=prev_markpos ; i<pos ; i++ )
       putchr( strbuf[i] );
   }
-  putchrs(mark_on);
+  /* マークを表示(明示的に実行していないが、putnth が自動判断してくれる) */
   putnth(pos);
   if( atrbuf[pos] == SBC ){
     putbs(1);
@@ -101,13 +108,9 @@ void Edlin::marking(void)
     putnth(pos+1);
     putbs(2);
   }
-  putchrs(mark_off);
-  if( has_marked  &&  markpos > pos ){
-    markpos = pos;
+  /* 前回のマークがカーソル位置より右にある場合に、マークを消す */
+  if( prev_has_marked  &&  prev_markpos > pos )
     after_repaint(0);
-  }
-  markpos = pos;
-  has_marked = true;
 }
 
 /* at の位置に bytes 分だけのスペースを確保する。
@@ -399,8 +402,35 @@ int Edlin::seek_word_top()
   }
 }
 
+#if 0
+/*
+ *
+ */
+
+char *Edlin::dup_current_word( int &top , bool &quote )
+{
+  top = seek_word_top();
+
+  if( strbuf[top]=='"' ){
+    ++top;
+    quote = true;
+  }else{
+    quote = false;
+  }
+  
+  char *s=(char*)malloc( pos-top+1 );
+  memcpy( s , &strbuf[top] , pos-top );
+  s[ pos-top ] = '\0';
+  
+  /* 書きかけっすよ */
+}
+
+#endif
+
 Edlin::CompleteFunc Edlin::completeBindmap[ 0x200 ];
 
+/* 変換型補完の、キーバインドを初期化する。
+ */
 void Edlin::initComplete()
 {
   static int firstcalled=1;
@@ -482,34 +512,52 @@ int Edlin::completeFirst()
 {
   initComplete();
 
+  /* 原ファイル名(補完前のファイル名)の先頭位置・長さを求めておく */
   int fntop=seek_word_top();
   int basesize=pos-fntop;
 
+  /* 候補リスト列挙オブジェクトと人は言う */
   Complete com;
 
-  char *buffer=(char*)alloca(basesize+1);
-  int  command_complete = (fntop <= 1);
+  /* 原ファイル名が行の先頭ならば、それはコマンド名補完と人は言う */
+  bool command_complete = (fntop <= 1);
+
+  /* 原ファイル名がクォートで囲まれているか否か
+   * 囲まれていなければ、後々、場合によっては
+   * 囲い直す作業が必要となるわけだ。
+   */
   bool quoted=false;
-  
   if( strbuf[fntop] == '"' ){
     fntop++;
     basesize--;
     quoted = true;
   }
+
+  /* 補完前のファイル名を以下「原ファイル名」とする。
+   *   fntop    … 原ファイル名の先頭(クォートを含まない)
+   *   basesize … 原ファイル名の長さ(クォートを含まない)
+   */
+
+  /* ファイル名を、\0 で終わる形へコンバート */
+  char *buffer=(char*)alloca(basesize+1);
+  memcpy( buffer , &strbuf[fntop] , pos-fntop );
+  buffer[ pos-fntop ] = '\0';
   
-  char *bp=buffer;
-  while( fntop < pos )
-    *bp++ = strbuf[fntop++];
-  *bp = '\0';
+  /* 補完リストを作る。
+   * フラグによって、コマンド名補完か、ファイル名補完かを選択する
+   */
+  int nfiles = (  command_complete 
+		? com.makelist_with_path( buffer )
+		: com.makelist( buffer ) );
 
-  int nfiles;
-  if( command_complete ){
-    nfiles = com.makelist_with_path( buffer );
-  }else{
-    nfiles = com.makelist( buffer );
-  }
+  /* 内部コマンドの名前なども補完リストに加えておく 
+   */
   nfiles += complete_hook(com);
-
+  
+  /* 候補が無いが、名前中にワイルドカードが含まれている場合は、
+   * ワイルドカードにマッチするファイル名を補完リストへ加える
+   * さもなければ、おしまい。
+   */
   if( nfiles <= 0 ){
     if(    strpbrk(buffer,"*?") == NULL
        || (nfiles+=com.makelist_with_wildcard( buffer )) <= 0 ){
@@ -518,85 +566,75 @@ int Edlin::completeFirst()
     }
   }
 
-  for(int i=0 ; i<basesize ; i+= backward() )
-    ;
+  /* basesize は、総フルパス分の長さとなる。
+   * com.get_fname_common_length() は、ファイル名の共通部分の長さ。
+   */
+  backward( com.get_fname_common_length() );
 
+  /* ファイルを一つずつ、表示してゆくループ…見りゃ分かるって */
+  Complete::Cursor cur(com);
   for(;;){
-    struct filelist *cur=com.findfirst();
-    while( cur != NULL ){
-      if( cur->attr & A_DIR ){
-	message(  "%s%c"
-		, cur->name
-		, com.get_split_char() ?: complete_tail_char );
-      }else{
-	message("%s",cur->name );
-      }
-      CompleteFunc completeFunc;
-      unsigned int key=::getkey();
-      if( key >= numof(completeBindmap) )
-	completeFunc = COMPLETE_FIX_PLUS;
-      else
-	completeFunc = completeBindmap[ key ];
+    if( cur->attr & A_DIR ){
+      message(  "%s%c"
+	      , cur->name
+	      , com.get_split_char() ?: complete_tail_char );
+    }else{
+      message("%s",cur->name );
+    }
+    CompleteFunc completeFunc;
+    unsigned int key=::getkey();
+    if( key >= numof(completeBindmap) )
+      completeFunc = COMPLETE_FIX_PLUS;
+    else
+      completeFunc = completeBindmap[ key ];
+    
+    switch( completeFunc ){
+    case COMPLETE_CANCEL:
+      cleanmsg();
+      forward( com.get_fname_common_length() );
       
-      switch( completeFunc ){
-      case COMPLETE_CANCEL:
-	/*  case '\007':  case '\033':   case KEY(LEFT):*/
-	cleanmsg();
-	for(int i=0 ; i<basesize ; i+=forward() )
-	  ;
-
-	return 0;
-
-      case COMPLETE_PREV:
-	/* case KEY(UP):   case KEY(ALT_BACKSPACE): */
-	cur = com.findprev();
-	break;
-
-      case COMPLETE_NEXT:
-	/* case KEY(DOWN): case KEY(CTRL_TAB): case KEY(ALT_RETURN):
-	 * case '\t': */
-	cur = com.findnext();
-	break;
-	
-      default:
-	::ungetkey(key);
+      return 0;
+      
+    case COMPLETE_PREV:
+      cur.sotomawari();
+      break;
+      
+    case COMPLETE_NEXT:
+      cur.utimawari();
+      break;
+      
+    default:
+      ::ungetkey(key);
 	/* continue to next case */
-	
-      case COMPLETE_FIX:
-	/* case KEY(RIGHT): case '\r':  case '\n':*/
-
-	cleanmsg();
-
-	if( !quoted && strpbrk( cur->name , " ^!") != NULL ){
-	  insert('"');
-	  quoted = true;
-	  forward();
-	}
-	for(int i=0;i<basesize-com.get_fname_common_length(); )
-	  i += forward();
-	
-	/* 補完のベース文字列も、大文字・小文字を合わせるために
-	 * 上書きを行う */
-	const char *sp=cur->name;
-	for(int i=0;i<com.get_fname_common_length();i++ ){
-	  strbuf[pos] = *sp++; putnth(pos++);
-	}
-	
-	insert_and_forward( sp );
-	
-	if( cur->attr & A_DIR ){
-	  insert( com.get_split_char() ?: complete_tail_char );
-	  forward();
-	}
-	if( quoted ){
-	  insert('"');
-	  forward();
-	}
-	return 1;
-      } /* end-switch */
-
-    }/* end-while */
-  }/* end-for */
+      
+    case COMPLETE_FIX:
+      cleanmsg();
+      
+      if( !quoted && strpbrk( cur->name , " ^!") != NULL ){
+	insert('"');
+	quoted = true;
+	forward();
+      }
+      /* 補完のベース文字列も、大文字・小文字を合わせるために
+       * 上書きを行う */
+      const char *sp=cur->name;
+      for(int i=0;i<com.get_fname_common_length();i++ ){
+	strbuf[pos] = *sp++; putnth(pos++);
+      }
+      
+      insert_and_forward( sp );
+      
+      if( cur->attr & A_DIR ){
+	insert( com.get_split_char() ?: complete_tail_char );
+	forward();
+      }
+      if( quoted ){
+	insert('"');
+	forward();
+      }
+      return 1;
+    } /* end-switch */
+  }/* end-for(;;) */
 }
 
 int Edlin::complete()
@@ -606,7 +644,6 @@ int Edlin::complete()
 
   Complete com;
 
-  char *buffer=(char*)alloca(basesize+1);
   int  command_complete = (fntop <= 1);
   int  quoted=false;
   
@@ -615,13 +652,16 @@ int Edlin::complete()
     basesize--;
     quoted = 1;
   }
-  
-  char *bp=buffer;
-  while( fntop < pos )
-    *bp++ = strbuf[fntop++];
-  *bp = '\0';
+  /* ファイル名を、\0 で終わる形へコンバート */
+  char *buffer=(char*)alloca(basesize+1);
+  memcpy( buffer , &strbuf[fntop] , pos-fntop );
+  buffer[ pos-fntop ] = '\0';
 
-  int nfiles = ( command_complete
+  /* 補完リストを作る。
+   * フラグによって、コマンド名補完か、ファイル名補完かを選択する
+   */
+
+  int nfiles = (  command_complete
 		? com.makelist_with_path( buffer ) 
 		: com.makelist( buffer ) );
 
@@ -632,8 +672,7 @@ int Edlin::complete()
     return 0;
   }
 
-  for(int i=0 ; i<basesize ;  )
-    i += backward();
+  backward( basesize );
   
   const char *nextstr=com.nextchar();
 
@@ -643,8 +682,7 @@ int Edlin::complete()
     forward();
   }
 
-  for(int i=0 ; i<basesize-com.get_fname_common_length() ;  )
-    i +=forward();
+  forward( basesize-com.get_fname_common_length() );
 
   const char *realname=com.get_real_name1();
   for(int i=0 ; i<com.get_fname_common_length(); i++ ){
@@ -655,7 +693,9 @@ int Edlin::complete()
   insert_and_forward(nextstr);
 
   if( nfiles == 1 ){
-    if( com.findfirst()->attr & A_DIR ){
+    Complete::Cursor cursor(com);
+    
+    if( cursor->attr & A_DIR ){
       insert( com.get_split_char() ?: complete_tail_char );
     }else{
       if( quoted ){
@@ -669,26 +709,50 @@ int Edlin::complete()
   return nfiles;
 }
 
+/* フルパス変換という奴。
+ * これなんか、シェルクラス(Shell)に入れた方がよさそうな…)
+ */
 int Edlin::complete_to_fullpath(const char *header)
 {
   /* 「nyaos ■」のように間に空白がある場合に、
-   * この空白を無視する処理。
-   */
+   * この空白を無視するわけだ */
   int spaces=0;
   if( strbuf[pos-1] == ' ' )
     spaces=backward();
 
   int fntop=seek_word_top();
   int basesize=pos-fntop;
-  int quoted=false;
+  bool quoted=false;
   
-  char *buffer=(char*)alloca(basesize+1);
+  char *buffer=(char*)alloca(basesize*3);
   if( strbuf[fntop] == '"' ){
     fntop++;
     basesize--;
-    quoted = 1;
+    quoted = true;
   }
+
+  /* ローカルバッファに原ファイル名を展開する。
+   * この時、チルダや ... も展開する。
+   */
   char *bp=buffer;
+  if( strbuf[fntop] == '~' ){
+    const char *home=getenv("HOME");
+    if( home != NULL ){
+      ++bp;
+      while( *home != '\0' )
+	*bp++ = *home++;
+      ++fntop;
+    }
+  }else if( strbuf[fntop]=='.' && strbuf[fntop+1]=='.' ){
+    *bp++ = strbuf[fntop++];
+    *bp++ = strbuf[fntop++];
+    while( strbuf[fntop] == '.' ){
+      *bp++ = '\\';
+      *bp++ = '.';
+      *bp++ = '.';
+      ++fntop;
+    }
+  }
   while( fntop < pos )
     *bp++ = strbuf[fntop++];
   *bp = '\0';
@@ -791,15 +855,16 @@ void Edlin::repaint(int termclear)
   int i=0;
   while( i < len )
     putnth( i++ );
-
+  
   if( has_marked  &&  markpos == len  ){
     putchrs(mark_on);
     putchr(' ');
     putchrs(mark_off);
   }else{
     putchr(' ');
+    --termclear;
   }
-  ++i; --termclear;
+  ++i;
 
   if( termclear >= 0 ){
     while( termclear-- > 0 ){
@@ -819,14 +884,16 @@ void Edlin::after_repaint(int termclear)
     while( pos+i < len )
       putnth( pos+i++ );
   }
+
   if( has_marked  &&  markpos == len ){
     putchrs(mark_on);
     putchr(' ');
     putchrs(mark_off);
   }else{
     putchr(' ');
+    --termclear;
   }
-  ++i; --termclear;
+  ++i;
 
   if( termclear >= 0 ){
     while( termclear-- > 0 ){
@@ -868,8 +935,13 @@ void Edlin::eraseline()
   putbs(i);
 
   len = pos ;
-  if( markpos > pos )
+  if( markpos > pos ){
     markpos = pos;
+    putchrs(mark_on);
+    putchr(' ');
+    putchrs(mark_off);
+    putbs(1);
+  }
 
   strbuf[ pos ] = '\0';
   atrbuf[ pos ] = SBC;
@@ -893,6 +965,7 @@ void Edlin::forward_word()
   while( pos < nextpos )
     putnth( pos++ );
 }
+
 void Edlin::backward_word()
 {
   int nextpos=pos;
@@ -919,6 +992,21 @@ int Edlin::forward()
   }
   return 0;
 }
+
+int Edlin::forward(int w)
+{
+  for(int i=0 ; i<w ; i+=forward() )
+    ;
+  return w;
+}
+
+int Edlin::backward(int w)
+{
+  for(int i=0 ; i<w ; i+=backward() )
+    ;
+  return w;
+}
+
 
 int Edlin::backward()
 {

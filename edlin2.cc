@@ -10,6 +10,9 @@
 #  define CANNA 1
 #endif
 
+#define CANNA_MODULE ((PUCHAR)"canna")
+/* マルチスレッド化する場合、"cannamt" にしなくてはいけない */
+
 #include <sys/kbdscan.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -151,7 +154,7 @@ int canna_init()
 
   UCHAR errmsg[100];
 
-  if(   DosLoadModule(errmsg,sizeof(errmsg),(UCHAR*)"canna",&module_handle )
+  if(   DosLoadModule(errmsg,sizeof(errmsg),CANNA_MODULE,&module_handle )
      || DosQueryProcAddr(  module_handle , 0 ,(UCHAR*)"jrKanjiString"
 			 , (PFN*)&DLL_jrKanjiString )
      || DosQueryProcAddr(  module_handle , 0 , (UCHAR*)"jrKanjiControl"

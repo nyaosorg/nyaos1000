@@ -6,6 +6,7 @@
 #include "nyaos.h"
 #include "parse.h"
 #include "finds.h"
+#include "strbuffer.h"
 
 Hash <Alias> alias_hash(1024);
 
@@ -14,7 +15,7 @@ static void translate_copy( const Substr &arg , SmartPtr &dp )
   if( arg[0] == '-' )
     *dp++ = '/';
   else
-    *dp++ = arg[0];
+    *dp++ = (char)arg[0];
   
   int quote=(arg[0] == '"' ? 1 : 0);
   for(int i=1;i<arg.len;i++){

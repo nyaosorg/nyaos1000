@@ -35,6 +35,7 @@ mark			  &Shell::marking
 newline                   &Shell::input_terminate
 next_history              &Shell::next_history
 paste                     &Shell::paste
+paste_test		  &Shell::paste_test
 previous_history          &Shell::previous_history
 quoted_insert             &Shell::quoted_insert
 rev_i_search              &Shell::rev_i_search

@@ -58,7 +58,26 @@ static char *ls_read_only_file="33;1";	/* 背景が黄 */
 static char *ls_comment="44;37;1";	/* 青地に白 */
 static char *ls_longname="41;37;1";     /* 赤字に白 */
 
-static unsigned int thisyear=0;
+/* struct tm のカバークラス。
+ * 扱い方は DirDateTime と互換性があるが、
+ * 仮想関数で同じように使えるわけではない。
+ */
+class TmCover {
+  struct tm tmbody;
+public:
+  operator tm&() { return tmbody; }
+  
+  int getYear()   const { return tmbody.tm_year+1900; }
+  int getMonth()  const { return tmbody.tm_mon+1; }
+  int getDay()    const { return tmbody.tm_mday; }
+  int getHour()   const { return tmbody.tm_hour; }
+
+  void setLocalTime(time_t &time){
+    memcpy( &tmbody , localtime(&time) , sizeof(struct tm) );
+  }
+};
+
+TmCover tmNow;
 
 static struct {
   const char *xx;
@@ -357,7 +376,6 @@ static void smart_copy( SmartPtr &dp , const char *sp )
   *dp = '\0';
 }
 
-
 /* 「ls -l」形式で、一ファイルを表示する 
  *	flist … 対象ファイルの情報
  *	max_length … 最大ファイル名の流さ
@@ -497,22 +515,40 @@ void dir1(  FileListT *flist , int max_length
     ncolumns += fprintf(fout,"%9ld ",flist->size);
   }
 
-  if( datetime->d.month > 12  || datetime->d.month < 1   ){
+  if( datetime->getMonth() > 12  || datetime->getMonth() < 1   ){
     /* FAT では、最終アクセス時刻を取得することができない。
      * この場合、時刻は 1989/0/0 になってしまう。
      */
   }else{
     ncolumns += fprintf(fout,"%3s %2d "
-			, month[ datetime->d.month-1 ]
-			, datetime->d.day
+			, month[ datetime->getMonth()-1 ]
+			, datetime->getDay()
 			);
     
-    if( flist->write.d.year+1980 != thisyear ){
-      ncolumns += fprintf(fout," %4d " ,datetime->d.year+1980 );
+    if(    flist->write.getYear() <  tmNow.getYear()-1 /* 一昨年 */
+       || (flist->write.getYear() == tmNow.getYear()-1 /* 去年 */
+	   && ( flist->write.getMonth() < tmNow.getMonth() /* 去年の先月以前 */
+	       || (flist->write.getMonth() == tmNow.getMonth() /* 去年の今月 */
+		   && flist->write.getDay() <= tmNow.getDay() 
+		   /*去年の今日以前*/)
+	       )
+	   )
+       || ( (flist->write.getYear() == tmNow.getYear() /* 今年 */
+	     && ( flist->write.getMonth() > tmNow.getMonth() /* 来月以降 */
+		 || (flist->write.getMonth() == tmNow.getMonth() /* 今月 */
+		     && flist->write.getDay() > tmNow.getDay() /* 明日以降 */ )
+		 )
+	     )
+	   )
+       || flist->write.getYear() > tmNow.getYear() /* 来年 */ ){
+
+      /* 年数表示 */
+      ncolumns += fprintf(fout," %4d " ,datetime->getYear() );
     }else{
+      /* 時刻表示 */
       ncolumns += fprintf( fout
 			  ,"%02d:%02d " 
-			  , datetime->t.hour ,datetime->t.minute );
+			  , datetime->getHour() ,datetime->getHour() );
     }
   }
   
@@ -779,7 +815,6 @@ int the_dir(const char *dirname, FILE *fout )
 static int exit_with_ctrl_c()
 {
   fputs("\n^C\n",stderr);
-  ctrl_c = 0;
   signal(SIGINT,ctrl_c_signal);
   return RC_ABORT;
 }
@@ -840,9 +875,10 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 
   /* --- 西暦の年数を前もって取得 --- */
   time_t now;
-
   time(&now);
-  thisyear = localtime(&now)->tm_year + 1900;
+  
+  tmNow.setLocalTime(now);
+
   /* --------------------------------------------------------- */
 
   int rc=0;

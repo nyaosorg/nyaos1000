@@ -8,6 +8,7 @@
 #include "macros.h"
 
 int option_tilda_is_home=1;
+int option_tilda_without_root=0;
 int option_replace_slash_to_backslash_after_tilda=1;
 int option_tcshlike_history=0;
 int option_dots=1;
@@ -540,7 +541,13 @@ void preprocess(const char *sp, char *_dp , int max )
 	if(    option_tilda_is_home  
 	   &&  quote==0
 	   &&  is_space(prevchar) ){
-	  if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
+	  if( *(sp+1) != '\\' && *(sp+1) != '/' && !option_tilda_without_root){
+	    /* option tilda_without_root が off の時は
+	     * "~hogehoge" で変換しない。 
+	     * ちょっと、こんな書き方、醜いけど…。
+	     */
+	    break;
+	  }else if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
 	    ++sp;
 	    const char *system_ini = getenv("SYSTEM_INI");
 	    if( system_ini == NULL ){

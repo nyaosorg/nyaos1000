@@ -50,7 +50,7 @@ class Substr{
 
 /* š‹å‰ğÍƒNƒ‰ƒX */
 class Parse{
- public:
+public:
   enum Terminal{
     NOT_TERMINAL,
     NULL_TERMINAL,	/* \0 */
@@ -64,7 +64,7 @@ class Parse{
   static int option_semicolon_terminate;
   static int is_terminal_char(int c)
     { return c=='\0' || c=='&' || c=='|';  }
- private:
+private:
   const char *sp;
 
   const char *nextcmds,*tail;
@@ -76,7 +76,7 @@ class Parse{
   Substr argbase[30],*args;
   Substr redirect[3]; /* 0:stdin  1:stdout  2:stderr */
 
- protected:
+protected:
   int appendflag[3];
   FILE *output_fp , *input_fp;
   enum{ STD , PIPE , REDIRECT } pipemode;
@@ -97,7 +97,7 @@ public:
   int operator ! () const { return err; }
   const Substr &operator [](int n){ return args[n]; }
   const Substr *get_redirect(){ return redirect; }
-
+  
   enum{
     QUOTE_NOT_COPY = 0,
     QUOTE_COPY     = 1,
@@ -136,20 +136,5 @@ public:
 
   int is_append_redirect(int i) const { return appendflag[i]; }
 };
-#if 0
-class Pipe{
-  FILE *fp;
-  const char *cmdline;
-  const char *mode;
-  char *tmpfname;
- public:
-  Pipe() : fp(NULL) , mode(NULL) , tmpfname(NULL) { }
 
-  void open(const char *cmdline,const char *mode);
-  Pipe(const char *cmdl,const char *mode){ open(cmdl,mode); }
-  ~Pipe();
-
-  operator FILE * () { return fp; }
-};
-#endif
 #endif

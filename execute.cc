@@ -77,6 +77,11 @@ int cmd_ext(FILE *source , Parse &argp );
 /* "prepro.cc" */
 int cmd_drivealias(FILE *source , Parse &arg );
 
+/* "spool.cc" *
+ * int cmd_spool(FILE *source , Parse &arg );
+ * スプール機能をつけようとしてあきらめたのだ
+ */ 
+
 volatile int ctrl_c=0;
 void ctrl_c_signal(int sig)
 {
@@ -264,6 +269,7 @@ Command jumptable[]={
   {"rmdir",  cmd_rmdir   },
   {"set",    cmd_set     },
   {"source", cmd_source  },
+//  {"spool",  cmd_spool   },
   {"unalias",cmd_unalias },
   {"ver",    cmd_ver     },
   {"which"  ,cmd_which   },
@@ -406,6 +412,8 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
       goto spawn;
 
     case RC_ABORT: /* Ctrl-C で終了していたら、続くコマンドは実行しない */   
+      if( ctrl_c != 0 )
+	fputs("\n^C\n",stderr);
       return RC_ABORT;
 
     default:
@@ -421,7 +429,7 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 	return rc;
     }
   }
-  
+
   if( echoflag )
     puts( buffer[curbuf] );
 

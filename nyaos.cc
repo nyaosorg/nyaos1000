@@ -4,9 +4,12 @@
 #include <ctype.h>
 #include <process.h>
 #include <sys/video.h>
+#include <sys/nls.h>
 
 #define USE_SET_WIN_TITLE 0
 
+#define INCL_RXSUBCOM
+#define INCL_RXFUNC
 #define INCL_VIO
 #define INCL_WIN
 #define INCL_DOSPROCESS
@@ -50,6 +53,7 @@ int cmd_ver( FILE *source , Parse &argv )
 {
   spawnl(P_WAIT,cmdexe_path,"CMD","/C","ver",NULL);
   puts( "Nihongo Yet Another Os/2 Shell is "VERSION );
+  puts( "compiled on "__DATE__ );
   return 0;
 }
 
@@ -173,6 +177,7 @@ int main(int argc, char **argv)
 #endif
   
   // ---- DBCS table ‚Ì‰Šú‰» ----
+
   if( dbcs_table_init() != 0 ){
     fprintf(stderr,"nyaos: DBCS init error\n");
     return -1;
@@ -370,12 +375,12 @@ int main(int argc, char **argv)
 	     "\n//  //  ////  //  //  ////  /////   ");
     }
     
-    printf("\n          Free Software           "
-	   "\n- Nihongo Yet Another Os/2 Shell -"
-	   "\n  1996,97,98,99 (c) HAYAMA,Kaoru  "
-	   "\n Ver."VERSION" compiled on "__DATE__
-	   "\n\n\x1b[0m"
-	   );
+    fputs("\n          Free Software           "
+	  "\n- Nihongo Yet Another Os/2 Shell -"
+	  "\n  1996,97,98,99 (c) HAYAMA,Kaoru  "
+	  "\n Ver."VERSION" compiled on "__DATE__
+	  "\n\n\x1b[0m"
+	  , stdout );
   }
 
  end_argv:
@@ -511,7 +516,6 @@ int main(int argc, char **argv)
     }
     
     /* ˆês“ü—Í */
-    // int rc=shell.line_input(promptstr);
     const char *top;
     int rc = shell.line_input(promptstr,">",&top);
     
@@ -552,7 +556,7 @@ int main(int argc, char **argv)
 
       case RC_ABORT:
       case Shell::ABORT:
-	// fputs("^C\n",stdout);
+	fputs("^C\n",stdout);
 	break;
 
       case 0:

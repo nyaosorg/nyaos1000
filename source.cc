@@ -31,10 +31,16 @@ static ULONG rexx_nyaos_input(PCSZ name,  ULONG argc,PRXSTRING argv,
   shell.setcursor( cursor_on_color_str , cursor_off_color_str );
   
   const char *s;
-  (void)shell.line_input(  argc >= 1 ? (char*)RXSTRPTR(argv[0]) : ""
-			 , "and.." , &s );
-  strncpy( (char*)result->strptr , s , result->strlength );
-  result->strlength = strlen( (char*)result->strptr );
+  int rc=shell.line_input(  argc >= 1 ? (char*)RXSTRPTR(argv[0]) : ""
+			  , "and.." , &s );
+
+  if( rc > 0 ){
+    strncpy( (char*)result->strptr , s , result->strlength );
+    result->strlength = strlen( (char*)result->strptr );
+  }else{
+    result->strlength = 0;
+    result->strptr    = (PUCHAR)"";
+  }
   putchar('\n');
   
   return 0;
