@@ -13,8 +13,7 @@ class Substr{
   /* 初期化 */
   Substr(void) : ptr(NULL) , len(0) { }
   Substr(const char *p,int l) : ptr(p) , len(l) { }
-  void clean()
-    { len = 0; ptr = NULL; }
+  void clean(){ len = 0; ptr = NULL; }
 
   /* テスト */
   operator const void* () const
@@ -42,18 +41,34 @@ class Substr{
 
 /* 字句解析クラス */
 class Parse{
+ public:
+  enum Terminal{
+    NOT_TERMINAL,
+    NULL_TERMINAL,	/* \0 */
+    SEMI_TERMINAL,	/* ;  */
+    AMP_TERMINAL,	/* &  */
+    AND_TERMINAL,	/* && */
+    OR_TERMINAL,	/* || */
+    PIPE_TERMINAL,	/* |  */
+    PIPEALL_TERMINAL,	/* |& */
+  };
+  static int option_semicolon_terminate;
+  static int is_terminal_char(int c)
+    { return c=='\0' || c=='&' || c=='|';  }
+ private:
   const char *sp;
 
   const char *nextcmds,*tail;
   int tailcheck();
 
-  int terminal;
+  Terminal terminal;
   int argc,limit;
 
   Substr argbase[30],*args;
   Substr redirect[3]; /* 0:stdin  1:stdout  2:stderr */
-  FILE *redirect_fp[3];
-  bool isappend;
+  int appendflag[3];
+
+  /* FILE *redirect_fp[3]; */
   FILE *output_fp , *input_fp;
   enum{ STD , PIPE , REDIRECT } pipemode;
 
@@ -63,10 +78,10 @@ class Parse{
 
 public:
   Parse(const char *source)
-    : args(argbase) , argc(0) , sp(source) , terminal(-1) , limit(30) ,err(0)
-      , output_fp(stdout) , input_fp(stdin) , pipemode(STD)
-	,isappend(false)
-	  { check(); }
+    : args(argbase) , argc(0) , sp(source) , terminal(NOT_TERMINAL) 
+      , limit(30) ,err(0)
+	, output_fp(stdout) , input_fp(stdin) , pipemode(STD)
+	{ check(); }
 
   ~Parse();
   
@@ -84,6 +99,7 @@ public:
 
   const char *get_tail(){ return tail; }
   const char *get_nextcmds(){ return nextcmds; }
+  Terminal get_terminal(){ return terminal; }
 
   int get_argc(){ return argc; }
   const char *get_argv(int n){ return n < argc ? args[n].ptr : NULL; }
@@ -104,6 +120,8 @@ public:
 
   FILE *open_stdin();
   FILE *open_stdout();
+
+  int is_append_redirect(int i)const { return appendflag[i]; }
 };
 
 class Pipe{

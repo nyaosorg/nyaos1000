@@ -6,6 +6,8 @@
 #define numof(A)  (sizeof((A))/sizeof((A)[0]))
 
 #include <stdio.h>
+#include "macros.h"
+
 class Complete;
 
 /* 最も基本的な行入力クラス。純粋仮想クラスなので、そのままでは使えない。
@@ -76,13 +78,13 @@ public:
 
   /* これらは、導出クラスへ移項すべきもの */
   virtual void complete();                 /* ^I ファイル名補完     */
-  virtual void complete_list(){};          /* ^D ファイル名リスト   */
+  virtual void complete_list(){}           /* ^D ファイル名リスト   */
   virtual int complete_hook(Complete &){ return 0; }
   /* ↑ ファイル名の他に加える候補があれば、このフック関数を導出する。*/
   
   /* カーソルを適切な位置に移動して入力待ち */
-  virtual int getkey(int wait=1);
-
+  virtual int getkey(void){ return ::getkey(); }
+  
   /* 入力文字列以外のメッセージを表示するメソッド */
   int message(const char *fmt,...);
   void cleanmsg();
@@ -97,11 +99,9 @@ public:
   static int complete_tail_char;
   
   int simple_line_input();
-  static void raw_mode();
-  static void lineedit_mode();
 };
 
-/* OS/2 特化版 Edlin (エスケープシーケンス使用) */
+/* ANSI エスケープシーケンス版 Edlin */
 class Edlin2 : public Edlin {
  protected:
   FILE *fp;
@@ -116,7 +116,7 @@ class Edlin2 : public Edlin {
   Edlin2(char *buffer, int max, int windowsize=32767, FILE *Fp=stdout )
     : Edlin(buffer,max,windowsize),fp(Fp),cursor_on(""),cursor_off("")
       { /* no-operation */ }
-  int getkey(int wait=1);
+  int getkey();
 
   void setcursor(char *on,char *off="\x1B[0m")
     { cursor_on = on ; cursor_off = off; }

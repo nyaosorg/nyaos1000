@@ -27,46 +27,34 @@ void Edlin2::putbs(int n)
     putc('\b',fp);
 }
 
-static int get_key(int wait)
-{
-  extern int get86key(int wait);
-
-  int ch = (get86key(wait) & 0xFF );
-  if( ch == 0 )
-    ch = (get86key(wait)|0x100);
-  else if( is_kanji(ch) )
-    ch = ((ch << 8)|(get86key(wait) & 0xFF));
-  return ch;
-}
-
-int Edlin2::getkey(int wait)
+int Edlin2::getkey()
 {
   if( cursor_on == NULL ){
     fflush(fp);
-    return get_key(wait);
+    return ::getkey();
   }
 
   int ch;
-
+  
   if( pos == len ){
     fprintf(fp," \b\x1b[%sm \b" , cursor_on );
 
     fflush(fp);
-    ch=get_key(wait);
+    ch=::getkey();
     
     fprintf(fp,"\x1b[%sm \b",cursor_off);
   }else if( atrbuf[pos] == DBC1ST ){
     fprintf(fp,"\x1b[%sm%c%c\b\b" , cursor_on , strbuf[pos] , strbuf[pos+1] );
 
     fflush(fp);
-    ch=get_key(wait);
+    ch=::getkey();
 
     fprintf(fp,"\x1b[%sm%c%c\b\b" , cursor_off , strbuf[pos] , strbuf[pos+1] );
   }else{
     fprintf(fp,"\x1b[%sm%c\b" , cursor_on , strbuf[pos] );
 
     fflush(fp);
-    ch=get_key(wait);
+    ch=::getkey();
 
     fprintf(fp,"\x1b[%sm%c\b" , cursor_off , strbuf[pos] );
   }

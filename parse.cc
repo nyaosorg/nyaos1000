@@ -5,33 +5,7 @@
 #include "macros.h"
 #include "parse.h"
 
-#if 0
-const char *operator >> (const char *sp,Substr &me)
-{
-  if( sp==NULL )
-    return NULL;
-
-  /* 空白のスキップ */
-  while( is_space(*sp ) )
-    ++sp;
-
-  me.ptr = sp;
-  while( *sp != '\0' && !isspace(*sp) ){
-    if( *sp == '"' ){
-      ++sp;
-      while( *sp != '\0' && *sp++ != '"' )
-	;
-    }else{
-      if( is_kanji(*sp) )
-	++sp;
-      ++sp;
-    }
-  }
-  me.len = sp - me.ptr;
-  
-  return sp;
-}
-#endif
+int Parse::option_semicolon_terminate=1;
 
 char *Substr::quote(char *dp) const
 {
@@ -71,7 +45,7 @@ void Pipe::open(const char *cmdl,const char *modestr)
   if( mode[0] == 'r' ){
     char buffer[1024];
     sprintf(buffer , "%s >%s",cmdline,tmpfname);
-    system(buffer);
+    system( buffer );
   }
   fp=fopen(tmpfname,modestr);
 }
@@ -113,27 +87,24 @@ Parse::~Parse()
 
 int Parse::check_redirect()
 {
-  int ionum;
+  int ionum = 1;
+
+  if( isdigit(*sp & 255) )
+    ionum = *sp++ - '0';
+
   if( *sp == '<' ){
     ionum = 0;
     ++sp;
   }else if( *sp == '>' ){
     if( *++sp == '>' ){
-      ionum = 2;
+      appendflag[ ionum ] = 1;
       ++sp;
-    }else{
-      ionum = 1;
     }
   }else{
     fprintf(stderr,"nyaos internal error occurs ( redirect ? )\n");
     return 1;
   }
   
-  /* >& , >>& を許容 */
-  if( *sp == '>' ){
-    isappend = true;
-    ++sp;
-  }
   if( *sp == '&' )
     ++sp;
 
@@ -141,7 +112,7 @@ int Parse::check_redirect()
     ++sp;
 
   redirect[ ionum ].ptr = sp;
-
+  
   if( tailcheck() )
     return err=-1;
 
@@ -176,41 +147,48 @@ int Parse::tailcheck ()
 {
   if( *sp=='&' ){
     tail = sp++;
-    nextcmds = (*sp=='&' ? ++sp : sp );
-    return terminal='&';
+    if( *sp == '&' ){
+      nextcmds = ++sp;
+      return terminal = AND_TERMINAL;
+    }else if( *sp == ';' ){
+      nextcmds = ++sp;
+      return terminal = SEMI_TERMINAL;
+    }else{
+      nextcmds = sp;
+      return terminal = AMP_TERMINAL;
+    }
   }
 
   if( *sp=='|' ){
     tail = sp++;
     if( *sp=='|' ){
       nextcmds = ++sp;
-      return terminal='&';
-    }else if( *sp=='&'){
+      return terminal=OR_TERMINAL;
+    }else if( *sp=='&' ){
       nextcmds = ++sp;
-      return terminal='|';
+      return terminal=PIPEALL_TERMINAL;
     }else{
       nextcmds = sp;
-      return terminal='|';
+      return terminal=PIPE_TERMINAL;
     }
   }
+
   if( *sp=='\0' ){
     tail=nextcmds=sp;
-    terminal = '\0';
-    return '0';
+    return terminal=NULL_TERMINAL;
   }
-  return 0;
+  return terminal=NOT_TERMINAL;
 }
 
 int Parse::check ()
 {
   argc = 0;
 
-  redirect[0].clean();
-  redirect[1].clean();
-  redirect[2].clean();
+  redirect[0].clean(); appendflag[0] = 0;
+  redirect[1].clean(); appendflag[1] = 0;
+  redirect[2].clean(); appendflag[2] = 0;
 
-  isappend = false;
-  terminal = -1;
+  terminal = NOT_TERMINAL;
 
   for(;;){
     if( argc+1 >= limit ){
@@ -240,7 +218,9 @@ int Parse::check ()
       return terminal;
     }
 
-    if( *sp == '<' || *sp == '>' ){
+    if(   *sp == '<' || *sp == '>'
+       || (isdigit(*sp & 255) && sp[1] == '>') ){
+      
       if( check_redirect() != 0 )
 	return err=-1;
       continue;
@@ -253,6 +233,9 @@ int Parse::check ()
 	++argc;
 	return terminal;
       }
+      if( *sp=='<' || *sp=='>' 
+	 || (isdigit(*sp & 255) && sp[1] == '>' ) )
+	break;
 
       if( *sp == '^' && *(sp+1) != '\0' ){
 	/* キャレットはヌル以外の次の機能文字を無効化する。*/
@@ -273,7 +256,7 @@ int Parse::check ()
 	  }
 	  ++sp;
 	  if( *sp=='\0' ){
-	    terminal = 0;
+	    terminal = NULL_TERMINAL;
 	    tail=nextcmds=sp;
 	    goto exit;
 	  }
@@ -302,7 +285,7 @@ FILE *Parse::open_stdout()
      * 末尾が '|' では、おかしい
      */
     
-    if( terminal == '|' ){
+    if( terminal==PIPE_TERMINAL ){
       fprintf(stderr,"to which redirects?\n");
       return NULL;
     }
@@ -310,10 +293,10 @@ FILE *Parse::open_stdout()
     char *fname = (char*)alloca( redirect[1].len+1 ); /* ! */
     redirect[1].quote(fname);
     pipemode = REDIRECT;
-    return output_fp = fopen( fname , isappend ? "a" : "w" );
+    return output_fp = fopen( fname , appendflag[1] ? "a" : "w" );
 
-  }else if( terminal == '|' ){
-
+  }else if( terminal==PIPE_TERMINAL || terminal==PIPEALL_TERMINAL ){
+    
     pipemode = PIPE;
     return output_fp = popen( nextcmds , "w" );
 
@@ -534,24 +517,3 @@ char *Parse::copyall(int n, char *dp, int flag)
   }
   return dp;
 }
-
-#if 0
-
-int main(void)
-{
-  char buffer[256];
-
-  while( fgets(buffer,sizeof(buffer),stdin) != NULL ){
-    Parse params(buffer);
-    int argc=params.get_argc();
-    printf( "argc == %d\n",argc);
-    for(int i=0 ; i<argc ; i++ ){
-      char args[128];
-      params.copy(i,args);
-      printf("argv[%d]==\"%s\"\n",i,args);
-    }
-    putchar('\n');
-  }
-  return 0;
-}
-#endif

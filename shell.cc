@@ -71,9 +71,11 @@ void ShellEdlin::complete_list()
   putchr('\n');
   
   int scrnsize[2];
-  _scrsize(scrnsize);
+  get_scrsize(scrnsize);
 
-  int files_per_line   = (scrnsize[0]-1)/(com.get_max_name_length()+2);
+  int files_per_line = 
+    scrnsize[0]-1 < com.get_max_name_length()+2
+      ? 1 : (scrnsize[0]-1)/(com.get_max_name_length()+2);
   int files_per_column = (nfiles+files_per_line-1)/files_per_line;
 
   struct filelist **ptr =
@@ -97,8 +99,9 @@ void ShellEdlin::complete_list()
 		    ptr[i]->attr & A_DIR 
 		    ? Complete::directory_split_char : ' '
 		    );
-      while( n++ < com.get_max_name_length()+2 )
-	putchr(' ');
+      if( (i+1) < files_per_line && ptr[i+1] != NULL )
+	while( n++ < com.get_max_name_length()+2 )
+	  putchr(' ');
       
       ptr[i] = ptr[i]->next;
     }

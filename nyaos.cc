@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include <time.h>
 
-#define VERSION "1.33"
+#define VERSION "1.34"
 
 // #define INCL_WINWINDOWMGR
 #define INCL_DOSFILEMGR
@@ -42,10 +42,42 @@ char *cursor_off_color_str=NULL;
 int option_nyaos_rc=1;
 int option_cmdlike_crlf=0;
 
+char comspec[128]="COMSPEC=";
+char *cmdexe_path=comspec+8;
+
 #undef CACHE
 #ifdef CACHE
 PathCache *script_cache=NULL;
 #endif
+
+static void get_scrsize_with_env(int *wh)
+{
+  const char *env;
+
+  env=getenv("COLUMNS");
+  if( env==NULL || (wh[0]=atoi(env)) <= 1 ) 
+    wh[0] = 80;
+
+  env=getenv("LINES");
+  if( env==NULL || (wh[1]=atoi(env)) <= 1 )
+    wh[1] = 25;
+}
+
+void get_scrsize(int *wh,FILE *f)
+{
+  if( f==0 )
+    f=stdout;
+
+  if( !isatty(fileno(f)) ){
+    /* ファイル出力ならば、環境変数だけを頼りにする */
+    get_scrsize_with_env(wh);
+  }else{
+    /* 端末ならば、_scrsize関数を使ってみる。*/
+    _scrsize(wh);
+    if( wh[0] <= 1  ||  wh[1] <= 1 )
+      get_scrsize_with_env(wh);
+  }
+}
 
 // ---- fgets と基本は同じ。ただ、末尾の「\n」を読み込まない点が異なる ----
 char *fgets_chop(char *dp, int max, FILE *fp)
@@ -61,48 +93,33 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   *dp = '\0';
   return dp;
 }
-#if 0
-static char **env2argv(const char *envname)
+
+/* ---- 大文字・小文字を区別した正確なファイル名を得る。
+   ---- src は見事に破壊される。 ---- */
+char *get_true_name(char *src,char *dst)
 {
-  const char *envstr=getenv(envname);
-  if( envstr == NULL )
-    return NULL;
+  /* 元の文字列は
+   *    x:\hoge\hoge
+   *    x:\
+   * のどちらかのケース。
+   */
 
-  int len=strlen(envstr);
-  char *base=malloc(len+1);
-  if( base == NULL )
-    return NULL;
-  strcpy(base,envstr);
-
-  char **argv=(char **)malloc(sizeof(char*)*(len+1));
-  int i=0;
-  char *token=strtok(base," \t\r");
-  while( token != NULL ){
-    argv[ i++ ] = token;
-    token = strtok(NULL," \t\r");
-  }
-  argv[ i ] = NULL;
-  argv = (char**)realloc( argv , sizeof(char*)*(i+1) );
-  return argv;
-}
-#endif
-
-char *getcwd_case(char *dst)
-{
-  char cwd[ FILENAME_MAX ];
-
-  *dst++ = _getdrive();
-  *dst++ = ':';
   char *dp=dst;
 
-  if( _getcwd( cwd , sizeof(cwd) ) == NULL )
-    return dp;
-  
-  /* 「x:\」までをコピーする。*/
-  char *token=strtok(cwd+1,"\\/");
+  /* ドライブ文字処理 */
+  if( isalpha(*src & 255)  &&  *(src+1)==':' ){
+    *dp++ = *src++;
+    *dp++ = *src++;
+  }
+  /* ルートディレクトリ処理 */
+  if( *src=='\\' || *src=='/' ){
+    ++src;
+    *dp++ = '\\';
+  }
+  /* サブディレクトリ名を切り出す。*/
+  char *token=strtok(src,"\\/");
   if( token != NULL ){
-    do{
-      *dp++ = '\\';
+    for(;;){
       char *p=dp;
       while( *token != '\0' )
 	*p++ = *token++;
@@ -117,13 +134,46 @@ char *getcwd_case(char *dst)
       }else{
 	dp = p;
       }
-    }while((token=strtok(NULL,"\\/"))!=NULL );
-  }else{
-    /* ルートディレクトリー only */
-    *dp++ = '\\';
+      if( (token=strtok(NULL,"\\/")) == NULL )
+	break;
+      *dp++ = '\\';
+    }
   }
   *dp = '\0';
   return dp;
+}
+void truepath( char *dst , const char *src , int size )
+{
+  char *tmp=(char*)alloca(size);
+  _abspath( tmp , src , size );
+  get_true_name( tmp , dst );
+}
+
+/* ---- 現在のカレントディレクトリを大文字・小文字も正確に得る ---- */
+char *getcwd_case(char *dst)
+{
+  char cwd[ FILENAME_MAX ];
+
+  cwd[0] = _getdrive();
+  cwd[1] = ':';
+
+  if( _getcwd( cwd+2 , sizeof(cwd)-2 ) == NULL ){
+    *dst++ = cwd[0];
+    *dst++ = cwd[1];
+    return dst;
+  }
+  
+  get_true_name(cwd,dst);
+  
+  /* 最後にルートを「/」に戻す */
+  while( *dst != '\0' ){
+    if( *dst == '\\' )
+      *dst = '/';
+    else if( is_kanji(*dst) )
+      ++dst;
+    ++dst;
+  }
+  return dst;
 }
 
 void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
@@ -176,7 +226,7 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
 		      , screen_width ,
 		      " Nihongo Yet Another Os/2 Shell "VERSION
-		      " (c) 1996,97 HAYAMA,Kaoru "
+		      " (c) 1996-98 HAYAMA,Kaoru "
 		      );
 	if( edlin != NULL )
 	  edlin->using_i_mark = 1;
@@ -245,21 +295,6 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	break;
 	
       case 'P':/* カレントディレクトリ */
-#if 0
-	*dp++ = _getdrive();
-	*dp++ = ':';
-	/* unsigned */ char cwd[256];
-	
-	/* ULONG bufsize;
-	 * bufsize=sizeof(cwd);
-	 * if( DosQueryCurrentDir(0,cwd,&bufsize) == 0 ){
-	 */
-	if( (sp=_getcwd(cwd,sizeof(cwd))) != NULL ){
-	  /* char *sp=(char*)cwd; */
-	  while( *sp != '\0' )
-	    *dp++ = *sp++;
-	}
-#endif
 	dp = getcwd_case(dp);
 	break;
 	
@@ -280,6 +315,24 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	  dp += sprintf(dp,"PC DOS Version is %d.%d"
 			, _osmajor , _osminor );
 	break;
+
+      case 'Z':
+	switch( ++promptenv , to_upper(*promptenv) ){
+	case 'H': /* ヒストリ番号 */
+	  dp += sprintf(dp,"%d",nhistories);
+	  break;
+
+	case 'V': /* ボリュームラベル */
+	  sp = _getvol(0);
+	  if( sp != NULL ){
+	    while( *sp != '\0' )
+	      *dp++ = *sp++;
+	  }
+	  break;
+	case '\0':
+	  goto promptend;
+	}
+	break;
       }
       promptenv++;
     }else{
@@ -293,6 +346,12 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 
 int main(int argc, char **argv)
 {
+  if( _osmode != OS2_MODE ){
+    fputs("NYAOS : Current Version of NYAOS does not support DOS/VDM.\n"
+	  , stderr );
+    return -1;
+  }
+
   char directory[FILENAME_MAX];
   char thename[FILENAME_MAX];
 
@@ -319,29 +378,13 @@ int main(int argc, char **argv)
   // 動作がおかしくなるので、
   // CMD.EXE に切り換えさせる。 
   // ----------------------------------------
-  const char *shellname=getenv("COMSPEC");
-  if(   shellname != NULL
-     && (   strstr(shellname,"nyaos") != NULL
-	 || strstr(shellname,"NYAOS") != NULL )){
-
-    static char comspec[256];
-    auto char cmdexe_path[100];
-    
-    if( _path(cmdexe_path,"CMD.EXE") != 0 ){
-      fprintf(stderr,"NYAOS: can not find cmd.exe.");
-      return -1;
-    }
-    /* 念の為、forward-slash を back-slash に変えておく。*/
-    for(char *p=cmdexe_path ; *p != '\0' ; p++ ){
-      if( *p == '/' )
-	*p == '\\';
-      else if( is_kanji(*p) )
-	++p;
-    }
-    sprintf(comspec,"COMSPEC=%s",cmdexe_path);
-    putenv(comspec);
+  if( SearchEnv("CMD.EXE","PATH",cmdexe_path) == 0 ){
+    fputs("nyaos: can not find cmd.exe.\n"
+	  "       Please put cmd.exe on %PATH%\n",stderr );
+    return -1;
   }
-  
+  putenv(comspec);
+
   // -------- オプション分析 ----------
 
   int quite_mode=0;
@@ -430,9 +473,9 @@ int main(int argc, char **argv)
     
     printf("\n          Free Software           "
 	   "\n- Nihongo Yet Another Os/2 Shell -"
-	   "\n     1996,97 (c) HAYAMA,Kaoru     "
+	   "\n   1996,97,98 (c) HAYAMA,Kaoru    "
 	   "\n Ver."VERSION" compiled on "__DATE__
-	   "\n\n"
+	   "\n\n\x1b[0m"
 	   );
   }
 
@@ -586,12 +629,13 @@ int main(int argc, char **argv)
 	// ---- CTRL-Z などによる終了 ----
 	fputs("\nGood bye!\n",stdout);
 	return 0;
+      case RC_ABORT:
       case Shell::ABORT:
 	fputs("^C\n",stdout);
 	break;
       defalt:
 	fputs("\nUnknown error occuerd.\n"
-	      "Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp\n"
+	      "Please mail to kaoru@cheme.kyoto-u.ac.jp\n"
 	      , stdout );
 	break;
       }

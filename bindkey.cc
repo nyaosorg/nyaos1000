@@ -315,7 +315,7 @@ Shell::Status Shell::backward_word()
 
 int Shell::line_input(const char *prompt,int window)
 {
-  Edlin::raw_mode();
+  raw_mode();
   ed.setprompt(prompt,window);
   fputs(prompt,stdout);
   fflush(stdout);
@@ -326,7 +326,7 @@ int Shell::line_input(const char *prompt,int window)
       Status rc=(this->*bindmap[ch])();
       switch( rc ){
       case TERMINATE:
-	Edlin::lineedit_mode();
+	cocked_mode();
 	return ed.length();
 	
       case CONTINUE:
@@ -334,7 +334,7 @@ int Shell::line_input(const char *prompt,int window)
 	continue;
 
       default:
-	Edlin::lineedit_mode();
+	cocked_mode();
 	return rc;
       }
     }else{
@@ -673,7 +673,7 @@ Shell::Status Shell::search_engine(int isrev=1)
 	       ,sekstr
 	       ,(cur==NULL ? "" : cur->buffer) );
 
-    unsigned key=ed.getkey(1);
+    unsigned key=ed.getkey();
 
     if( key < 0 || key > 0x1FF 
        || (bindmap[ key ] == self_insert && isprint(key & 255) )){

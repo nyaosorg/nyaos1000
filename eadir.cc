@@ -48,6 +48,8 @@ enum{
   HALF_MODE	= 0x20,
   IGNORE_BACKUP	= 0x40,
   RECURSIVE_MODE= 0x80,
+  
+  LAST_COLUMNS  = 0x200,
 
   SORT_MODES	= 16, /* bit */
 };
@@ -196,7 +198,7 @@ static int dbcs_fputs(const char *s,FILE *fout)
   return i;
 }
 
-void more(int flag,FILE *fout)
+static void more(int flag,FILE *fout)
 {
   if( (flag & HALF_MODE)!=0 && (fout==stdout || fout==stderr) ){
     fflush(fout);
@@ -213,7 +215,10 @@ void more(int flag,FILE *fout)
 
     fprintf(fout,"%s[more]",ls_end_code);
     fflush(fout);
-    (void)getch();
+    raw_mode();
+    if( getkey() == ('C' & 0x1F) )
+      ctrl_c = 1;
+    cocked_mode();
     fputs("\r      \r",fout);
     nprintlines=0;
   }
@@ -271,7 +276,6 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
   if( flag & COLOR_MODE )
     fputs(ls_end_code,fout);
 
-
   int ncolumns=0;
 
   /* lsモードの時は、このブロックだけで return する */
@@ -286,16 +290,18 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
     putc(tailchar,fout);
 
     int i=strlen(flist->name);
-    while( i < max_length+1 ){
-      ++i;
-      putc(' ',fout);
+    if( (flag & LAST_COLUMNS)==0 ){
+      while( i < max_length+1 ){
+	++i;
+	putc(' ',fout);
+      }
     }
     column += i;
     return;
   }
 
   if( (flag & PRINT_MASK) != INDEX_MODE ){
-    ncolumns += fprintf(fout,"%s %10ld %4d-%02d-%02d %02d:%02d:%02d "
+    ncolumns += fprintf(fout,"%s %8ld %4d-%02d-%02d %02d:%02d "
 			, attrstr
 			, flist->size
 			, flist->d.year+1980
@@ -303,7 +309,7 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 			, flist->d.day
 			, flist->t.hour
 			, flist->t.minute
-			, flist->t.second*2
+			/* , flist->t.second*2 */
 			);
   }
   
@@ -360,7 +366,7 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 	
 	int nspaces = screen_width - ncolumns - n ;
 	if( nspaces < 0 ){
-	  putc( '\n' , fout );
+	  more(flag,fout);
 	  nspaces = screen_width - n;
 	}
 
@@ -369,17 +375,14 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 	
 	if( flag & COLOR_MODE ){
 	  fputs( ls_left_code , fout );
-	  dbcs_fputs( ls_longname , fout );
+	  fputs( ls_longname , fout );
 	  fputs( ls_right_code , fout );
+	  dbcs_fputs( s , fout );
 	  fputs( ls_end_code , fout );
-	  /* 
-	   * fprintf(fout,"%s%s%s%s%s",
-	   * ls_left_code,ls_longname,ls_right_code,s,ls_end_code);
-	   */
-	}
-	else
+	}else{
 	  while( *s != '\0' )
 	    putc( *s++ , fout );
+	}
       }
     }
     _ea_free( &ea );
@@ -445,8 +448,11 @@ int print_filelist(struct filelist *cur, int nlists,
     return 0;
 
   if( (flag & PRINT_MASK)==LS_MODE ){
+    int files_per_line = 
+      ( screen_width-1 < max_length+2 ? 1:(screen_width-1)/(max_length+2) );
+    
+/*  ( screen_width-1 < max_length+2 ? 1:(screen_width-1)/(max_length+2) );*/
 
-    int files_per_line   = (screen_width-1)/(max_length+2);
     int files_per_column = (nlists+files_per_line-1)/files_per_line; /* >= 1 */
     
     struct filelist **ptr =
@@ -475,7 +481,10 @@ int print_filelist(struct filelist *cur, int nlists,
 	if( ctrl_c )
 	  return nlists;
 	
-	dir1(ptr[i], max_length , flag , fout );
+	dir1(ptr[i], max_length 
+	     , (i+1)==files_per_line || ptr[i+1] == NULL
+	     ? (flag | LAST_COLUMNS) : flag 
+	     , fout );
 	ptr[i] = ptr[i]->next;
 	
 	while( ptr[i] != NULL && !is_file_print(ptr[i],flag) )
@@ -564,10 +573,10 @@ int the_dir(const char *dirname,int flag , FILE *fout )
     if( flag & COLOR_MODE )
       fprintf( fout, "\n%s%s:\n",ls_end_code , fullpath );
     else{
-      putc('\n',fout);
+      more(flag,fout);
       dbcs_fputs(fullpath,fout);
       putc(':',fout);
-      putc('\n',fout);
+      more(flag,fout);
       /* fprintf( fout, "\n%s:\n", fullpath ); */
     }
 
@@ -583,26 +592,28 @@ static int exit_with_ctrl_c()
   fputs("\n^C\n",stderr);
   ctrl_c = 0;
   signal(SIGINT,ctrl_c_signal);
-  return 0;
+  return RC_ABORT;
 }
 
 int call_original_ls( char **argv,FILE *fout=stdout)
 {
+  int rc;
   if( fout != stdout ){
     int org_stdout=dup(1);
     dup2(fileno(fout),1);
-    spawnvp(P_WAIT,"ls.exe",argv);
+    rc=spawnvp(P_WAIT,"ls.exe",argv);
     close(1);
     dup2(org_stdout,1);
     close(org_stdout);
   }else{
-    spawnvp(P_WAIT,"ls.exe",argv);
+    rc=spawnvp(P_WAIT,"ls.exe",argv);
   }
-  return 0;
+  return rc;
 }
 
 int eadir( int argc, char **argv,FILE *fout=stdout)
 {
+  int rc=0;
   int flag=0;
   nprintlines=0;
 
@@ -698,7 +709,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 
 	default:
 	  call_original_ls( argv , fout );
-	  return 0;
+	  return rc;
 	}/* end switch */
       }/* end for */
 
@@ -738,6 +749,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	    }
 	  }else{
 	    fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
+	    rc = 1;
 	    filefault++;
 	  }
 	}
@@ -781,6 +793,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  }
 	}else{
 	  fprintf(stderr,"%s: no such file or directory\n",argv[i]);
+	  rc = 1;
 	  filefault++;
 	}
       }// _fnexplode で展開できない場合の処理
@@ -802,7 +815,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 		     , flag | HIDDEN_MODE , fout );
 
       if( dircount > 0 )
-	putc('\n',fout);
+	more(flag,fout);
     }
     struct filelist *p=dirs;
     if( p != NULL ){
@@ -814,7 +827,8 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	    fputs( " : \n",fout);
 	  }else{
 	    dbcs_fputs(p->name,fout);
-	    fputs(" : \n",fout);
+	    fputs(" : ",fout);
+	    more(flag,fout);
 	  }
 	}
 	
@@ -824,7 +838,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 
 	if( (p=p->next) == NULL ) break;
 	
-	putc('\n',fout);
+	more(flag,fout);
       }
     }
 
@@ -843,5 +857,5 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     fputs( ls_end_code ,fout);
 
   fflush(fout);
-  return 0;
+  return rc;
 }

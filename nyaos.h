@@ -7,8 +7,9 @@
 /**** "callcmd.cc" ****/
 
 enum{
-  RC_HOOK = -32767,
-  RC_QUIT = -32768,
+  RC_QUIT = -32768,  /* exit コマンドなど */
+  RC_HOOK = -32767,  /* 内蔵コマンドは別のコマンドへのフィルター */
+  RC_ABORT= -32766,  /* Ctrl-C が押された */
 };
 
 extern int screen_width , screen_height ;
@@ -65,10 +66,6 @@ extern int scriptflag,option_sos;
 void alias_replace(const char *sp,char *dp);
 int replace_script( const char *source , char *destinate );
 
-#if 0
-extern int prompt_myself;
-extern int option_fastmode;
-#endif
 extern int option_tilda_is_home;
 extern int option_replace_slash_to_backslash_after_tilda;
 int replace_envvar( const char *source , char *destinate );
@@ -77,7 +74,11 @@ void buildin_command_to_complete_table(void);
 extern int option_vio_cursor_control;
 extern int option_prompt_even_piped;
 extern int option_cmdlike_crlf;
+extern char *cmdexe_path;
 
-/**** bindkey.cc *****/
+/* NYAOS.CC */
+void truepath( char *dst , const char *src , int size );
+char *getcwd_case(char *dst);
+void get_scrsize(int *wh,FILE *f=0);
 
 #endif

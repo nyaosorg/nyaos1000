@@ -6,10 +6,56 @@
 #include <sys/nls.h>
 #include "macros.h"
 #include "finds.h"
+#include "Parse.h"
 
 int scriptflag=1;
 int option_amp_start=1;
 int option_sos=0;
+
+
+// ファイル名を、'/' <--> '\\' 変換しながら、コピーする
+// 空白や、ヌルをファイル名末尾とみなす。
+
+enum{
+  SPACE_TERMINATE	= 1,
+  SLASH_DEMILITOR	= 2,
+  BACKSLASH_DEMILITOR	= 4,
+};
+
+static void copy_filename(  const char *sp , char *dp
+			  , const char **sp_tail=NULL 
+			  , char **dp_tail=NULL 
+			  , int flag=SPACE_TERMINATE )
+{
+  while( ! Parse::is_terminal_char(*sp)
+	&& ! ((flag & SPACE_TERMINATE)!=0 && is_space(*sp)) ){
+
+    /* コマンド名 : "/"-->"\\"に置換 */
+    if( *sp == '"' ){
+      do{
+	*dp++ = *sp++;
+	if( *sp == '\0' )
+	  goto exit;
+      }while( *sp != '"' );
+    }
+    if( *sp == '/' && (flag & BACKSLASH_DEMILITOR) !=0 ){
+      *dp++ = '\\';
+      sp++;
+    }else if( *sp == '\\' && (flag & SLASH_DEMILITOR) !=0 ){
+      *dp++ = '/';
+      sp++;
+    }else{
+      if( is_kanji(*sp) )
+	*dp++ = *sp++;
+      *dp++ = *sp++;
+    }
+  }
+ exit:
+  *dp = '\0';
+  if( sp_tail != NULL ) *sp_tail = sp;
+  if( dp_tail != NULL ) *dp_tail = dp;
+}
+
 
 // copyargs :
 //	全ての引数をコピーする
@@ -18,7 +64,7 @@ int option_sos=0;
 static void copyargs(  const char *sp       , char *dp
 		     , const char **sp_tail , char **dp_tail )
 {
-  while( *sp != '\0' && *sp != '&' && *sp != '|' ){
+  while( ! Parse::is_terminal_char(*sp) ){
     if( *sp == '"' ){
       do{
 	if( is_kanji(*sp) )
@@ -43,7 +89,7 @@ static void copyargs(  const char *sp       , char *dp
 
 static void skipargs(  const char *&sp )
 {
-  while( *sp != '\0' && *sp != '&' && *sp != '|' ){
+  while( ! Parse::is_terminal_char(*sp) ){
     if( *sp == '"' ){
       do{
 	if( is_kanji(*sp) )
@@ -102,7 +148,7 @@ static int sos(const char *&sp , char *&dp ,  const char *path )
     }else{
       switch( ch=getc(fp) ){
       case '0':
-	dp = strcpy_tail(dp,path);
+	copy_filename( path , dp , NULL , &dp , SLASH_DEMILITOR);
 	break;
       case '@':
 	copyargs(sp,dp,NULL,&dp);
@@ -158,49 +204,6 @@ static int insert_interpretor(const char *fname , char *&dp)
   return 0;
 }
 
-// ファイル名を、'/' <--> '\\' 変換しながら、コピーする
-// 空白や、ヌルをファイル名末尾とみなす。
-
-enum{
-  SPACE_TERMINATE	= 1,
-  SLASH_DEMILITOR	= 2,
-  BACKSLASH_DEMILITOR	= 4,
-};
-
-static void copy_filename(  const char *sp , char *dp
-			  , const char **sp_tail=NULL 
-			  , char **dp_tail=NULL 
-			  , int flag=SPACE_TERMINATE )
-{
-  while(    *sp != '\0' && *sp != '|' && *sp != '&' 
-	&& ! ((flag & SPACE_TERMINATE)!=0 && is_space(*sp)) ){
-
-    /* コマンド名 : "/"-->"\\"に置換 */
-    if( *sp == '"' ){
-      do{
-	*dp++ = *sp++;
-	if( *sp == '\0' )
-	  goto exit;
-      }while( *sp != '"' );
-    }
-    if( *sp == '/' && (flag & BACKSLASH_DEMILITOR) !=0 ){
-      *dp++ = '\\';
-      sp++;
-    }else if( *sp == '\\' && (flag & SLASH_DEMILITOR) !=0 ){
-      *dp++ = '/';
-      sp++;
-    }else{
-      if( is_kanji(*sp) )
-	*dp++ = *sp++;
-      *dp++ = *sp++;
-    }
-  }
- exit:
-  *dp = '\0';
-  if( sp_tail != NULL ) *sp_tail = sp;
-  if( dp_tail != NULL ) *dp_tail = dp;
-}
-
 int replace_script( const char *sp , char *dp )
 {
   for(;;){
@@ -222,7 +225,8 @@ int replace_script( const char *sp , char *dp )
 	case '&':
 	  while( is_space(*++p) )
 	    ;
-	  if( *p != '&' ){ /* 「&&」でない「&」なら start を挿入 */
+	  if( *p != '&' && *p != ';' ){
+	    /* 「&&」,「&;」でない「&」なら start を挿入 */
 	    char *s = "start ";
 	    while( *s != '\0' )
 	      *dp++ = *s++;
@@ -263,7 +267,7 @@ int replace_script( const char *sp , char *dp )
       
       int type=SearchEnv(fname,"SCRIPTPATH",path);
       
-      if( type == FILE_EXISTS ){
+      if( type==FILE_EXISTS ){
 	// --- おそらく、スクリプト ---
 	insert_interpretor(path,dp);
 	/* dp = strcpy_tail(dp,path); */
@@ -272,7 +276,8 @@ int replace_script( const char *sp , char *dp )
       }else if( type != COM_FILE  || sos(sp,dp,path) != 0 ){
 	// --- OS/2 の実行ファイル ---
 	/* dp = strcpy_tail(dp,path); */
-	copy_filename(path,dp,NULL,&dp, BACKSLASH_DEMILITOR );
+	copy_filename(fname,dp,NULL,&dp, BACKSLASH_DEMILITOR );
+	/* 上の fname を path に変えれば、SCRIPTPATH を PATH と同じにできる。*/
 	copyargs(sp,dp,&sp,&dp);
       }
     }else{
@@ -295,6 +300,8 @@ int replace_script( const char *sp , char *dp )
       *dp++ = *sp++;
       if( *sp == '&' )
 	*dp++ = *sp++;
+      else if( *sp == ';' )
+	++sp;
     }
     if( *sp=='\0' )
       break;

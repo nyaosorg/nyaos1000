@@ -1,3 +1,4 @@
+/* -*- c++ -*- */
 #ifndef MACROS_H
 #define MACROS_H
 
@@ -30,5 +31,17 @@ enum{
 };
 
 int SearchEnv(const char *fname,const char *envname,char *path);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+  void raw_mode(void);
+  void cocked_mode(void);
+  int get86key(void);
+  int getkey(void);
+#ifdef __cplusplus
+}
+#endif
+
 
 #endif

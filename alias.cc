@@ -98,7 +98,7 @@ void alias_replace(const char *sp , char *destinate  )
 	      *dp++ = '%';
 	      break;
 
-	    case '\\':case '/':/* case ';': */
+	    case '\\':case '/':
 	      if( dp==destinate || (dp[-1] != '\\' && dp[-1] != '/') )
 		*dp++ = *spa;
 	      spa++;
@@ -123,6 +123,8 @@ void alias_replace(const char *sp , char *destinate  )
 	if( redirect[1] != NULL ){
 	  *dp++ = ' ';
 	  *dp++ = '>';
+	  if( params.is_append_redirect(1) )
+	    *dp++ = '>';
 	  redirect[1] >> dp;
 	  dp += redirect[1].len;
 	}
@@ -130,6 +132,8 @@ void alias_replace(const char *sp , char *destinate  )
 	  *dp++ = ' ';
 	  *dp++ = '2';
 	  *dp++ = '>';
+	  if( params.is_append_redirect(2) )
+	    *dp++ = '>';
 	  redirect[2] >> dp;
 	  dp += redirect[2].len;
 	}

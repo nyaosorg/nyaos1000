@@ -13,12 +13,13 @@
 #include "nyaos.h"
 
 extern int option_cd_goto_home;
-
+extern int option_debug_echo;
 static int option_dir_tail_is_forward_slash;
 
 extern int option_amp_start;
 extern int option_tilda_is_home;
 extern int option_tcshlike_history;
+extern int option_dots;
 
 int echoflag=0;
 
@@ -101,8 +102,10 @@ int cmd_rmdir( FILE *source, Parse &params )
     cut_tail_root(dirname);
     if( rmdir(dirname) != 0 ){
       fprintf(stderr,"nyaos: cannot remove directory `%s'\n",dirname);
+      return 1;
     }
   }
+  return 0;
 }
 
 int cmd_mkdir( FILE *source , Parse &params)
@@ -114,15 +117,17 @@ int cmd_mkdir( FILE *source , Parse &params)
     cut_tail_root(dirname);
     if( mkdir(dirname,0777) != 0 ){
       fprintf(stderr,"nyaos: cannot make directory `%s'\n",dirname);
+      return 1;
     }
   }
+  return 0;
 }
 
 int cmd_comment(FILE *source, Parse &params)
 {
   if( params.get_argc() < 2 ){
     fprintf(stderr,"comment filename comment...\n");
-    return 0;
+    return 1;
   }
 
   char *fname=(char*)alloca(params.get_length(1)+1);
@@ -170,7 +175,6 @@ struct{
   { "amp_start"            , &option_amp_start                 , 1  , 0 },
   { "anywhere_history"     , &option_tcshlike_history          , 1  , 0 },
   { "beep"                 , &ShellEdlin::beep_ok              , 1  , 0 },
-  { "echo"                 , &echoflag                         , 1  , 0 },
   { "complete_hidden"      , &Complete::complete_hidden_file   , 1  , 0 },
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
   { "complete_tilda"       , &Complete::complete_tail_tilda    , 1  , 0 },
@@ -178,12 +182,16 @@ struct{
   { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
   { "cmdlike_crlf"         , &option_cmdlike_crlf              , 1  , 0 },
+  { "debug"                , &option_debug_echo                , 1  , 0 },
+  { "dots"                 , &option_dots                      , 1  , 0 },
+  { "echo"                 , &echoflag                         , 1  , 0 },
 #if 0
   { "fast"                 , &option_fastmode                  , 1  , 0 },
 #endif
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
   { "prompt_even_piped"    , &option_prompt_even_piped         , 1  , 0 },
   { "script"               , &scriptflag                       , 1  , 0 },
+  { "semicolon"            , &Parse::option_semicolon_terminate, 1  , 0 },
   { "sos"                  , &option_sos                       , 1  , 0 },
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
   { "slash_to_backslash_after_tilda"
@@ -225,6 +233,7 @@ int cmd_option(FILE *source, Parse &params)
       }
     }
     fprintf(fout,"%s : no such option.\n",name);
+    return 1;
     
   next:
     ;

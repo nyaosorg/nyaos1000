@@ -9,6 +9,7 @@
 int option_tilda_is_home=1;
 int option_replace_slash_to_backslash_after_tilda=1;
 int option_tcshlike_history=0;
+int option_dots=1;
 
 static struct PublicHistory {
   const char *string;
@@ -76,7 +77,93 @@ char *insert_env(const char *env,char *dp)
   return dp;
 }
 
-char *replace_envvar(const char *sp, char *_dp );
+static char *word_designator(const char *&sp , const char *histring ,
+			     char *dp )
+{
+  /* sp は、':' の後にあるとする */
+
+  Parse argv(histring);
+  int argc=argv.get_argc();
+
+  if( *sp=='$' ){
+    ++sp;
+
+    argv[ argc-1 ] >> dp;
+    return dp + argv[ argc-1 ].len;
+
+  }else if( *sp=='^' ){
+    ++sp;
+
+    if( 1 < argc ){
+      argv[ 1 ] >> dp;
+      return dp + argv[ 1 ].len;
+    }else{
+      return dp;
+    }
+
+  }else if( *sp=='*' ){
+    ++sp;
+    
+    for( int i=1 ; i<argc ; i++ ){
+      argv[ i ] >> dp;
+      dp += argv[ i ].len;
+      *dp++ = ' ';
+    }
+    return dp;
+
+  }else if( *sp=='-' && isdigit(sp[1] & 255) ){
+    ++sp;
+    
+    int n=0;
+    do{
+      n = n*10 + (*sp-'0');
+    }while( isdigit( *++sp & 255 ) );
+    
+    if( n >= argc )
+      n = argv.get_argc()-1;
+
+    for(int i=0 ; i<=n ; i++ ){
+      argv[ i ] >> dp;
+      dp += argv[ i ].len;
+      *dp++ = ' ';
+    }
+    return dp;
+
+  }else if( isdigit(*sp) ){
+
+    int n=0;
+    do{
+      n = n*10 + (*sp-'0');
+    }while( isdigit(*++sp & 255) );
+      
+    if( n < argc ){
+      argv[ n ] >> dp;
+      dp += argv[ n ].len ;
+    }
+
+    if( *sp == '-' ){
+      int end=0;
+      if( isdigit( *++sp & 255 ) ){
+	do{
+	  end = end*10 + (*sp-'0');
+	}while( isdigit( *++sp & 255) );
+	if( end >= argc-1 )
+	  end = argc-1;
+      }else{
+	end = argc-1;
+      }
+      while( ++n <= end ){
+	*dp++ = ' ';
+	argv[ n ] >> dp;
+	dp += argv[ n ].len;
+      }
+    }
+    return dp;
+  }
+  while( *histring != '\0' )
+    *dp++ = *histring++;
+  *dp = '\0';
+}
 
 static char *history_copy(const char *&sp, char *dp )
 {
@@ -84,11 +171,17 @@ static char *history_copy(const char *&sp, char *dp )
   const char *histring=0;
   
   switch( *++sp ){
+
   case '!':
+    sp++;
+  case '*':
+  case ':':
+  case '$':
+  case '^':
+
     histring = get_hist_r(0);
     if( histring == NULL )
       fprintf(stderr,"! : Event not found.\n");
-    sp++;
     break;
 
   default:
@@ -141,7 +234,23 @@ static char *history_copy(const char *&sp, char *dp )
     break;
   }/* end of switch */
 
-  return (histring != NULL ? replace_envvar(histring,dp) : dp) ;
+  if( histring == NULL )
+    return dp;
+
+  switch( *sp ){
+  case ':':
+    ++sp;
+  case '^':
+  case '$':
+  case '*':
+    return word_designator( sp , histring , dp );
+    
+  default:
+    while( *histring != '\0' )
+      *dp++ = *histring++;
+    *dp = '\0';
+    return dp;
+  }
 }
 
 char *replace_envvar(const char *sp, char *_dp )
@@ -187,6 +296,31 @@ char *replace_envvar(const char *sp, char *_dp )
       quote ^= 1;
       break;
       
+    case ';': /* 空白＋「；」を「&;」に変換する */
+      ++sp;
+      if( Parse::option_semicolon_terminate && !quote && is_space(prevchar) ){
+	*dp++ = '&';
+      }
+      *dp++ = ';';
+      continue;
+
+    case '.': /* 空白＋「...」を「..\..」に変換する */
+      if(   option_dots && !quote
+	 && is_space(prevchar) && sp[1]=='.' && sp[2]=='.' ){
+	
+	++sp;
+	/* sp は二つ目の . を差している。*/
+	for(;;){
+	  *dp++ = '.';
+	  *dp++ = '.';
+	  if( *++sp != '.' )
+	    break;
+	  *dp++ = '\\';
+	}
+	continue;
+      }
+      break;
+
     case '~':
       if( option_tilda_is_home  &&  !quote  &&  is_space(prevchar) ){
 	if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
@@ -279,7 +413,7 @@ char *replace_envvar(const char *sp, char *_dp )
 
   if( is_history_refered == 0 ){
     PublicHistory *tmp=new PublicHistory;
-    if( tmp != NULL  &&  (tmp->string = Shell::get_nth_history(0))!=NULL ){
+    if( tmp != NULL  &&  (tmp->string = strdup(_dp))!=NULL ){
       tmp->prev = public_history ;
       tmp->next = public_history->next ;
       public_history = public_history->next = tmp ;

@@ -1,5 +1,9 @@
 #define INCL_WINWORKPLACE
 #define INCL_DOSNLS
+#define INCL_WINWINDOWMGR
+#define INCL_WINSWITCHLIST
+#define INCL_WINMESSAGEMGR
+#define INCL_WINFRAMEMGR
 #include <os2.h>
 
 /* for stat() */
@@ -19,25 +23,123 @@
 #include "nyaos.h"
 #include "parse.h"
 
-#if 0
-enum{
-  HAVE_ROOT = 1,
-  HAVE_DOT  = 2,
+int is_hab_initd=0;
+HAB hab;
+
+class SwitchList{
+  int count;
+  PSWBLOCK pswblock;
+public:
+  SwitchList();
+  ~SwitchList(){ free(pswblock); }
+
+  SWENTRY &operator[] (int n){ return pswblock->aswentry[n]; }
+  int N() const { return count; }
 };
 
-int how_filename(const char *p)
+SwitchList::SwitchList()
 {
-  int rc=0;
-  for(; *p != '\0' ; p++){
-    if( *p == ':' || *p=='\\' || *p=='/' ){
-      rc = HAVE_ROOT;
-    }else if( *p == '.' ){
-      rc |= HAVE_DOT;
+  if( ! is_hab_initd ){
+    hab = WinInitialize(0);
+    is_hab_initd = 1;
+  }
+  count = WinQuerySwitchList(hab,NULL,0);
+  int size = count*sizeof(SWENTRY) + sizeof( ULONG );
+  
+  pswblock = (PSWBLOCK)malloc( size );
+  if( pswblock != NULL ){
+    WinQuerySwitchList(hab,pswblock,size);
+  }else{
+    count = 0;
+  }
+}
+
+int cmd_jobs(FILE *source , Parse &argv )
+{
+  SwitchList slist;
+  
+  const static char *progtype[] = {
+    "DEF" , "FUL" , "VIO/W" , "PM" ,
+    "VDM" , "???" , "???"   , "VDM/W" };
+
+  FILE *fout=argv.open_stdout();
+
+  fprintf(fout,
+	  "%2s%5s%4s %-3s %-5s Title\n"
+	  , "No"
+	  , "PID"
+	  , "SID"
+	  , "VIS"
+	  , "TYPE"
+	  );
+
+  for(int i=0; i<slist.N() ; i++ ){
+    if( slist[i].swctl.fbJump == SWL_NOTJUMPABLE )
+      continue;
+    
+    int top=
+      fprintf(fout,
+	      "%2d%5d%4d %-3s %-5s "
+	      , i
+	      , slist[i].swctl.idProcess
+	      , slist[i].swctl.idSession
+	      , ( slist[i].swctl.uchVisibility == SWL_VISIBLE 
+		 ? "YES"
+		 : (slist[i].swctl.uchVisibility == SWL_INVISIBLE
+		    ? "NO" : "???" ) )
+	      , (  slist[i].swctl.bProgType > 8 
+		 ? "???" : progtype[ slist[i].swctl.bProgType ] )
+	      );
+    
+    for(const char *p=slist[i].swctl.szSwtitle ; *p != '\0' ; p++ ){
+      putc( *p , fout );
+      if( *p == '\n' )
+	for(int j=0;j<top;j++)
+	  putc( ' ' , fout );
+    }
+    putc( '\n' ,fout);
+  }
+  return 0;
+}
+
+static int cmd_fg_bg( Parse &argv , BOOL fSuccess )
+{
+  SwitchList slist;
+
+  for(int i=1;i<argv.get_argc() ; i++ ){
+    if( isdigit(*argv[i].ptr & 255) ){
+      int x=atoi(argv[i].ptr);
+      if( x < slist.N() ){
+	if( fSuccess != FALSE )
+	  WinSwitchToProgram(slist[x].hswitch);
+	WinShowWindow( slist[x].swctl.hwnd , fSuccess );
+      }    
+    }else{
+      char *title=(char*)alloca( argv[i].len + 1 );
+      argv[i].quote(title);
+
+      for(int j=0;j<slist.N();j++){
+	if( strstr( slist[j].swctl.szSwtitle , title ) != NULL ){
+	  if( fSuccess != FALSE )
+	    WinSwitchToProgram(slist[j].hswitch);
+	  WinShowWindow( slist[j].swctl.hwnd , fSuccess );
+	  break;
+	}
+      }
     }
   }
-  return rc;
+  return 0;
 }
-#endif
+
+int cmd_fg(FILE *source , Parse &argv )
+{
+  return cmd_fg_bg( argv , TRUE );
+}
+
+int cmd_bg(FILE *source , Parse &argv )
+{
+  return cmd_fg_bg( argv , FALSE );
+}
 
 int eadir( int argc, char **argv,FILE *fout=stdout);
 int wrdcmp(const char *s1,const char *s2);
@@ -126,10 +228,11 @@ int cmd_which( FILE *source , Parse &params )
   return 0;
 }
 
-static void the_open( char *fname , const char *setup_string )
+static void the_open( char *fname , const char *setup_string , int active )
 {
   char *p=fname;
   char *lastp=NULL , *last2p=NULL;
+  const char *title;
 
   while( *p != '\0' ){
     last2p = lastp;
@@ -151,7 +254,11 @@ static void the_open( char *fname , const char *setup_string )
   
   HOBJECT hObject=WinQueryObject( (PSZ)fname );
   WinSetObjectData( hObject , (PCSZ) setup_string );
+  if( active )
+    WinSetObjectData( hObject , (PCSZ) setup_string );
 }
+extern char *getcwd_case(char *dst);
+extern void truepath(char *dst,const char *src,int size);
 
 int cmd_open( FILE *source , Parse &params )
 {
@@ -160,6 +267,7 @@ int cmd_open( FILE *source , Parse &params )
   BOOL flag=TRUE; /* すでに open しているウインドウを利用するのか？*/
   const char *setup_string="OPEN=DEFAULT";
   int nopens=0;
+  int active = 0;
 
   FILE *fout=params.open_stdout();
 
@@ -170,6 +278,10 @@ int cmd_open( FILE *source , Parse &params )
       switch( arg[1] ){
       default:
 	fprintf(fout,"open: bad option `%s'\n",arg);
+	break;
+
+      case 'a':
+	active ^= 1;
 	break;
 	
       case 'p': /* プロパティーオプション */
@@ -213,7 +325,7 @@ int cmd_open( FILE *source , Parse &params )
       int len=params.get_length(i);
       char *fname=(char*)alloca(len+3);
       char absfname[512];
-
+      
       params.copy(i,fname);
       if( fname[0] == '[' ){
 	fname[0] = '<';
@@ -237,19 +349,20 @@ int cmd_open( FILE *source , Parse &params )
 	}
 	fname[ len-1 ] = '>';
       }else{
-	_abspath( absfname , fname , sizeof(absfname) );
+	truepath( absfname , fname , sizeof(absfname) );
 	fname = absfname;
       }
+      
       fprintf(fout,"open %s\n", fname );
-      the_open(fname , setup_string );
+      the_open(fname , setup_string , active );
       nopens++;
     }
   }
   if( nopens == 0 ){
     char cwd[512];
-    _getcwd2(cwd,sizeof(cwd));
+    truepath( cwd , "." , sizeof(cwd) );
     fprintf(fout,"open %s\n",cwd);
-    the_open(cwd , setup_string );
+    the_open(cwd , setup_string , active );
   }
   return 0;
 }
@@ -272,3 +385,22 @@ int cmd_chcp( FILE *source , Parse &params )
   }
   return 0;
 }
+#if 0
+int cmd_console( FILE *source , Parse &params )
+{
+  /* int pid = getpid(); */
+
+  SwitchList slist;
+
+  int i=atoi(params[1].ptr);
+
+  /* if( slist[i].swctl.idProcess == pid ) */
+  HWND hwnd = slist[i].swctl.hwnd;
+
+  printf("job==%d hwnd==%d\n",i,hwnd);
+  
+  WinPostMsg( hwnd , WM_SYSCOMMAND ,
+	     (MPARAM)SC_MAXIMIZE, MPFROM2SHORT(CMDSRC_MENU, FALSE ));
+  return 0;
+}
+#endif

@@ -66,10 +66,8 @@ int Dir::findfirst(const char *fname,int attr)
       lastchar = *p++ = '\\';
       continue;
     }
-    if( is_kanji(lastchar=*fname) ){
+    if( is_kanji(lastchar=*fname) )
       *p++ = *fname++;
-      assert( *p != '\0' );
-    }
     *p++ = *fname++;
   }
   if( lastchar != '\\'  &&  lastchar != ':' )

@@ -1,38 +1,109 @@
-本パッケ－ジは、葉山 薫の著作物
-	NYAOS : Nihongo Yet Another Os/2 Shell
-のソ－スリストです。
-コンパイル済みのバイナリは lha で圧縮されたパッケ－ジに含まれています。
+	How to hack the
+		  ┏┓┳┳  ┳┏━┓┏━┓┏━┓
+		  ┃┃┃┗━┫┣━┫┃  ┃┗━┓
+		  ┻┗┛┗━┛┻  ┻┗━┛┗━┛
+		          Free Software
+		- Nihongo Yet Another Os/2 Shell -
+		   1996,97,98 (c) HAYAMA,Kaoru
 
-NYAOS のリコンパイルには、emx/gcc 環境が必要です。
 
-readme.src	このファイル
-makefile	メイクファイル
+本パッケ－ジは、葉山 薫の著作物 : Nihongo Yet Another Os/2 Shell(NYAOS)
+のソ－スリストです。再コンパイルには、emx/gcc 環境が必要です。コンパイル
+済みのバイナリ及びマニュアルは lha で圧縮されたパッケ－ジに含まれています。
+このソースの配布・改変については GNU General Public License に従って行っ
+てください。それでは、各ファイルを説明しましょう。
 
-complete.h	ファイル名補完クラス Complete
-complete.cc
+readme.src
+	このファイルです。
 
-edlin.h		入力・編集クラス Edlin とその派生クラス
-edlin.cc	(Edlin) ........ 端末非依存型
-edlin2.cc	(Edlin2) ....... エスケープシーケンス版
-shell.cc	(ShellEdlin) ... シェル特化版
-bindkey.cc	(Shell)
+makefile
+	メイクファイルです。GNU make を前提にしています。
 
-parse.h		構文解析クラス Parse
-parse.cc
+nyaos.cc
+	main関数があり、NYAOS はここから始まります。
+	プロンプト文字列を生成して、入力部と実行部を呼び出す以外は
+	たいした事はやっていません。
 
-alias.cc	別名機能
+nyaos.h
+	ソ－ス全体から参照される宣言を主に含みます。結構、無秩序です。
 
-execute.cc	コマンドインタ－プリタと内蔵コマンド
-commands.cc	内蔵コマンド
+finds.h , finds.cc
+	ディレクトリを読む汎用クラス Dir を宣言・定義しています。
+	DosFindFirst/Next を使い易くしています。他にワイルドカード展開関数
+	fnexplode2 / fnexplode2_free があります。共に汎用です。
 
-eadir.cc	内蔵コマンド「ls」「eadir」
-foreach.cc	内蔵コマンド「foreach」
-open.cc		open,which,DBCS関係
-source.cc	source命令 , REXX
-search.cc	SCRIPTPATH などの検索ルーチンなど
 
-prepro.cc	チルダ・環境変数の置換ル－チン
-script.cc	スクリプト実行支援の置換ル－チン
+------ コマンドインタープリタ -------
 
-nyaos.h		ソ－ス全体から参照される宣言
-nyaos.cc	メインル－チン
+execute.cc
+	コマンドインタ－プリタである execute関数 と、いくらかの内蔵命令が
+	あります。execute関数では以下のパス-1,2,3 の関数を呼び出して、入力
+	文字列の加工を行った上で、system関数に渡す処理をしています。
+	ここには他に内蔵命令のジャンプテーブル(配列 jumptable)があります。
+
+prepro.cc
+	パス-1 : チルダ・環境変数・ヒストリの置換を行います。
+alias.cc
+	パス-2 : エイリアスの置換と alias 命令 があります。
+script.cc
+	パス-3 : スクリプト実行支援の置換を行います。
+
+parse.h , parse.cc
+	execute関数や色々なところから利用される字句/構文解析クラス Parse が
+	あります。
+
+search.cc
+	SCRIPTPATH などのための検索ルーチンがあります。
+
+------ 内蔵コマンド --------
+
+commands.cc
+	もろもろ内蔵コマンドの内蔵命令のルーチンがあります。重要なものとして
+	option 命令と、optionの項目テーブル(構造体配列 optlist)があります。
+
+eadir.cc
+	ls , eadir
+
+foreach.cc
+	foreach
+
+open.cc
+	open , jobs , fg , bg , which , chcp
+
+source.cc
+	source命令 と REXX を呼び出すルーチンがあります。
+
+chdirs.cc
+	pushd , popd , dirs , 拡張chdir などがあります。
+
+
+------ 入力エディター -----
+
+edlin.h	
+	コマンドライン入力の為のクラス Edlin シリーズの宣言をしています。
+	当初、Edlinは端末非依存を目指し、NYAOS以外でも使用できるように作っ
+	たのですが、キーバインド部分をさらに分離してしまった為に、すぐには
+	他のプログラムで使えなくなっています。そのうち、ちゃんと整備しよう
+	とは思うのですが、現在、かなり後回し状態になっています。
+
+edlin.cc
+	基底クラス Edlin の定義をしています。このクラス自体は、端末に依存しな
+	いエディター部分の基本的な骨格部分のみを記述しています。端末出力に関
+	する部分は純粋仮想関数にしているので、端末ごとの派生クラスで再定義す
+	れば、簡単にいろんな端末で入力ルーチンを作ることができます。
+
+edlin2.cc
+	ANSI エスケープシーケンス版 として Edlin から導出したクラス Edlin2
+	を定義しています。入力キーに従って、メソッドを呼ぶ関数さえ作ってや
+	れば、他のプログラムでも利用できる*はず*です。
+
+shell.cc
+	Edlin2 をシェル用に使えるようにコマンド名補完などを加えて導出した
+	クラス ShellEdlin を定義しています。
+
+complete.h , complete.cc
+	ファイル名/コマンド名補完を行うクラス Complete の定義などがあります。
+
+bindkey.cc
+	キーボード入力と ShellEdlin を結びつけるクラス Shell を定義していま
+	す。そのうち、ShellEdlin , Edlin などに統合しようと考えています。

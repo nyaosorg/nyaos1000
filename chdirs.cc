@@ -21,7 +21,7 @@ int cmd_pwd( FILE *source , Parse &params )
 {
   char cwd[FILENAME_MAX];
 
-  _getcwd2(cwd,sizeof(cwd));
+  getcwd_case(cwd);
 
   FILE *fout=params.open_stdout();
   fputs(cwd,fout);
@@ -215,7 +215,7 @@ struct Dirstack{
 int cmd_dirs( FILE *srcfil , Parse &params )
 {
   char cwd[FILENAME_MAX];
-  _getcwd2(cwd,sizeof(cwd));
+  getcwd_case(cwd);
   
   FILE *fout=params.open_stdout();
   if( fout == NULL ){
@@ -239,7 +239,7 @@ int cmd_dirs( FILE *srcfil , Parse &params )
 int cmd_pushd( FILE *srcfil , Parse &params)
 {
   char cwd[FILENAME_MAX];
-  _getcwd2(cwd,sizeof(cwd));
+  getcwd_case(cwd);
   
   if( params.get_argc() > 1 ){
     if( smart_chdir(srcfil,params) )

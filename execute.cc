@@ -13,10 +13,11 @@
 #include "complete.h"
 #include "edlin.h"
 
-#define ECHODEBUG(x)		/* 通常モード */
-/* #define ECHODEBUG(x) (x)	/* デバッグモード*/
+extern char *cmdexe_path; /* in nyaos.cc */
 
 extern int echoflag;
+int option_debug_echo=0;
+
 int cmd_exec  (FILE *source , Parse &params );
 int cmd_mode  (FILE *source , Parse &params );
 int cmd_pwd   (FILE *source , Parse &params );
@@ -32,6 +33,10 @@ int cmd_history(FILE *source, Parse & );
 int cmd_open(FILE *source,Parse &);
 int cmd_which( FILE *source , Parse &params );
 int cmd_chcp( FILE *source , Parse &params );
+int cmd_fg(FILE *source , Parse &argv );
+int cmd_bg(FILE *source , Parse &argv );
+int cmd_jobs( FILE *source , Parse & );
+int cmd_console( FILE *source , Parse & );
 
 /* "chdirs.cc" */
 
@@ -43,6 +48,8 @@ int cmd_dirs( FILE *srcfil , Parse &params );
 
 int cmd_bind(FILE *source, Parse &param )
 {
+  int rc=0;
+
   struct{
     const char *name;
     void (*func)();
@@ -69,8 +76,9 @@ int cmd_bind(FILE *source, Parse &param )
       }
     }
     fprintf(stderr,"%s : no such bindings\n",buffer);
+    rc = 1;
   }
-  return 0;
+  return rc;
 }
 
 int cmd_bindkey(FILE *source,Parse &param)
@@ -88,10 +96,12 @@ int cmd_bindkey(FILE *source,Parse &param)
   switch( Shell::bindkey(key,func) ){
   case 1:
     fprintf(stderr,"bindkey: %s: invalid key name.\n",key);
-    break;
+    return 1;
+
   case 2:
     fprintf(stderr,"bindkey: %s: invalid function name.\n",func);
-    break;
+    return 2;
+
   }
   return 0;
 }
@@ -124,7 +134,6 @@ static int foreach(FILE *source, Parse &params )
   return compatible(source,params,foreach);
 }
 
-
 static int cmd_ls( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
 static int cmd_dir( FILE *srcfil, Parse &params )
@@ -146,6 +155,7 @@ static int cmd_set( FILE *srcfil, Parse &params )
 
   int ch;
   char envname[1024],*dp=envname;
+  const char *tail=params.get_tail();
 
   /* 変数名の前の空白のスキップ */
   while( *sp!='\0' && is_space(*sp) )
@@ -153,8 +163,7 @@ static int cmd_set( FILE *srcfil, Parse &params )
 
   /* 変数名のコピ－ */
   while( *sp != '=' && !is_space(*sp ) ){
-    if(   *sp=='\0' || *sp=='&' 
-       || *sp=='>'  || *sp=='|' ){
+    if( sp >= tail || *sp == '>' ){
       /* 変数名がない ---> 画面表示のみ */
       return RC_HOOK;
     }else if( *sp=='<' ){
@@ -172,9 +181,7 @@ static int cmd_set( FILE *srcfil, Parse &params )
 
   /* 変数名～「=」の空白のスキップ */
   while( *sp != '=' ){
-    if( *sp=='&'  || *sp=='\0'  ||  *sp=='|' 
-       || *sp == '>' ){
-
+    if( sp >= tail || *sp == '>' ){
       return RC_HOOK;
     }else if( *sp == '<' ){
       fputs("You cannot input-redirect on command set.\n",stderr);
@@ -183,7 +190,7 @@ static int cmd_set( FILE *srcfil, Parse &params )
 
     if( !is_space(*sp) ){
       fputs("Invalid Argument.\n",stderr);
-      return -1;
+      return 2;
     }
     sp++;
   }
@@ -200,7 +207,7 @@ static int cmd_set( FILE *srcfil, Parse &params )
   int quote=0;
   int compati=( *sp != '"' );
   
-  while( *sp!='\0' && (quote!=0 || (*sp!='&' && *sp!='|'))){
+  while( sp < tail ){
     if( is_space(*sp) ){
       if( final_space==NULL && quote==0 )
 	final_space = dp;
@@ -265,13 +272,6 @@ static int cmd_cursor( FILE *fp, Parse &params)
       fputs("cursor : cannot make a pipe or file\n",stderr);
       return 1;
     }
-#if 0
-    fprintf(fout ,
-	    "Cursor Color Attribute ... ESC[%sm\n"
-	    "  Text Color Attribute ... ESC[%sm\n"
-	    , cursor_on_color_str 
-	    , cursor_off_color_str );
-#endif
   }
   return 0;
 }
@@ -356,6 +356,7 @@ static int cmd_lecho(FILE *source, Parse &params )
 
 const struct commandtable_tag jumptable[]={
   {"alias",  cmd_alias   },
+  {"bg",     cmd_bg      },
   {"chcp",   cmd_chcp    },
   {"bind",   cmd_bind    },
   {"bindkey",cmd_bindkey },
@@ -363,14 +364,19 @@ const struct commandtable_tag jumptable[]={
   {"cds",    cmd_chdir   },
   {"chdir",  cmd_chdir   },
   {"comment",cmd_comment },
+#if 0
+  {"console",cmd_console },
+#endif
   {"cursor", cmd_cursor  },
   {"dirs",   cmd_dirs    },
   {"eadir",  cmd_eadir   },
   {"echo",   cmd_echo    },
   {"exec",   cmd_exec    },
   {"exit",   cmd_exit    },
+  {"fg",     cmd_fg      },
   {"foreach",foreach     },
   {"history",cmd_history },
+  {"jobs",   cmd_jobs    },
   {"lecho",  cmd_lecho   },
   {"ls",     cmd_ls      },
   {"md",     cmd_mkdir   },
@@ -420,25 +426,12 @@ int wrdcmp(const char *s1,const char *s2)
   return 0;
 }
 
-#if 0
-void new_system(const char *s);
-static int System(const char *s,int fastmode )
-{
-  if( fastmode ){
-    new_system( s );
-    return 0;
-  }else{
-    return system( s );
-  }
-}
-#endif
-
 int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 {
   ctrl_c = 0;
   signal(SIGINT,ctrl_c_signal);
   int wh[2];
-  _scrsize( wh );
+  get_scrsize( wh );
   screen_width = wh[0];
   screen_height = wh[1];
 
@@ -480,9 +473,7 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
     ++cmdline;
   }
 
-  if( cmdline[0] == '-' )
-    return system(cmdline+1);
-  else if( cmdline[0] == '#' )
+  if( cmdline[0] == '#' )
     return 0;
 
   /* カレントドライブの変更 */
@@ -493,7 +484,8 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
     return 0;
   }
 
-  ECHODEBUG( printf("org:{%s}\n",cmdline) );
+  if( option_debug_echo )
+    printf("PASS-0:{%s}\n",cmdline);
 
   /* 環境変数の置換処理 */
   char env_replaced_buffer[1024];
@@ -502,14 +494,16 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   if( cmdline[0]=='\0' )
     return 0;
   
-  ECHODEBUG( printf("pre:{%s}\n",cmdline) );
+  if( option_debug_echo )
+    printf("PASS-1:{%s}\n",cmdline);
   
   /* エイリアスの置換処理 */
   char alias_replaced_buffer[1024];
   alias_replace( cmdline , alias_replaced_buffer );
   cmdline = alias_replaced_buffer;
 
-  ECHODEBUG( printf("ali:{%s}\n",cmdline) );
+  if( option_debug_echo )
+    printf("PASS-2:{%s}\n",cmdline);
   
   Parse params(cmdline);
 
@@ -529,28 +523,35 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 
       if( params==NULL ){
 	fputs("Too near terminate charactor.\n",stderr);
-	return 0;
+	return 1;
       }
       int rc=(*hashtable[key]->func)(srcfil,params);
       if( rc == RC_HOOK ){
 	break;
+      }else if( rc == RC_ABORT ){
+	/* Ctrl-C で終了していたら、続くコマンドは実行しない */   
+	return RC_ABORT;
       }else{
-	if( rc == 0  &&  *params.get_tail() == '&' )
-	  return execute( srcfil , params.get_nextcmds() );
+	Parse::Terminal term=params.get_terminal();
+	if(   term==Parse::SEMI_TERMINAL 
+	   || term==(rc ? Parse::OR_TERMINAL: Parse::AND_TERMINAL) )
+	  {
+	    return execute( srcfil , params.get_nextcmds() );
+	  }
 	return rc;
       }
     }
     if( ++key > numof(hashtable) )
       key = 0;
   }
-  ECHODEBUG( printf("tmp:{%s}\n",cmdline ) );
   replace_script( cmdline , env_replaced_buffer );
   cmdline = env_replaced_buffer;
   
-  ECHODEBUG( printf("scr:{%s}\n",cmdline) );
-
+  if( option_debug_echo )
+    printf("PASS-3:{%s}\n",cmdline);
+  
   if( echoflag )
     puts( cmdline );
   
-  return system( cmdline );
+  return spawnl(P_WAIT , cmdexe_path ,"CMD" , "/C" , cmdline , NULL );
 }
