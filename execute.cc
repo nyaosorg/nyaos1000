@@ -29,9 +29,9 @@ int cmd_mkdir(FILE *source, Parse & );
 int cmd_rmdir(FILE *source, Parse & );
 int cmd_history(FILE *source, Parse & );
 
+/* "open.cc" */
 int cmd_open(FILE *source,Parse &);
-
-void alias_replace(const char *sp,char *dp);
+int cmd_which( FILE *source , Parse &params );
 
 int cmd_bind(FILE *source, Parse &param )
 {
@@ -445,7 +445,7 @@ static int cmd_lecho(FILE *source, Parse &params )
   return 0;
 }
 
-struct commandtable_tag jumptable[]={
+const struct commandtable_tag jumptable[]={
   {"alias",  cmd_alias   },
   {"bind",   cmd_bind    },
   {"bindkey",cmd_bindkey },
@@ -459,6 +459,7 @@ struct commandtable_tag jumptable[]={
   {"exit",   cmd_exit    },
   {"foreach",foreach     },
   {"history",cmd_history },
+  {"lecho",  cmd_lecho   },
   {"ls",     cmd_ls      },
   {"md",     cmd_mkdir   },
   {"mode",   cmd_mode    },
@@ -472,9 +473,9 @@ struct commandtable_tag jumptable[]={
   {"rmdir",  cmd_rmdir   },
   {"set",    cmd_set     },
   {"source", cmd_source  },
-  {"lecho",  cmd_lecho   },
   {"unalias",cmd_unalias },
-  { NULL    , NULL },
+  {"which"  ,cmd_which   },
+  { NULL    ,NULL        },
 }, *hashtable[512];
 
 int wrdcmp(const char *s1,const char *s2)
@@ -528,7 +529,7 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
     for(int i=0 ; i<numof(hashtable) ; i++)
       hashtable[i] = NULL;
 
-    for(int i=0;i<numof(jumptable);i++){
+    for(int i=0; jumptable[i].name != NULL ;i++){
       int key=0;
       const char *p=jumptable[i].name;
       if( p==NULL )
@@ -598,7 +599,7 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
   /* “à‘ ƒRƒ}ƒ“ƒh --> Open hash */
   while( hashtable[key] != NULL ){
     if(   hashtable[key]->name[0] == params.get_argv(0)[0]
-       && wrdcmp(hashtable[key]->name, params.get_argv(0) )==0 ){	
+       && wrdcmp(hashtable[key]->name, params.get_argv(0) )==0 ){
 
       int rc=(*hashtable[key]->func)(srcfil,params);
       if( rc == RC_HOOK ){

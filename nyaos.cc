@@ -7,6 +7,7 @@
 #include <sys/nls.h>
 
 #define INCL_DOSFILEMGR
+// #define INCL_WINWINDOWMGR
 #include <os2.h>
 
 #include "edlin.h"
@@ -30,6 +31,7 @@ char *cursor_on_color_str=NULL;
 char *cursor_off_color_str=NULL;
 int option_nyaos_rc=1;
 
+// ---- fgets と基本は同じ。ただ、末尾の「\n」を読み込まない点が異なる ----
 char *fgets_chop(char *dp, int max, FILE *fp)
 {
   int ch;
@@ -49,20 +51,26 @@ int main(int argc, char **argv)
   char directory[FILENAME_MAX];
   char thename[FILENAME_MAX];
 
+  // ---- DBCS table の初期化 ----
   if( dbcs_table_init() != 0 ){
     fprintf(stderr,"nyaos: DBCS init error\n");
     return -1;
   }
+
+  // ---- 画面表示は、fflush せずとも、ただちにやれ！ -----
   setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
+
+  // ---- とりあえず、キーバインドを好評の tcsh ライクにする -----
   Shell::bindkey_tcshlike();
 
-  const char *shell=getenv("COMSPEC");
-  if(   strstr(shell,"nyaos") != NULL
-     || strstr(shell,"NYAOS") != NULL ){
-    
-    /* COMSPEC に、NYAOS自身が設定されていると、
-       動作がおかしくなるので、
-       CMD.EXE に切り換えさせる。 */
+  // ----------------------------------------
+  // COMSPEC に、NYAOS自身が設定されていると、
+  // 動作がおかしくなるので、
+  // CMD.EXE に切り換えさせる。 
+  // ----------------------------------------
+  const char *shellname=getenv("COMSPEC");
+  if(   strstr(shellname,"nyaos") != NULL
+     || strstr(shellname,"NYAOS") != NULL ){
 
     static char comspec[256];
     auto char cmdexe_path[100];
@@ -74,6 +82,8 @@ int main(int argc, char **argv)
     sprintf(comspec,"COMSPEC=%s",cmdexe_path);
     putenv(comspec);
   }
+  
+  // -------- オプション分析 ----------
 
   for(int i=1;i<argc;i++){
     if( argv[i][0] == '-' || argv[i][0] == '/' ){
@@ -110,34 +120,6 @@ int main(int argc, char **argv)
       case 'f':
 	option_nyaos_rc = 0;
 	break;
-
-#if 0
-      case 'k':
-      case 'c':
-	if( i+1 < argc ){
-	  char buffer[256];
-	  
-	  _searchenv(argv[++i],"HOME",buffer);
-	  FILE *fp=fopen(buffer,"rt");
-	  if( fp==NULL ){
-	    fprintf(stderr,"%s: %s: no such file\n",argv[0],argv[i]);
-	    break;
-	  }
-	  option_nyaos_rc=0;
-
-	  while( fgets_chop(buffer,sizeof(buffer),fp) != NULL ){
-	    if( execute(fp,buffer) == RC_QUIT )
-	      break;
-	  }
-	  fclose(fp);
-	  if( argv[i-1][1] == 'c' )
-	    return 0;
-
-	}else{
-	  fprintf(stderr,"%s: -k option needs filename parameter\n",
-		  argv[0],argv[1] );
-	}
-#endif
       }
     }else{
       fprintf(stderr,"%s: %s:invalid argument.\n",argv[0],argv[i]);
@@ -162,177 +144,193 @@ int main(int argc, char **argv)
     }
 
   }
-  if( option_vio_cursor_control ){
+
+  if( option_vio_cursor_control )
     v_init();
-  }
 
   char cmdlin[1024]="";
-  if( isatty(fileno(stdin)) ){
-    printf("\x1b[2J\x1b[1m"
-	   "\n"
-	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
-	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "   Os/2 Shell 1.25     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
-	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
-	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
-	   "                                                          \n"
-	   "    This version is compiled on " __DATE__ " " __TIME__"  \n"
-	   "    Comments, suggestions, and bug reports are welcome.   \n"
-	   "    Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp     \n"
-	   "\x1b[0m\n"
-	   );
 
-    /* DOSの場合、^Hで折り返した前の行へ戻れないので、
-     * 一行のみの Window モードにする。
-     */
-    ShellEdlin edlin("NYAOS>",cmdlin,sizeof(cmdlin) );
-    Shell shell(edlin);
-    
-    for(;;){
-      char promptstr[256],*dp=promptstr,*sp;
-      const char *promptenv=getenv("PROMPT");
-      
-      time_t now;
-      time( &now );
-      struct tm *thetime = localtime( &now );
-      edlin.using_i_mark=0;
-
-      while( *promptenv != '\0' ){
-	if( *promptenv == '$' ){
-	  switch( promptenv++ , to_upper(*promptenv) ){
-	  case '!':
-	    dp += sprintf(dp,"%d",nhistories );
-	    break;
-	  case '$':
-	    *dp++ = '$';
-	    break;
-	  case '_':
-	    *dp++ = '\n';
-	    break;
-	  case 'A':
-	    *dp++ = '&';
-	    break;
-	  case 'B':
-	    *dp++ = '|';
-	    break;
-	  case 'C':
-	    *dp++ = '(';
-	    break;
-	  case 'D':/* 現在の日付 */
-	    dp += sprintf(dp,"%4d-%02d-%02d" ,
-			  thetime->tm_year+1900 ,
-			  thetime->tm_mon+1 ,
-			  thetime->tm_mday );
-	    break;
-	  case 'E':
-	    *dp++ = '\x1b';
-	    break;
-	  case 'F':
-	    *dp++ = ')';
-	    break;
-	  case 'G':
-	    *dp++ = '>';
-	    break;
-	  case 'H':
-	    *dp++ = '\b';
-	    break;
-	  case 'I':
-	    int a;
-	    if( option_vio_cursor_control )
-	      a = v_getattr();
-
-	    dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
-			  , screen_width ,
-			  " Nihongo Yet Another Os/2 Shell 1.25 "
-			  " (c) 1996,97 HAYAMA,Kaoru "
-			  );
-	    edlin.using_i_mark = 1;
-	    if( option_vio_cursor_control )
-	      v_attrib(a);
-	    break;
-
-	  case 'L':
-	    *dp++ = '<';
-	    break;
-	  case 'N':/* カレントドライブ */
-	    *dp++ = _getdrive();
-	    break;
-	  case 'P':/* カレントディレクトリ */
-	    *dp++ = _getdrive();
-	    *dp++ = ':';
-	    /* unsigned */ char cwd[256];
-
-	    /* ULONG bufsize;
-	     * bufsize=sizeof(cwd);
-	     * if( DosQueryCurrentDir(0,cwd,&bufsize) == 0 ){
-	     */
-	    if( (sp=_getcwd(cwd,sizeof(cwd))) != NULL ){
-	      /* char *sp=(char*)cwd; */
-	      while( *sp != '\0' )
-		*dp++ = *sp++;
-	    }
-	    break;
-	       
-	  case 'Q':
-	    *dp++ = '=';
-	    break;
-	  case 'S':/* スペース */
-	    *dp++ = ' ';
-	    break;
-	  case 'T':/* 現在の時刻 */
-	    dp += sprintf(dp,"%02d:%02d:%02d",
-			  thetime->tm_hour ,
-			  thetime->tm_min ,
-			  thetime->tm_sec );
-	    break;
-	  case 'V':/* OS/2のバージョン */
-	    if( _osmode == OS2_MODE )
-	      dp += sprintf(dp,"The Operating System/2 Version is %d.%d"
-			    , _osmajor/10 , _osminor );
-	    else
-	      dp += sprintf(dp,"PC DOS Version is %d.%d"
-			    , _osmajor , _osminor );
-	    break;
-	  }
-	  promptenv++;
-	}else{
-	  *dp++ = *promptenv++;
-	}
-      }
-      *dp = '\0';
-
-      edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
-      
-      
-      int rc=shell.line_input(promptstr,_osmode==OS2_MODE ? 32767 
-			      :screen_width-1 );
-#if 0
-      int rc=edlin.simple_input(promptstr,
-				_osmode==OS2_MODE ? 32767:screen_width-1 );
-#endif
-      /* カーソルを消去された場合にそなえ、カーソルのサイズを保存しておく */
-
-      if( option_vio_cursor_control )
-      	v_getctype( &cursor_start , &cursor_end );
-
-      if( rc >= 0 ){
-	putchar('\n');
-	if( cmdlin[0] != '\0' && execute(stdin,cmdlin) == RC_QUIT ){
-	  fputs("Good bye.\n",stderr);
-	  return 0;
-	}
-      }else{
-	fputs("\nGood bye!\n",stdout);
-	return 0;
-      }
-      /* カーソルを元に戻す */
-      if( option_vio_cursor_control )
-	v_ctype( cursor_start , cursor_end );
-    }
-  }else{
+  // ---------------------------------------------------------
+  // 標準入力が、リダイレクトされている場合の処理(ここで完結)
+  // ---------------------------------------------------------
+  if( ! isatty(fileno(stdin)) ){
     while( fgets_chop(cmdlin,sizeof(cmdlin),stdin) != NULL 
 	  && execute(stdin,cmdlin) != RC_QUIT )
       ;
     return 0;
   }
+
+  printf("\x1b[2J\x1b[1m"
+	 "\n"
+	 "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
+	 "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
+	 "   Os/2 Shell 1.26     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	 "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
+	 "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
+	 "                                                          \n"
+	 "    This version is compiled on " __DATE__ " " __TIME__"  \n"
+	 "    Comments, suggestions, and bug reports are welcome.   \n"
+	 "    Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp     \n"
+	 "\x1b[0m\n"
+	 );
+
+  // -------- 入力オブジェクト edlin を用意する ---------------
+  // ここで、用意するのは、ループの内部に置いて
+  // 何回もコンストラクタ・デストラクタを呼ぶコストを省くため。
+  // prompt は、この時点では未定なので、ダミーを放り込んでおく。
+  // ----------------------------------------------------------
+  
+  ShellEdlin edlin("NYAOS>",cmdlin,sizeof(cmdlin) );
+  Shell shell(edlin);
+  
+  // ======================== コマンド毎のループ =========================
+  for(;;){
+    // ----- ここから、えんえんと、プロンプト関係の処理がつづく -----
+
+    char promptstr[256],*dp=promptstr,*sp;
+    const char *promptenv=getenv("PROMPT");
+    
+    time_t now;
+    time( &now );
+    struct tm *thetime = localtime( &now );
+    edlin.using_i_mark=0;
+    
+
+    while( *promptenv != '\0' ){
+      if( *promptenv == '$' ){
+	switch( promptenv++ , to_upper(*promptenv) ){
+
+	case '!':
+	  dp += sprintf(dp,"%d",nhistories );
+	  break;
+
+	case '$': *dp++ = '$';	  break;
+	case '_': *dp++ = '\n';	  break;
+	case 'A': *dp++ = '&';	  break;
+	case 'B': *dp++ = '|';	  break;
+	case 'C': *dp++ = '(';	  break;
+
+	case 'D':/* 現在の日付 */
+	  dp += sprintf(dp,"%4d-%02d-%02d" ,
+			thetime->tm_year+1900 ,
+			thetime->tm_mon+1 ,
+			thetime->tm_mday );
+	  break;
+	  
+	case 'E': *dp++ = '\x1b'; break;
+	case 'F': *dp++ = ')';	  break;
+	case 'G': *dp++ = '>';	  break;
+	case 'H': *dp++ = '\b';	  break;
+
+	case 'I':
+	  int a;
+	  if( option_vio_cursor_control )
+	    a = v_getattr();
+	  
+	  dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
+			, screen_width ,
+			" Nihongo Yet Another Os/2 Shell 1.26 "
+			" (c) 1996,97 HAYAMA,Kaoru "
+			);
+	  edlin.using_i_mark = 1;
+	  if( option_vio_cursor_control )
+	    v_attrib(a);
+	  break;
+	  
+	case 'L': *dp++ = '<';	  break;
+
+	case 'N':/* カレントドライブ */
+	  *dp++ = _getdrive();
+	  break;
+
+	case 'P':/* カレントディレクトリ */
+	  *dp++ = _getdrive();
+	  *dp++ = ':';
+	  /* unsigned */ char cwd[256];
+	  
+	  /* ULONG bufsize;
+	   * bufsize=sizeof(cwd);
+	   * if( DosQueryCurrentDir(0,cwd,&bufsize) == 0 ){
+	   */
+	  if( (sp=_getcwd(cwd,sizeof(cwd))) != NULL ){
+	    /* char *sp=(char*)cwd; */
+	    while( *sp != '\0' )
+	      *dp++ = *sp++;
+	  }
+	  break;
+	  
+	case 'Q': *dp++ = '=';	  break;
+	case 'S': *dp++ = ' ';	  break;
+
+	case 'T':/* 現在の時刻 */
+	  dp += sprintf(dp,"%02d:%02d:%02d",
+			thetime->tm_hour ,
+			thetime->tm_min ,
+			thetime->tm_sec );
+	  break;
+	case 'V':/* OS/2のバージョン */
+	  if( _osmode == OS2_MODE )
+	    dp += sprintf(dp,"The Operating System/2 Version is %d.%d"
+			  , _osmajor/10 , _osminor );
+	  else
+	    dp += sprintf(dp,"PC DOS Version is %d.%d"
+			  , _osmajor , _osminor );
+	  break;
+	}
+	promptenv++;
+      }else{
+	*dp++ = *promptenv++;
+      }
+    }
+    *dp = '\0';
+    
+    // ------------------------------------------------------------------
+    // 入力オブジェクト edlin に擬似カーソルの為のエスケープシーケンスを
+    // 伝えておく(って、いちいち、ここで何回もさせることでもないが...)
+    // ------------------------------------------------------------------
+
+    edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
+    
+    // ================== 実際の入力 =======================
+    //  _osmode によって処理を変えているのは、DOS では ^H で
+    // 前の行に遡れないため、次の行に繰り越させず、入力文字列を
+    // スクロールさせる。この時に一度に表示できる文字数を与えて
+    // いるわけである。 OS/2 では、そのようなことを気にする必要
+    // がないため ∞ を与える。
+    
+    int rc=shell.line_input(promptstr
+			    ,_osmode==OS2_MODE ? 32767 :screen_width-1 );
+    
+    // ============== コマンドの実行 ====================
+
+    // ---------------------------------
+    // カーソルを消去された場合にそなえ、
+    // カーソルのサイズを保存しておく。
+    // ---------------------------------
+    
+    if( option_vio_cursor_control )
+      v_getctype( &cursor_start , &cursor_end );
+    
+    // ---------------------------------------------------------
+    // コマンドを実行し、「終了」の帰り値だったら、終了する。
+    // 実行は、高機能system である execute がよしなにしてくれる。
+    // ---------------------------------------------------------
+
+    if( rc >= 0 ){
+      putchar('\n');
+      if( cmdlin[0] != '\0' && execute(stdin,cmdlin) == RC_QUIT ){
+	// --- exitコマンドなどによる終了 ----
+	fputs("Good bye.\n",stderr);
+	return 0;
+      }
+    }else{
+      // ---- CTRL-Z などによる終了 ----
+      fputs("\nGood bye!\n",stdout);
+      return 0;
+    }
+    // ---- カーソルを元に戻す ----
+    if( option_vio_cursor_control )
+      v_ctype( cursor_start , cursor_end );
+
+  }// ============ コマンド毎のループの末尾 ===========
 }

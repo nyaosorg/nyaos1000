@@ -83,7 +83,7 @@ int cmd_mkdir( FILE *source , Parse &params)
 
 int chdir_with_cdpath(const char *cwd)
 {
-  if( _chdir2( cwd ) ){
+  if( _chdir2( cwd ) != 0  &&  cwd[0] != '\0'  &&  cwd[1] !=':' ){
     /* CDPATH */
     char cdpath[FILENAME_MAX];
     _searchenv(cwd,"CDPATH",cdpath);

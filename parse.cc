@@ -247,7 +247,7 @@ FILE *Parse::open_stdin()
     char *fname = (char*)alloca( input_redirect_length+1 ); /* ! */
     memcpy(fname,input_redirect, input_redirect_length );
     fname[ input_redirect_length ] = '\0';
-
+    
     return input_fp = fopen( fname , "r" );
   }else 
     return stdin;
@@ -299,7 +299,7 @@ char *Parse::copy(int n, char *dp, int flag )
      */
 
     bool quote=false;
-
+    
     /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
      * (1) s|^-|/|;
      */
@@ -308,6 +308,8 @@ char *Parse::copy(int n, char *dp, int flag )
       *dp++ = '/';
       ++sp;
     }
+
+    int lastchar = -1;
 
     while( sp < tail ){
       
@@ -328,9 +330,10 @@ char *Parse::copy(int n, char *dp, int flag )
       }else if( *sp == '^' && !quote ){
 	/* キャレットの次の文字を無条件に put する。 */
 	if( *++sp != '\0' ){
-	  if( is_kanji(*sp) )
+	  if( is_kanji(lastchar=*sp) )
 	    *dp++ = *sp++;
 	  *dp++ = *sp++;
+
 	}else{
 	  *dp = '\0';
 	  return dp;
@@ -339,17 +342,22 @@ char *Parse::copy(int n, char *dp, int flag )
 	/* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
 	 * (2) s|/|\|g; (ただし引用符に囲まれていないもの)
 	 */
-	*dp++ = '\\';
+
+	lastchar = *dp++ = '\\';
 	sp++;
       }else{
 	/* それ以外はコピ－ */
-	if( is_kanji(*sp) ){
+	if( is_kanji(lastchar=*sp) ){
 	  *dp++ = *sp++;
 	  assert(*sp != '\0' );
 	}
 	*dp++ = *sp++;
       }
     }
+    if(   (flag & REPLACE_SLASH) != 0  
+       && (lastchar=='/' || lastchar=='\\' ) )
+      *dp++ = '.';
+
     *dp = '\0';
   }
   return dp;
@@ -364,7 +372,6 @@ char *Parse::betacopy(char *dp,int n=0)
   *dp = '\0';
   return dp;
 }
-
 
 char *Parse::copyall(int n, char *dp, int flag)
 {
@@ -386,6 +393,8 @@ char *Parse::copyall(int n, char *dp, int flag)
       ++ssp;
     }
 
+    int lastchar = -1;
+
     while( ssp < sp ){
       if( *ssp == '"' ){
 	/* 引用符は、フラグを反転させる。*/
@@ -400,32 +409,48 @@ char *Parse::copyall(int n, char *dp, int flag)
 	  if( flag & QUOTE_COPY )
 	    *dp++ = '"';
 	}
-      }else if( *ssp=='^' && !quote ){
+	continue;
+      }
+
+      if( *ssp=='^' && !quote ){
 	/* 引用符の中にないキャレットは次の特殊文字の機能を
 	 * 無効化する。
 	 */
 	if( *++ssp != '\0' ){
-	  if( is_kanji(*ssp) )
+	  if( is_kanji(lastchar=*ssp) )
 	    *dp++ = *ssp++;
 	  *dp++ = *ssp++;
 	}else{
 	  *dp++ = '\0';
 	  return dp;
 	}
-
-      }else if( (flag & REPLACE_SLASH) && !quote && *ssp == '/' ){
-	/* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
-	 * (2) s|/|\|g; (ただし引用符に囲まれていないもの)
-	 */
-	*dp++ = '\\';
-	ssp++;
-	
-      }else{
-	/* それ以外はコピ－ */
-	if( is_kanji(*ssp) )
-	  *dp++ = *ssp++;
-	*dp++ = *ssp++;
+	continue;
       }
+      
+      if( (flag & REPLACE_SLASH) && !quote ){
+	/* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理 */
+	
+	if( *ssp == '/' ){
+	  /* (2) s|/|\|g; (ただし引用符に囲まれていないもの) */
+	  lastchar = *dp++ = '\\';
+	  ssp++;
+	  if( *ssp == '\0' || is_space(*ssp) )
+	    *dp++ = '.';
+	  continue;
+	}else if( *ssp == '-' && is_space(lastchar) ){
+	  lastchar = *dp++ = '/';
+	  ssp++;
+	  continue;
+	}else if( *ssp=='\\' && (ssp[1]=='\0' || is_space(ssp[1]) )){
+	  *dp++ = *ssp++;
+	  lastchar = *dp++ = '.';
+	  continue;
+	}
+      }
+      /* それ以外はコピ－ */
+      if( is_kanji(lastchar=*ssp) )
+	*dp++ = *ssp++;
+      *dp++ = *ssp++;
     }
     *dp = '\0';
   }

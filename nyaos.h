@@ -1,3 +1,4 @@
+/* -*- c++ -*- */
 #ifndef NYAOS_H
 #define NYAOS_H
 
@@ -17,7 +18,7 @@ char *fgets_chop(char *dp,int max,FILE *fp);
 
 class Parse;
 
-extern struct commandtable_tag {
+extern const struct commandtable_tag {
   const char *name;
   int (*func)( FILE *srcfil, Parse &params );
 } jumptable[];
@@ -60,6 +61,7 @@ struct Command *alias_filter(struct Command *dummyfirst);
 
 extern int scriptflag,option_sos;
 
+void alias_replace(const char *sp,char *dp);
 int replace_script( const char *source , char *destinate );
 
 extern int option_tilda_is_home;

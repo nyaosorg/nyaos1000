@@ -1,9 +1,9 @@
 本パッケ－ジは、葉山 薫の著作物
-	NYAOS : Nihongo Yet Another Os/2 Shell 1.25
+	NYAOS : Nihongo Yet Another Os/2 Shell 1.26
 のソ－スリストです。
 コンパイル済みのバイナリは lha で圧縮されたパッケ－ジに含まれています。
 
-NYAOS のリコンパイルには、0.9c以上の emx/gcc 環境が必要です。
+NYAOS のリコンパイルには、emx/gcc 環境が必要です。
 
 readme.src	このファイル
 makefile	メイクファイル
@@ -27,6 +27,7 @@ commands.cc	内蔵コマンド
 
 eadir.cc	内蔵コマンド「ls」「eadir」
 foreach.cc	内蔵コマンド「foreach」
+open.cc     open,which,DBCS関係
 
 prepro.cc	チルダ・環境変数の置換ル－チン
 script.cc	スクリプト実行支援の置換ル－チン
