@@ -59,7 +59,8 @@ public:
   
   /* --------------- リポート関数 --------------- */
   const char *get_name() const { return buffer.achName; }
-  int get_name_length() const { return buffer.cchName; }
+  int get_name_length()  const { return buffer.cchName; }
+  bool ends_with(char c) const { return (*this)[get_name_length()-1] == c ; }
 
   int get_attr() const { return buffer.attrFile; }
   unsigned get_size() const { return buffer.cbFile; }
@@ -70,6 +71,8 @@ public:
   int is_system()   const { return buffer.attrFile & SYSTEM; }
   int is_hidden()   const { return buffer.attrFile & HIDDEN; }
   int is_readonly() const { return buffer.attrFile & READONLY; }
+
+
 
   /* FDATE は、5bit:日 4bit:月 7bit:年
    * FTIME は、5bit:秒の2倍 4bit:分 5:時 */

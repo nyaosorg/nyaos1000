@@ -24,6 +24,12 @@ int which_suffix(const char *path,...);
  * }
  *
  */
+
+#ifndef MALLOC_ERROR
+#define MALLOC_ERROR
+class MallocError{ };
+#endif
+
 class Complete : public Files {
   char directory[ FILENAME_MAX ];	/* 原ファイル名のディレクトリ部 */
   char fname[FILENAME_MAX ];		/* 原ファイル名の非ディレクトリ部 */
@@ -62,12 +68,12 @@ public:
   static int directory_split_char;
   static int complete_tail_tilda;
   static int complete_hidden_file;
-
+  
   /* コマンド名補完の為のキャッシュを作成/更新する */
-  static void make_command_cache();
-
-
-
+  static void make_command_cache() throw(MallocError);
+  static unsigned queryBytes(); /* … キャッシュのメモリ使用量を得る */
+  static unsigned queryFiles(); /* … キャッシュにあるファイル名の数 */
+  
   /* 操作子オブジェクト(イタレータとういほどのものではない!?)
    */
   class Cursor{

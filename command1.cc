@@ -8,6 +8,7 @@
 #include "parse.h"
 #include "complete.h"
 #include "nyaos.h"
+#include "errmsg.h"
 
 extern int option_tilda_without_root;
 extern int option_direct_key;
@@ -90,7 +91,7 @@ int cmd_exec( FILE *source , Parse &params )
   }
   argv[argc] = NULL;
   execvp(argv[0],argv);
-  printf( "%s: bad commandname.\n", argv[0] );
+  fprintf(stderr,"nyaos: exec: %s: bad commandname.\n", argv[0] );
   return 0;
 }
 
@@ -115,7 +116,7 @@ int cmd_rmdir( FILE *source, Parse &params )
     params.copy(i,dirname);
     cut_tail_root(dirname);
     if( rmdir(dirname) != 0 ){
-      fprintf(stderr,"nyaos: cannot remove directory `%s'\n",dirname);
+      ErrMsg::say( ErrMsg::CantRemoveFile , "nyaos" , "rmdir" , dirname , 0 );
       return 1;
     }
   }
@@ -130,7 +131,7 @@ int cmd_mkdir ( FILE *source , Parse &params)
     params.copy(i,dirname);
     cut_tail_root(dirname);
     if( mkdir(dirname,0777) != 0 ){
-      fprintf(stderr,"nyaos: cannot make directory `%s'\n",dirname);
+      ErrMsg::say(ErrMsg::CantMakeDir,dirname,0);
       return 1;
     }
   }
@@ -192,7 +193,7 @@ int cmd_subject(FILE *source, Parse &params)
   if( rc== 0 ){
     printf("%s --> %s\n" , fname , subject );
   }else{
-    fprintf(stderr,"subject: cannot write subject on %s\n",fname);
+    ErrMsg::say(ErrMsg::CantWriteSubject,fname,0);
   }
   return rc; 
 }
@@ -232,7 +233,7 @@ int cmd_comment(FILE *source, Parse &params)
   
   int rc=_ea_put( &eavalue , fname , 0 , ".COMMENTS" );
   if( rc != 0 ){
-    fprintf(stderr,"comment: cannot write comment on the file:%s\n" , fname );
+    ErrMsg::say(ErrMsg::CantWriteComments,fname,0);
   }
   return rc;
 }

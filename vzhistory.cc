@@ -1,6 +1,6 @@
 /* -*- C++ -*-
  * Vz Editor like な ヒストリ参照を行う。
- */ 
+ */
 
 #include <assert.h>
 #include <alloca.h>
@@ -9,7 +9,6 @@
 #include "quoteflag.h"
 
 extern int option_single_quote;
-
 
 struct WHist{
   WHist *prev,*next;
@@ -188,7 +187,9 @@ Shell::Status Shell::vz_prev_history()
   WHist *whist=NULL , *tmp;
   
   /* 大検索走査線 */
+  // for(Histories::Cursor cur(histories) ;; ++cur )
   for(History *cur=history ;; cur=cur->prev ){ /* 行レベルのループ */
+      
     if( cur==NULL ){
       if( whist==NULL )
 	return CONTINUE;

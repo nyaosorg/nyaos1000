@@ -9,6 +9,7 @@
 #include "parse.h"
 #include "nyaos.h"
 #include "complete.h"
+#include "errmsg.h"
 
 extern char *cmdexe_path; /* in nyaos.cc */
 extern char drivealias[];
@@ -63,6 +64,7 @@ int cmd_set( FILE *srcfil, Parse &params );
 int cmd_cursor( FILE *fp, Parse &params);
 int cmd_lecho(FILE *source, Parse &params );
 int cmd_echo(FILE *srcfil, Parse &params );
+int cmd_cls(FILE *source, Parse &params );
 
 /* その他：１ソース＝１コマンド */
 int eadir(int argc, char **argv,FILE *fout,Parse &);	/* "eadir.cc" */
@@ -200,6 +202,7 @@ Command jumptable[]={
   {"bg",     cmd_bg      },
   {"cache",  cmd_cache   },
   {"chcp",   cmd_chcp    },
+  {"cls",    cmd_cls     },
   {"bind",   cmd_bind    },
   {"bindkey",cmd_bindkey },
   {"call",   cmd_source  },
@@ -293,8 +296,9 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
       strcpy(prevdir,wd);	/* prevdirを覚えておく */
       getcwd_case(wd);		/* カレントディレクトリをシェル変数へ反映 */
       setShellEnv("CWD",wd);
-    }else
-      fputs("Cannot find the specified drive.\n",stderr);
+    }else{
+      ErrMsg::say(ErrMsg::ChangeDriveError,cmdline,0);
+    }
     DosError( FERR_ENABLEHARDERR );
     return 0;
   }
@@ -368,7 +372,7 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 	break;
       
       if( params==NULL ){
-	fputs("Too near terminate charactor.\n",stderr);
+	ErrMsg::say(ErrMsg::TooNearTerminateChar,0);
 	return 1;
       }
       int rc=(*cmd->func)(srcfil,params);
@@ -412,8 +416,7 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
     return -1;
 #endif
   }catch(...){
-    fputs(  "nyaos: internal error. Nyaos did'nt execute the command(s).\n"
-	  , stderr );
+    ErrMsg::say( ErrMsg::InternalError , 0 );
     return -1;
   }
 }

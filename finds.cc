@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <fnmatch.h>
 
 #define INCL_DOSNLS
 #include "macros.h"
@@ -134,20 +135,25 @@ void fnexplode2_free(char **buffer)
   }
 }
 
+/* emx 関数の _fnexplode の独自版
+ */
 char **fnexplode2(const char *path)
 {
   assert( path != NULL );
   
   const char *lastroot=NULL;
   int finalchar = 0;
-  int have_wildcard = 0;
+  bool have_wildcard = false;
   
+  /* パスのディレクトリ名部分とファイル名部分の分離
+   * ワイルドカードを使っているか否かの調査
+   */
   for(const char *p=path; *p != '\0' ; p++ ){
     finalchar = *p;
     if( *p=='\\' || *p=='/' || *p==':' ){
       lastroot = p;
     }else if( *p=='?' || *p=='*' ){
-      have_wildcard = 1;
+      have_wildcard = true;
     }
     if( is_kanji(*p) ){
       ++p;
@@ -155,11 +161,12 @@ char **fnexplode2(const char *path)
     }
   }
   
-  if(   have_wildcard==0 || finalchar=='\\'
+  /* ワイルドカードを使っていない場合は終了 */
+  if(   have_wildcard==false || finalchar=='\\'
      || finalchar == '/' || finalchar == ':')
     return NULL;
   
-  int dotprint=0;
+  bool dotprint=false;
 
   int lendir = 0;
   char *dirname = "";
@@ -174,10 +181,10 @@ char **fnexplode2(const char *path)
     memcpy( dirname , path , lendir );
     dirname[lendir] = '\0';
     if( lastroot[1]=='.' )
-      dotprint = 1;
+      dotprint = true;
   }else{
     if( path[0] == '.' )
-      dotprint = 1;
+      dotprint = true;
   }
   Dir dir;
 
@@ -191,11 +198,20 @@ char **fnexplode2(const char *path)
     return NULL;
   
   do{
-    //  o「.」で始まるファイルは基本的に表示しない。
-    //    - ファイル名自体の指定で「.」で始まる場合ば別
-    //    - 「.」自体には展開しない
+    /* 「.」で始まるファイルは基本的に表示しない。
+     *	- ファイル名自体の指定で「.」で始まる場合ば別
+     *	- 「.」自体には展開しない
+     */
     if(  dir.get_name()[0] == '.'
-       && ( dotprint == 0 || dir.get_name()[1]=='\0' ) )
+       && ( dotprint == false || dir.get_name()[1]=='\0' ) )
+      continue;
+
+    /* OS/2 のワイルドカード展開では、「hoge.＊」で「hoge」もマッチしてしまう。
+     * そこで、emx の関数で、そういうケースを除いてやる。
+     */
+    if(  lastroot != NULL  
+       ? _fnmatch(lastroot+1,dir.get_name(),_FNM_POSIX | _FNM_IGNORECASE)!=0 
+       : _fnmatch(path,dir.get_name()      ,_FNM_POSIX | _FNM_IGNORECASE)!=0)
       continue;
 	
     result[ nfiles ] = 

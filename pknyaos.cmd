@@ -51,7 +51,7 @@ srcpack = "nyaos-"major"."minor".tar.bz2"
 SAY "---- バイナリパッケージ作成 ----"
 "lha a" binpack readme_1st "nyaos.doc nyaosdoc.html nyaos.exe" ,
     "nyaos.rc nyaos1.ico nyaos2.ico nyaos-fc.ico nyaos-fo.ico",
-	"history install.cmd"
+	"history sample.err install.cmd"
 
 SAY "---- ソースパッケージ作成 ----"
 "make README1ST="readme_1st "nyaos.tar"

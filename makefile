@@ -31,14 +31,14 @@ all : nyaos.exe nyaos.doc
 NYAOS_HDR=\
 	complete.h edlin.h finds.h hash.h macros.h nyaos.h substr.h \
 	parse.h pathlist.h smartptr.h strtok.h keyname.h strbuffer.h \
-	quoteflag.h autofileptr.h autofreeptr.h
+	quoteflag.h autofileptr.h autofreeptr.h prompt.h errmsg.h
 NYAOS_SRC=\
 	alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
 	command2.cc dbcs.cc eadir2.cc edlin.cc edlin2.cc execute.cc \
 	finds.cc filelist.cc foreach2.cc getkey.cc hash.cc nyaos.cc \
-	open.cc parse.cc pathlist.cc prepro2.cc prompt2.cc script2.cc \
+	open.cc parse.cc pathlist.cc prepro2.cc prompt3.cc script2.cc \
 	search.cc shell.cc source.cc vzhistory.cc strtok.cc keynameseek.cc \
-	strbuffer.cc debugger.cc let.cc
+	strbuffer.cc debugger.cc let.cc errmsg.cc
 # suffix.cc 
 
 NYAOS_TBL=\

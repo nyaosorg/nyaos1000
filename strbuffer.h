@@ -92,6 +92,9 @@ public:
   char *finish() throw();             /* 0 文字では NULL を返す。*/
   char *finish2() throw(MallocError); /* 0 文字ではヒープ文字列"\0"を返す */
 
+  /* バッファを捨てる */
+  void drop() throw();
+
   /* n文字目以降を切り捨てる。*/
   void back(int n) throw() { buffer[ length=n ] = '\0'; }
 
@@ -108,7 +111,7 @@ public:
   const char *getTop()    const throw(){ return buffer; }
   operator const char *() const throw(){ return buffer; }
 
-  StrBuffer() : length(0),buffer(zero),max(0),inc(80){ }
+  StrBuffer() : length(0),buffer(zero),max(0),inc(100){ }
   StrBuffer(int x) : length(0),buffer(zero),max(0),inc(x){ }
   ~StrBuffer();
 };

@@ -7,6 +7,8 @@
 #include "nyaos.h"
 #include "parse.h"
 #include "strbuffer.h"
+#include "errmsg.h"
+#include "prompt.h"
 
 extern volatile int ctrl_c;
 
@@ -116,14 +118,14 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 	  ++sp; /*  '{'を読み飛ばし */
 	  while( *sp != '}' ){
 	    if( *sp == '\0' ){
-	      fputs("foreach : '${' without '}'\n",stderr);
+	      ErrMsg::say( ErrMsg::Missing , "foreach" , "}" , 0 );
 	      rv = -1;
 	      goto exit;
 	    }else if( *sp == ':' ){ /* ${VAR:OPT} の場合 */
 	      ++sp;
 	      while( *sp != '}' ){
 		if( *sp == '\0' ){
-		  fputs("foreach : '${' without '}'\n",stderr);
+		  ErrMsg::say( ErrMsg::Missing , "foreach" , "}" , 0 );
 		  rv = -1;
 		  goto exit;
 		}
@@ -140,14 +142,14 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 	  ++sp; /*  '('を読み飛ばし */
 	  while( *sp != ')' ){
 	    if( *sp == '\0' ){
-	      fputs("foreach : '$(' without ')'\n",stderr);
+	      ErrMsg::say(ErrMsg::Missing,"foreach",")",0);
 	      rv = -1;
 	      goto exit;
 	    }else if( *sp == ':' ){ /* $(VAR:OPT) の場合 */
 	      ++sp;
 	      while( *sp != ')' ){
 		if( *sp == '\0' ){
-		  fputs("foreach : '$(' without ')'\n",stderr);
+		  ErrMsg::say(ErrMsg::Missing,"foreach",")",0);
 		  rv = -1;
 		  goto exit;
 		}
@@ -183,8 +185,7 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 	  value = env;
 	}else{
 	  /* さもなければ、エラーっすよ */
-	  fprintf(stderr,"foreach : no environment variable $%s\n"
-		  ,word.getTop() );
+	  ErrMsg::say( ErrMsg::NoSuchEnvVar , "foreach" , word.getTop() , 0 );
 	  rv = -1;
 	  goto exit;
 	}
@@ -194,9 +195,7 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 	  line << value;
 	}else{
 	  if( word_design( line , value , opt ) != 0 ){
-	    fprintf(  stderr 
-		    , "foreach: %s: no such option for $VAR:OPT\n"
-		    , opt.getTop() );
+	    ErrMsg::say( ErrMsg::UnknownOption , "foreach",opt.getTop() ,0);
 	    rv = -1;
 	    goto exit;
 	  }
@@ -230,7 +229,7 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
       execute_result = execute(srcfil,line,1);
       
       if( execute_result != 0  &&  (option & OPTION_I)==0 ){
-	fprintf(stderr,"foreach : error level %d",execute_result );
+	ErrMsg::say( ErrMsg::ErrorInForeach , 0 );
 	rv = -1;
 	goto exit;
       }
@@ -247,7 +246,7 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *src )
 static int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
 {
   if( srcfil == NULL ){
-    fputs("foreach is not available in REXX Script!\n",stderr);
+    ErrMsg::say( ErrMsg::NotAvailableInRexx , "foreach" , 0 );
     return 0;
   }
   
@@ -288,29 +287,27 @@ static int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   int org_fd1 = -1;
   Parse *args=NULL;
 
+
   /** 繰り返す命令群を全て入力させる。 **/
   if( isatty(fileno(srcfil)) ){
     /* キーボード入力 */
+    Prompt prompt;
     Shell shell;
     const char *promptenv=getShellEnv("NYAOSPROMPT2");
-    char prompt[256];
-    if( promptenv == NULL ){
-      prompt[0] = '?';
-      prompt[1] = ' ';
-      prompt[2] = '\0';
-    }
     int rc;
     
     for(;;){
-      shell.allow_use_topline();
-      if( promptenv != NULL ){
-	if( set_prompt( promptenv , prompt , sizeof(prompt) ) )
-	  shell.forbid_use_topline();
-      }
+      Prompt prompt( promptenv ? promptenv : "? " );
+
+      if( prompt.isTopUsed() )
+	shell.forbid_use_topline();
+      else
+	shell.allow_use_topline();
+
       shell.setcursor( cursor_on_color_str , cursor_off_color_str );
       
       const char *buffer;
-      rc=shell.line_input(prompt,"and..",&buffer);
+      rc=shell.line_input(prompt.get2(),"and..",&buffer);
       putchar('\n');
       if( rc < 0 )
 	break;
@@ -341,9 +338,7 @@ static int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
       return 1;
     }
     if( rc==Shell::FATAL ){
-      fputs("Unknown error occured.\n"
-	    "Please mail kaoru@ferrari6.cheme.kyoto-u.ac.jp!\n"
-	    ,stderr );
+      ErrMsg::say( ErrMsg::InternalError , "foreach" , 0 );
       return 1;
     }
   }else{
@@ -405,7 +400,7 @@ static int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
     }catch(StrBuffer::MallocError){
       if( list != NULL )
 	fnexplode2_free(list);
-      fputs("foreach: memory allocation error\n",stderr);
+      ErrMsg::say( ErrMsg::MemoryAllocationError , "foreach" , 0 );
       break;
     }
   }/* パラメータループ */

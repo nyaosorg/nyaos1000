@@ -5,13 +5,19 @@
  *      └ Shell  プロンプト処理や、キーバインド等も含む「シェル」
  *
  *  └ private継承    ┗ public継承
+ *
+ * 課題点：倍角文字の泣き別れをうまく扱えない。こまった。
  */
 
 #ifndef EDLIN_H
 #define EDLIN_H
 
-#include <stdio.h>
+#include <cstdio>
 #include "macros.h"
+
+#ifdef NEW_HISTORY
+#  include "Histories.h"
+#endif
 
 /* ================ 参照クラス ================         */
 class Complete;		/* ファイル名補完の為のクラス   */
@@ -75,7 +81,7 @@ public:
   virtual ~Edlin();
   bool operator ! () const { return strbuf==0 || atrbuf==0 ; }
   
-  enum{ SBC , DBC1ST , DBC2ND };
+  enum{ SBC , DBC1ST , DBC2ND , PAD };
   
   void init();
   void pack(); /* 入力した制御文字を1byte形式へ置換する。 */
@@ -166,10 +172,6 @@ protected:
   void alert(){ putchr('\a'); }
 public:
   Edlin2(FILE *_fp=stdout) : fp(_fp) , cursor_on("") , cursor_off(""){}
-#if 0
-  Edlin2(char *buffer, int max, FILE *Fp=stdout )
-    : Edlin(buffer,max) , fp(Fp) , cursor_on("") , cursor_off(""){}
-#endif
   int getkey(void);
   
   void setcursor(char *on,char *off="\x1B[0m")
@@ -181,6 +183,16 @@ public:
 
 extern char dbcstable[256];
 int dbcs_table_init();
+
+/* ヒストリ改良プラン
+ *	最終的には、ヒストリは外部オブジェクト(Histories)で管理。
+ *	Shell は、ヒストリインスタンスを参照のみするようにする。
+ *	従って、Shell のコンストラクタにヒストリオブジェクトが
+ *	加わることになる。
+ *
+ *	いきなり、それは難しいから、Shell で扱っているヒストリを
+ *	クラス Histories で扱うように変更する。
+ */
 
 class Shell : private Edlin2 {
   const char *prompt;
@@ -194,11 +206,12 @@ class Shell : private Edlin2 {
   
   void alert(){ if( beep_ok ) putchr('\a'); }
 public:
+#ifndef NEW_HISTORY
   struct History{
     History *prev,*next;
     char buffer[1];
   };
-  
+#endif
   /* $I の為にトップライン上を上書きするか否かの設定メソッド */
   void  allow_use_topline(){ topline_permission = true;  }
   void forbid_use_topline(){ topline_permission = false; }
@@ -247,18 +260,42 @@ public:
 
   int line_input(const char *prompt1,const char *prompt2,const char **str);
 private:
+#ifdef NEW_HISTORY
+  static Histories histories;
+#else
   static History *history;
   static int nhistories;
   History *cur;
+#endif
 public:
-  static int get_history_number() { return nhistories; }
-  static const char *get_nth_history(int n);
-  
   // 最新のヒストリ内容を引数の内容と置きかえる。
-  static int replace_last_history(const char *s);
-  int regist_history(const char *s=0);
-  // ヒストリに文字列を加える。
-  static int append_history(const char *s);
+  static int replace_last_history(const char *s)
+#ifdef NEW_HISTORY
+    {
+      Histories::Cursor cur(histories); /* bindkey.cc でのみ使用 */
+      ++cur; cur->replace(s);
+    }
+#else
+  ;
+#endif
+  int regist_history(const char *s=0)
+#ifdef NEW_HISTORY
+    {
+      histories.append(s); /* bindkey.cc でのみ、利用されているようだ */
+    }
+#else
+  ;
+#endif
+
+
+  static int append_history(const char *s)
+#ifdef NEW_HISTORY
+    {
+      histories.append(s); /* prepro2.cc でのみ使用 */
+    }
+#else
+  ;
+#endif
 
   bool isOverWrite(){ return overwrite; }
 

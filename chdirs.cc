@@ -1,3 +1,16 @@
+/* 本ソースリストは -*- c++ -*- でコーディングされています。
+ *
+ * chdirs.cc --- ディレクトリ移動のコマンドの為の関数群
+ *	本ソースは NYAOS 専用となっています。全体として汎用性はありません。
+ *
+ *	changeDir … エラーダイアログを出さない、chdir関数
+ *	cmd_pwd … pwd コマンド
+ *	cmd_chdir … cd コマンド
+ *	cmd_dirs … dirs コマンド
+ *	cmd_pushd … pushd コマンド
+ *	cmd_popd … popd コマンド
+ */
+
 #include <stdlib.h>
 #include <io.h>
 #include <ctype.h>
@@ -7,6 +20,7 @@
 #include "parse.h"
 #include "nyaos.h"
 #include "finds.h"
+#include "errmsg.h"
 
 enum{
   BIT_CD_PATH      = 1,
@@ -130,7 +144,7 @@ int changeDir(const char *s)
     if( rc == 0 ){
       rc = changeDirAndSetEnv( s );
     }else{
-      fprintf(stderr,"Drive %c: is not ready\n",s[0]);
+      ErrMsg::say(ErrMsg::ChangeDriveError,s,0);
     }
     DosError( FERR_ENABLEHARDERR );
   }else{
@@ -238,8 +252,8 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
     if( option_cd_goto_home ){
       const char *home=getShellEnv("HOME");
       if( home == NULL || changeDir(home) != 0 ){
-	fputs("nyaos: %HOME% does not point a right directory.\n",stderr);
-	return-1;
+	ErrMsg::say( ErrMsg::BadHomeDir , 0 );
+	return -1;
       }
       strcpy(prevdir,wd);
       return 0;
@@ -313,7 +327,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
       _chdrive( org_drive );
     }
   }
-  fprintf(stderr,"%s : no such directory.\n",argv[0]);
+  ErrMsg::say( ErrMsg::NoSuchDir , argv[0] , 0 );
   return-1;
 }
 
@@ -335,7 +349,7 @@ int cmd_chdir( FILE *srcfil, Parse &params)
     getcwd_case(wd);
     const char *home=getShellEnv("HOME");
     if( home == NULL || changeDir(home) != 0 )
-      fprintf(stderr,"chdir: $HOME does not point a right directory.\n");
+      ErrMsg::say( ErrMsg::BadHomeDir , "chdir" , 0 );
     strcpy(prevdir,wd);
   }else{
     return cmd_pwd(srcfil,params);
@@ -373,11 +387,11 @@ static char *gethome(int &size)
  * in	params パラメータオブジェクト。出力ストリームを得るのに用いるだけ。
  * 	flag  bit0=1: 縦型表示をする(-v オプション用)
  */
-int simple_dirs ( Parse &params , int flag=0 )
+static int simple_dirs ( Parse &params , int flag=0 )
 {
   FILE *fout=params.open_stdout();
   if( fout == NULL ){
-    fputs("nyaos : cannot make a pipe or file\n",stderr);
+    ErrMsg::say( ErrMsg::CantOutputRedirect , "nyaos" , 0 );
     return 1;
   }
 
@@ -440,8 +454,11 @@ int cmd_dirs ( FILE *srcfil , Parse &params )
 	  break;
 	  
 	default:
-	  fprintf(stderr,"-%c : unknown option\n",params[i][j]);
-	  break;
+	  {
+	    char buffer[3] = { '-' , params[i][j] , '\0' };
+	    ErrMsg::say( ErrMsg::UnknownOption , buffer , 0 );
+	    break;
+	  }
 	}
       }
     }
@@ -633,13 +650,12 @@ int cmd_pushd( FILE *srcfil , Parse &params)
   // 「pushd↓」：スタックトップとカレントディレクトリを入れ換える
   if( target == -1 ){
     if( dirstack == NULL ){
-      fputs("pushd: No other directory.",stderr);
+      ErrMsg::say( ErrMsg::DirStackEmpty , 0 );
       return 0;
     }
     
     if( changeDir(dirstack->buffer) != 0){
-      fprintf(stderr,"%s: Specified directory in the stack is not found.\n"
-	      , dirstack->buffer );
+      ErrMsg::say( ErrMsg::NoSuchDir , dirstack->buffer , 0 );
       return 0;
     }
     Dirstack *tmp=dirstack;
@@ -655,11 +671,9 @@ int cmd_pushd( FILE *srcfil , Parse &params)
     
     int n=atoi(params[target].ptr+1);
     if( n <= 0 ){
-      fprintf(stderr,"+%-*.*s: No such file or directory.\n"
-	      , params[target].len
-	      , params[target].len
-	      , params[target].ptr
-	      );
+      char *buffer=(char*)alloca( params[target].len+1 );
+      params.copy(target,buffer);
+      ErrMsg::say( ErrMsg::NoSuchFileOrDir , buffer , 0 );
       return 0;
     }
 
@@ -670,14 +684,13 @@ int cmd_pushd( FILE *srcfil , Parse &params)
     char errdir[ FILENAME_MAX ];
     switch( chdir_to_nth_stack(n,errdir) ){
     case -3:
-      fprintf(stderr,"%s : Specified directory in the stack is not found.\n"
-	      , errdir );
+      ErrMsg::say( ErrMsg::NoSuchDir , errdir , 0 );
       return 0;
     case -2:
-      fputs("pushd: can not get current directory.\n",stderr);
+      ErrMsg::say( ErrMsg::CantGetCurDir , 0 );
       return 0;
     case -1:
-      fputs("+%d: more than the number of directory stack.\n",stderr);
+      ErrMsg::say( ErrMsg::TooLargeStackNo , 0 );
       return 0;
     }
     strcpy( prevdir , cwd );
@@ -724,7 +737,7 @@ int cmd_popd( FILE *srcfil, Parse &params)
     }else if( params[i][0] == '+' ){
       nth = atoi( params[i].ptr+1 );
       if( nth == 0 ){
-	fputs("popd: Bad directory.\n",stderr);
+	ErrMsg::say( ErrMsg::NoSuchDir , "popd" , 0 );
 	return 0;
       }
     }
@@ -732,19 +745,18 @@ int cmd_popd( FILE *srcfil, Parse &params)
 
   switch( simple_popd(nth) ){
   case -2:
-    fprintf(stderr,"%s : Specified directory in the stack is not found.\n"
-	    , dirstack->buffer);
+    ErrMsg::say( ErrMsg::NoSuchDir , dirstack->buffer , 0 );
     break;
     
   case -1:
-    fputs("popd : directory stack is empty!\n",stderr);
+    ErrMsg::say( ErrMsg::DirStackEmpty , "popd" , 0 );
     break;
     
   case 0:
     return simple_dirs(params,flag);
     
   default:
-    fputs("popd : unknown error\n",stderr);
+    ErrMsg::say( ErrMsg::InternalError , "popd" , 0 );
     break;
   }
   return 0;

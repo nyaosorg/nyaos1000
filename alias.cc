@@ -7,6 +7,7 @@
 #include "parse.h"
 #include "finds.h"
 #include "strbuffer.h"
+#include "errmsg.h"
 
 Hash <Alias> alias_hash(1024);
 
@@ -331,10 +332,10 @@ int cmd_unalias(FILE *fin, Parse &params)
     return 0;
   
   if( alias_hash.remove( params[1] ) != 0 ){
-    fputs("unalias: no such alias ",stderr);
-    for(int i=0;i<params[1].len;i++)
-      putc(params[1].ptr[i],stderr);
-    putc('\n',stderr);
+    char name[128];
+    params.copy(1,name);
+    
+    ErrMsg::say(ErrMsg::NoSuchAlias,"unalias",name,0);
     
     return 1;
   }
@@ -368,7 +369,7 @@ int cmd_alias(FILE *fp, Parse &params)
 
     FILE *fout=params.open_stdout();
     if( fout == NULL ){
-      fputs("alias : cannot make a pipe or file\n",stderr);
+      ErrMsg::say(ErrMsg::CantOutputRedirect,"alias",0);
       return 1;
     }
     for( HashIndex <Alias> cur(alias_hash) ; *cur != NULL ; ++cur )
@@ -386,7 +387,7 @@ int cmd_alias(FILE *fp, Parse &params)
 	*dp = '\0';
 	FILE *fout=params.open_stdout();
 	if( fout == NULL ){
-	  fputs("alias : cannot make a pipe or file\n",stderr);
+	  ErrMsg::say(ErrMsg::CantOutputRedirect,"alias",0);
 	  return 1;
 	}
 	print_one_alias(tmp->name,fout);

@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,13 @@ extern int option_tilda_without_root;
 int Complete::directory_split_char='\\';
 int Complete::complete_tail_tilda=0;
 int Complete::complete_hidden_file=0;
+
+inline int stricmpfast( const char *s1 , const char *s2 )
+{
+  int c1=tolower(*s1 & 255) & 255;
+  int c2=tolower(*s2 & 255) & 255;
+  return (c1==c2) ? stricmp(s1,s2) : (c1-c2) ;
+}
 
 /* 最初の候補の真の名前(大文字・小文字が正しい)を得る
  * 候補が一つも無い場合のみ、NULL を返す。
@@ -46,7 +54,8 @@ int which_suffix(const char *path,...)
   if( ext == NULL )
     return 0;
   
-  ++ext; /* ピリオドをスキップ */
+  if( *ext == '.' )
+    ++ext; /* ピリオドをスキップ */
 
   /* 拡張子を発見、以下比較 */
   const char *q;
@@ -163,22 +172,21 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
       
       /* コマンド名補完の場合、拡張子が、EXE,CMD,BAT,COM以外は除く。
        * (スクリプト名は、コマンド名補完モ－ドで実行していない)
-       *
-       * is_with_dir が立っていない場合は、ディレクトリも除く。
        */
-      if(    command_complete
-	 && which_suffix(dir.get_name(),"EXE","CMD","BAT","COM","CLASS",0)==0
-	 && !( is_with_dir && (dir.get_attr() & Dir::DIRECTORY)) )
-	{
+      if( command_complete ){
+	if(  dir.is_dir()
+	   ? is_with_dir == 0
+	   : which_suffix(dir.get_name(),"EXE","CMD","BAT","COM","CLASS",0)==0
+	   ) 
 	  continue;
-	}
+      }
       
       /* HIDDEN属性を除く */
-      if( (dir.get_attr() & Dir::HIDDEN) != 0  &&  complete_hidden_file == 0 )
+      if( dir.is_hidden()  &&  complete_hidden_file == 0 )
 	continue;
 
       /* 名前の末尾がチルダのファイルを除く */
-      if( dir[dir.get_name_length()-1]=='~' && complete_tail_tilda==0 )
+      if( dir.ends_with('~')  && complete_tail_tilda==0 )
 	continue;
       
       if( dir.get_name_length() > max_length )
@@ -207,18 +215,142 @@ int Complete::makelist(const char *path)
   return makelist_core(false,true);
 }
 
+/* 1KB 単位で malloc して、malloc用ヘッダ分のメモリを節約するクラス。
+ *	sbrk.alloc(サイズ)
+ * で任意サイズのメモリを確保できるが、解放は、Sbrkのインスタンス単位
+ * でしか行えない＝ clear メソッドか、デストラクタのみが行える。
+ */
+class Sbrk{
+  struct Block{
+    Block *next;
+    char buffer[1024];
+  }*block;
+  unsigned left,n;
+public:
+  Sbrk() : block(0) , left(0) , n(0) { }
+  void *alloc(unsigned size) throw(MallocError);
+  void clear();
+
+  unsigned int queryBytes() const { return n*sizeof(Block); }
+  ~Sbrk() { clear(); }
+};
+
+void *Sbrk::alloc(unsigned size) throw(MallocError)
+{
+  if( block == 0 || left <= size ){
+    Block *neo=(Block*)malloc(sizeof(Block));
+    if( neo == NULL )
+      throw MallocError();
+    neo->next = block;
+    left = sizeof(neo->buffer);
+    block = neo;
+    ++n;
+  }
+  return &block->buffer[ left -= size ];
+}
+
+void Sbrk::clear()
+{
+  while( block != NULL ){
+    Block *nxt=block->next;
+    free(block);
+    block=nxt;
+  }
+}
+
+/* PathCache は Complete ヘ順にコピーされるだけだから
+ * 双方向リストである必要は無い
+ */
+class PathCache {
+public:
+  struct Node{
+    Node *next;
+    unsigned short length;
+    char name[1];
+  };
+private:
+  int nfiles;
+  Sbrk sbrk;
+  Node *top;
+  Node *newNode(int len) throw (MallocError)
+    { return (Node*)sbrk.alloc(sizeof(Node)+len); }
+public:
+  void clear();
+  void insert( const char *name ) throw(MallocError);
+  Node *get_top(){ return top; }
+
+  class Cursor {
+    Node *cur;
+  public:
+    Cursor(PathCache &pc) : cur(pc.get_top()) { }
+    Node *operator->(){ return cur; }
+    Node *operator*(){ return cur; }
+    void operator++(){ if( cur ) cur = cur->next; }
+    operator const void*() const { return cur != NULL ? this : NULL; }
+    bool operator ! () const { return cur == NULL; }
+  };
+  PathCache() :  nfiles(0) , top(NULL)  { }
+  unsigned queryBytes() const { return sbrk.queryBytes(); }
+  unsigned queryFiles() const { return nfiles; }
+};
+
+void PathCache::clear()
+{
+  sbrk.clear();
+  top = 0;
+  nfiles = 0;
+}
+
+
+void PathCache::insert( const char *name ) throw(MallocError)
+{
+  int len=strlen(name);
+  Node *node=newNode(len);
+  strcpy( node->name , name );
+  node->length = len;
+
+  if( top == NULL  ||  stricmpfast(node->name,top->name) < 0 ){
+    node->next = top;
+    top = node;
+  }else{
+    Node *pre=top;
+    Node *cur=pre->next;
+    while( cur != NULL ){
+      int diff=stricmpfast(node->name,cur->name);
+      if( diff == 0 ){
+	goto exit;
+      }else if( diff < 0 ){
+	pre->next = node;
+	node->next = cur;
+	goto exit;
+	break;
+      }
+      pre = cur;
+      cur = cur->next;
+    }
+    pre->next = node;
+    node->next = NULL;
+  }
+ exit:
+  ++nfiles;
+}
+
+
 /* コマンド名補完の為のキャッシュっす。
  * 本来は、静的メンバ変数にでもすべきところだが、
  * あまり、ほいほい、ヘッダファイルに宣言するのも
  * ヘッダファイルが太り過ぎてやなので、
  * 敢えて、ファイルスコープに陥れるんぢゃよ、ぎゃわ～。
  */
-static Files path_cache;
+static PathCache path_cache;
+
+unsigned Complete::queryBytes(){  return path_cache.queryBytes();  }
+unsigned Complete::queryFiles(){  return path_cache.queryFiles();  }
 
 /* コマンド名補完の為に、PATH,SCRIPTPATH 上のコマンド名を
  * グローバル変数 path_cache に設定する。
  */
-void Complete::make_command_cache()
+void Complete::make_command_cache() throw(MallocError)
 {
   path_cache.clear();
 
@@ -231,13 +363,13 @@ void Complete::make_command_cache()
     for(  const char *dirname=strtok(env,";")
 	; dirname != NULL
 	; dirname = strtok(NULL,";") ){
-      
+
       for( Dir dir(dirname); dir ; dir++ ){
 	if(   which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0
-	   && dir[dir.get_name_length()-1] != '~'
-	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
-
-	  path_cache.insert( new_filelist(dir) , SORT_BY_NAME_IGNORE );
+	   && !dir.ends_with('~') && ! dir.is_dir()  && !dir.is_hidden()){
+	  
+	  path_cache.insert( dir.get_name() );
+	}
       }
     }
   }
@@ -256,9 +388,8 @@ void Complete::make_command_cache()
       for( Dir dir(dirname); dir ; dir++ ){
 	// 末尾がチルダのファイル、隠しファイル以外のファイルは
 	// 全て登録する。
-	if(   dir[dir.get_name_length()-1] != '~'
-	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
-	  path_cache.insert( new_filelist(dir) ,SORT_BY_NAME_IGNORE );
+	if( !dir.ends_with('~') && !dir.is_dir() && !dir.is_hidden() )
+	  path_cache.insert( dir.get_name() );
       }
     }
   }
@@ -275,10 +406,9 @@ void Complete::make_command_cache()
 	; dirname = strtok(NULL,";") ){
       for( Dir dir(dirname) ; dir ; dir++ ){
 	if(   which_suffix(dir.get_name(),"CLASS",0) != 0
-	   && dir[dir.get_name_length()-1] != '~'
-	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0 )
+	   && !dir.ends_with('~') && !dir.is_dir() && !dir.is_hidden() )
 
-	  path_cache.insert( new_filelist(dir) , SORT_BY_NAME_IGNORE );
+	  path_cache.insert( dir.get_name() );
       }
     }
   }
@@ -333,27 +463,40 @@ int Complete::makelist_with_path(const char *path)
   /* ASSERT : path には、ディレクトリ名が含まれていない。*/
   strcpy( fname , path );
 
-  if( path_cache.get_top() == NULL )
-    make_command_cache();
-  
-  common_length=strlen(fname);
-  
-  for(FileListT *cur=path_cache.get_top() ; cur != NULL ; cur=cur->next ){
-    if(   cur->length > common_length
-       && strnicmp(fname,cur->name,common_length ) == 0 ){
-      
-      insert( dup_filelist(cur) );
-      if( cur->length > max_length )
-	max_length = cur->length;
+  if( path_cache.get_top() == NULL ){
+    try{
+      make_command_cache();
+    }catch(MallocError){
+      ;
     }
   }
+  
+  common_length=strlen(fname);
+
+  for(PathCache::Cursor cur(path_cache) ; cur ; ++cur ){
+
+    if(    cur->length >= common_length
+       &&  strnicmp(fname,cur->name,common_length ) == 0 ){
+      
+      FileListT *tmp=(FileListT *)malloc(sizeof(FileListT)+cur->length);
+      if( tmp != 0 ){
+	strcpy(tmp->name,cur->name);
+	tmp->length = cur->length;
+	tmp->attr = tmp->size = tmp->easize = 0;
+	insert( tmp );
+	
+	if( cur->length > max_length )
+	  max_length = cur->length;
+      }
+    }
+  }
+
   for(Dir dir(".") ; dir != NULL ; ++dir ){
     if(   dir.get_name_length() >= common_length
        && strnicmp( fname , dir.get_name() ,common_length )==0
-       && ((dir.get_attr() & Dir::DIRECTORY) != 0
+       && ( dir.is_dir()
 	   || which_suffix(dir.get_name(),"EXE","CMD","COM","CLASS",0) !=0 )
-       && dir[dir.get_name_length()-1] != '~'
-       && (dir.get_attr() & Dir::HIDDEN)==0  ){
+       && !dir.ends_with('~')  &&  !dir.is_hidden()  ){
     
       insert( new_filelist(dir) );
       if( dir.get_name_length() > max_length )

@@ -8,6 +8,7 @@
 #include "macros.h"
 #include "autofileptr.h"
 #include "quoteflag.h"
+#include "errmsg.h"
 
 const char *getShellEnv(const char *);
 
@@ -24,7 +25,9 @@ extern int are_spaces(const char *s); /* ← edlin2.cc */
 static struct PublicHistory {
   char *string;
   PublicHistory *prev,*next;
-} Oth={NULL,NULL,NULL} , *public_history=&Oth;
+
+  PublicHistory() : string(0) , prev(0) , next(0) { }
+} Oth , *public_history=&Oth;
 
 int nhistories = 0;
 
@@ -71,11 +74,11 @@ int source_history( const char *fname )
       *q = '\0';
 
     /* ---- public history ----- */
-    PublicHistory *tmp=(PublicHistory*)malloc(sizeof(PublicHistory));
+    PublicHistory *tmp=new PublicHistory;
     if( tmp != NULL ){
       tmp->string = strdup(p);
       if( tmp->string == NULL ){
-	free(tmp);
+	delete tmp;
       }else{
 	tmp->prev = public_history;
 	tmp->next = NULL;
@@ -133,13 +136,15 @@ static const char *get_hist_f(int n)
   PublicHistory *cur=Oth.next;
   if( cur==NULL )
     return NULL;
-  // ユーザー指定のヒストリ番号は「1」から始まるので、i=1
+  
+  /* ユーザー指定のヒストリ番号は「1」から始まるので、i=1 */
   for(int i=1; i<n ; i++ ){
     if( cur == NULL )
       return NULL;
+    // fprintf(stderr,"[%d]%s ",i,cur->string ?: "(null)" );
     cur = cur->next;
   }
-  return cur->string;
+  return (cur != NULL  && cur != &Oth ) ? cur->string : 0 ;
 }
 
 /* 過去方向へヒストリを検索する 
@@ -155,7 +160,7 @@ static const char *get_hist_r(int n)
       return NULL;
     cur = cur->prev;
   }
-  return cur->string;
+  return cur ? cur->string : 0 ;
 }
 
 /* パスをオプションの値によって、切り刻むルーチン
@@ -353,6 +358,7 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
 {
   /* 引数 sp は、「!」を指していると仮定 */
   const char *histring=0;
+  const char *event=sp; /* ← エラーメッセージ用 */
   
   switch( *++sp ){
 
@@ -365,7 +371,7 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
 
     histring = get_hist_r(0);
     if( histring == NULL )
-      fprintf(stderr,"! : Event not found.\n");
+      ErrMsg::say(ErrMsg::EventNotFound,"!",0);
     break;
 
   default:
@@ -383,11 +389,11 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
       if( minus ){
 	histring = get_hist_r(n>0 ? n-1 : 0 );
 	if( histring == NULL )
-	  fprintf(stderr,"-%d : Event not found.\n",n);
+	  ErrMsg::say(ErrMsg::EventNotFound,event,0);
       }else{
 	histring = get_hist_f(n);
 	if( histring == NULL )
-	  fprintf(stderr,"%d : Event not found.\n",n);
+	  ErrMsg::say(ErrMsg::EventNotFound,event,0);
       }
       
 
@@ -401,7 +407,7 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
 
       histring = seek_hist_mid(buffer);
       if( histring == NULL )
-	fprintf(stderr,"%s : Event not found.\n",buffer);
+	ErrMsg::say(ErrMsg::EventNotFound,buffer,0);
 	
     }else{
       char buffer[1024] , *bp = buffer;
@@ -413,7 +419,7 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
       *bp = '\0';
       histring = seek_hist_top(buffer,len);
       if( histring == NULL )
-	fprintf(stderr,"%s : Event not found.\n",buffer);
+	ErrMsg::say(ErrMsg::EventNotFound,buffer,0);
     }
     break;
   }/* end of switch */
@@ -521,9 +527,25 @@ void replace_history(const char *sp, char *_dp , int max )
   /* ヒストリを登録する。*/
   PublicHistory *tmp=new PublicHistory;
   if( tmp != NULL && !are_spaces(_dp) && (tmp->string=strdup(_dp))!=NULL ){
+    /* (prev)   旧public_history ≪ tmp ≪ public_history->next  (next) 
+     *  古い                     (1)    (2)   (=NULL)            新しい
+     */
     tmp->prev = public_history ;
-    tmp->next = public_history->next ;
+
+    if( public_history != NULL ){
+      tmp->next = public_history->next ; /*  多分 == NULL */
+      if( public_history->next != NULL ){
+	public_history->next->prev = tmp;
+      }
+      public_history->next = tmp;
+    }else{
+      tmp->next = NULL;
+    }
+    public_history = tmp;
+
+#if 0
     public_history = public_history->next = tmp ;
+#endif
     nhistories++;
     if( option_same_history ){
       Shell::replace_last_history( tmp->string );
@@ -716,5 +738,7 @@ void killAllPublicHistory(void)
     delete trash;
   }
   public_history = &Oth;
+  Oth.next = NULL;
+  Oth.prev = NULL;
   nhistories = 0;
 }

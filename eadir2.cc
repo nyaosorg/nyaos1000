@@ -18,6 +18,7 @@
 #include "strbuffer.h"
 #include "SmartPtr.h"
 #include "keyname.h"
+#include "errmsg.h"
 
 #define INCL_VIO
 #define INCL_DOSNLS
@@ -550,7 +551,8 @@ void dir1(  const FileListT *flist , int max_length
       /* Žž•\Ž¦ */
       ncolumns += fprintf( fout
 			  ,"%02d:%02d " 
-			  , datetime->getHour() ,datetime->getHour() );
+			  , datetime->getHour() 
+			  , datetime->getMinute() );
     }
   }
   
@@ -933,7 +935,7 @@ int eadir( int argc, char **argv,FILE *fout,Parse &parser)
 		  , &KeyName::compareWithTop );
 	
 	if( longopt == NULL ){
-	  fprintf(stderr,"builtin-ls: %s: no such option.\n", argv[i]);
+	  ErrMsg::say( ErrMsg::UnknownOption , "ls" , argv[i] , 0 );
 	  return 0;
 	}
 	(*longopt->func)();
@@ -1021,7 +1023,7 @@ int eadir( int argc, char **argv,FILE *fout,Parse &parser)
 	      files.insert( node , ls_flag[ LS_SORT ] );
 	    }
 	  }else{
-	    fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
+	    ErrMsg::say( ErrMsg::NoSuchFileOrDir , argv[i] , 0 );
 	    rc = 1;
 	    filefault++;
 	  }
@@ -1039,7 +1041,7 @@ int eadir( int argc, char **argv,FILE *fout,Parse &parser)
 	    files.insert( node , ls_flag[ LS_SORT] );
 	  }
 	}else{
-	  fprintf(stderr,"%s: no such file or directory\n",argv[i]);
+	  ErrMsg::say( ErrMsg::NoSuchFileOrDir , argv[i] , 0 );
 	  rc = 1;
 	  filefault++;
 	}

@@ -1,8 +1,16 @@
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 #include "strbuffer.h"
 
 char StrBuffer::zero[1]={ '\0' };
+
+void StrBuffer::drop() throw()
+{
+  free( buffer );
+  buffer = zero;
+  length = max = 0;
+}
 
 char *StrBuffer::finish() throw()
 {
@@ -38,6 +46,7 @@ void StrBuffer::grow(int newSize)
   char *newBuffer = (char*)(  isZero() 
 			    ? malloc( newSize+1 ) 
 			    : realloc( buffer , newSize+1 ) );
+  assert( newBuffer != NULL );
   if( newBuffer == NULL )
     throw MallocError();
 

@@ -7,6 +7,7 @@
 #include "parse.h"
 #include "edlin.h"
 #include "pathlist.h"
+#include "errmsg.h"
 
 int cmd_hotkey(FILE *source , Parse &parse )
 {
@@ -19,7 +20,7 @@ int cmd_hotkey(FILE *source , Parse &parse )
   parse.copy(1,keyName);
   parse.copy(2,progName);
   if( Shell::bind_hotkey(keyName,progName) != 0 ){
-    fprintf(stderr,"hotkey: %s: invalid key name.\n",keyName);
+    ErrMsg::say( ErrMsg::InvalidKeyName , keyName , 0 );
     return 1;
   }
   return 0;
@@ -55,7 +56,7 @@ int cmd_bind(FILE *source, Parse &param )
 	return 0;
       }
     }
-    fprintf(stderr,"%s : no such bindings\n",buffer);
+    ErrMsg::say( ErrMsg::InvalidKeySetName , buffer , 0 );
     rc = 1;
   }
   return rc;
@@ -75,17 +76,17 @@ int cmd_bindkey(FILE *source,Parse &param)
   
   switch( Shell::bindkey(key,func) ){
   case 1:
-    fprintf(stderr,"bindkey: %s: invalid key name.\n",key);
+    ErrMsg::say(ErrMsg::InvalidKeyName,key,0);
     return 1;
 
   case 2:
     /* 機能名が無い → complete モードの bindmap に bind */
     switch( Edlin::bindCompleteKey(key,func) ){
     case 1:
-      fprintf(stderr,"bindkey: %s: invalid key name.\n",key);
+      ErrMsg::say(ErrMsg::InvalidKeyName,key,0);
       return 1;
     case 2:
-      fprintf(stderr,"bindkey: %s: invalid function name.\n",func);
+      ErrMsg::say(ErrMsg::InvalidFuncName,func,0);
       return 2;
     }
   }
@@ -180,14 +181,14 @@ int cmd_set( FILE *srcfil, Parse &params )
   for(;;){
     if( dp >= tailof(env_name)-2 ){
       // サイズオーバー
-      fputs("set: Too long variable name!",stderr);
+      ErrMsg::say( ErrMsg::TooLongVarName , "set" , 0 );
       return 1;
     }else if( sp >= tail || *sp == '>'  || *sp == '\0' ){
       // 変数名が無い → 画面表示のみ。→ オリジナル set に任せる。
       return RC_HOOK;
     }else if( *sp=='<' ){
       // 入力リダイレクトはできないのでエラー
-      fputs("set: can not redirect stdin.\n",stderr);
+      ErrMsg::say( ErrMsg::MustNotInputRedirect , "set",0);
       return 1;
     }else if( *sp=='+'  &&  *(sp+1) == '=' ){
       // 「+=」演算子
@@ -204,7 +205,7 @@ int cmd_set( FILE *srcfil, Parse &params )
 	++sp;
       }while( is_space(*sp) );
       if( *sp == '<' ){
-	fputs("set: can not redirect stdin.\n",stderr);
+	ErrMsg::say( ErrMsg::MustNotInputRedirect,"set",0);
 	return 1;
       }else if( *sp == '>' ){
 	return RC_HOOK;
@@ -217,9 +218,7 @@ int cmd_set( FILE *srcfil, Parse &params )
 	break;
       }else{
 	*dp = '\0';
-	fprintf(stderr
-		, "set: Invalid environment variable name : %s\n"
-		, env_name );
+	ErrMsg::say( ErrMsg::InvalidVarName , env_name , 0 );
 	return 2;
       }
     }
@@ -303,41 +302,11 @@ int cmd_set( FILE *srcfil, Parse &params )
   return 0;
 }
 
-#if 0
-int cmd_cursor( FILE *fp, Parse &params)
-{
-  if( cursor_on_color_str != NULL ){
-    free( cursor_on_color_str );
-    cursor_on_color_str = NULL;
-  }
-  if( cursor_off_color_str != NULL ){
-    free( cursor_off_color_str );
-    cursor_off_color_str = NULL;
-  }
-  if( params.get_argc() >= 3 ){
-    cursor_on_color_str  = (char*)malloc(params.get_length(1)+1);
-    assert( cursor_on_color_str != NULL );
-    params.copy(1,cursor_on_color_str );
-
-    cursor_off_color_str  = (char*)malloc(params.get_length(2)+1);
-    assert( cursor_off_color_str != NULL );
-    params.copy(2,cursor_off_color_str );
-
-    FILE *fout=params.open_stdout();
-    if( fout == NULL ){
-      fputs("cursor : cannot make a pipe or file\n",stderr);
-      return 1;
-    }
-  }
-  return 0;
-}
-#endif
-
 int cmd_echo(FILE *srcfil, Parse &params )
 {
   FILE *fout=params.open_stdout();
   if( fout == NULL ){
-    fputs("echo : cannot make a pipe or file\n",stderr);
+    ErrMsg::say( ErrMsg::CantOutputRedirect , 0 );
     return 0;
   }
   bool quote=false;
@@ -417,6 +386,12 @@ int cmd_lecho(FILE *source, Parse &params )
     params[i] >> argv;
     printf("[%s] ",argv);
   }
-  printf("\n");
+  putchar('\n');
+  return 0;
+}
+
+int cmd_cls(FILE *source, Parse &params )
+{
+  puts("\x1B[2J");
   return 0;
 }

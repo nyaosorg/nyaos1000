@@ -19,9 +19,8 @@
 #include "nyaos.h"
 #include "complete.h"
 #include "smartptr.h"
-
-#define RED	"" /*"\x1B[31m"*/
-#define WHITE	"" /*"\x1B[37m"*/
+#include "errmsg.h"
+#include "prompt.h"
 
 HAB   hab, hmq;
 
@@ -194,8 +193,7 @@ static void nyaosAtExit()
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
-    fputs(  "NYAOS : Current Version of NYAOS does not support DOS/VDM.\n"
-	  , stderr );
+    ErrMsg::say( ErrMsg::NotSupportVDM , "nyaos",0 );
     return -1;
   }
 #if USE_SET_WIN_TITLE
@@ -205,7 +203,7 @@ int main(int argc, char **argv)
   // ---- DBCS table の初期化 ----
 
   if( dbcs_table_init() != 0 ){
-    fprintf(stderr,"nyaos: DBCS init error\n");
+    ErrMsg::say( ErrMsg::DBCStableCantGet , "nyaos" , 0 );
     return -1;
   }
 
@@ -224,8 +222,7 @@ int main(int argc, char **argv)
   // CMD.EXE に切り換えさせる。 
   // ----------------------------------------
   if( SearchEnv("CMD.EXE","PATH",cmdexe_path) == 0 ){
-    fputs("nyaos: can not find cmd.exe.\n"
-	  "       Please put cmd.exe on %PATH%\n",stderr );
+    ErrMsg::say( ErrMsg::WhereIsCmdExe , "nyaos" , 0 );
     return -1;
   }
   putenv(comspec);
@@ -239,7 +236,7 @@ int main(int argc, char **argv)
     if( argv[i][0] == '-' || argv[i][0] == '/' ){
       switch(argv[i][1]){
       default:
-	fprintf(stderr,"-%c : no such option.\n",argv[i][1]);
+	ErrMsg::say(ErrMsg::UnknownOption , argv[i] , 0 );
 	warning_mode = 1;
 	break;
 
@@ -258,7 +255,7 @@ int main(int argc, char **argv)
 	  }else if( i+1 < argc ){
 	    p = argv[++i];
 	  }else{
-	    fprintf(stderr,"nyaos: no geometry parameter for -g.\n");
+	    ErrMsg::say(ErrMsg::TooFewArguments,"nyaos -g",0);
 	    warning_mode = 1;
 	    break;
 	  }
@@ -269,8 +266,7 @@ int main(int argc, char **argv)
 	    x = x*10 + (*p++ -'0');
 
 	  if( (*p != 'x' && *p != 'X' ) || x<80 || x>200 ){
-	    fprintf(stderr,"nyaos: bad geometry parameter `%s'.\n"
-		    , argv[i] );
+	    ErrMsg::say(ErrMsg::BadParameter,"nyaos -g",argv[i],0);
 	    return 1;
 	  }
 	  ++p;
@@ -278,8 +274,7 @@ int main(int argc, char **argv)
 	    y = y*10 + (*p++ -'0');
 
 	  if( y<20 || y>100 ){
-	    fprintf(stderr,"nyaos: bad geometry parameter `%s'.\n"
-		    , argv[i] );
+	    ErrMsg::say(ErrMsg::BadParameter,"nyaos -g",argv[i],0);
 	    return 2;
 	  }
 	  
@@ -375,7 +370,7 @@ int main(int argc, char **argv)
 	  *dp = '\0';
 	  
 	  if( set_option(buffer,flag) != 0 ){
-	    fprintf(stderr,"--%s: no such option.\n",buffer);
+	    ErrMsg::say(ErrMsg::UnknownOption,"nyaos" , buffer , 0 );
 	    warning_mode = 1;
 	  }
 	}
@@ -383,7 +378,7 @@ int main(int argc, char **argv)
       }
     }else{
       if( changeDir(argv[i]) != 0 ){
-	fprintf(stderr,"%s: %s:invalid argument.\n",argv[0],argv[i]);
+	ErrMsg::say(ErrMsg::BadParameter,argv[0],argv[i],0);
 	return -1;
       }
     }
@@ -410,7 +405,7 @@ int main(int argc, char **argv)
 	    ,stdout);
     }
     
-    fputs("\n        The Free Software         "
+    fputs("\n     The Open Source Software     "
 	  "\n- Nihongo Yet Another Os/2 Shell -"
 	  "\n  1996,97,98,99 (c) HAYAMA,Kaoru  "
 	  "\n Ver."VERSION" compiled on "__DATE__
@@ -489,20 +484,21 @@ int main(int argc, char **argv)
    * ----------------------------------------------------------------
    */
   if( ! isatty(fileno(stdin)) ){
-    char cmdlin[1024]="";
     for(;;){
       if( option_prompt_even_piped ){
 	/* Mule 中から、NYAOS を利用する場合は、
 	 * パイプされている場合でも、プロンプトを表示させなくては
 	 * いけない */
-	char promptstr[2048];
+
 	const char *promptenv=getShellEnv("NYAOSPROMPT");
 	if( promptenv==NULL && (promptenv=getShellEnv("PROMPT")) == NULL )
 	  promptenv = "$p$g";
-	(void)set_prompt( promptenv , promptstr , sizeof(promptstr) );
-	fputs( promptstr , stdout );
+
+	Prompt prompt( promptenv );
+	fputs( prompt.get2() , stdout );
 	fflush(stdout);
       }
+      char cmdlin[1024]="";
       if( fgets_chop(cmdlin,sizeof(cmdlin),stdin) == NULL 
 	 || execute(stdin,cmdlin) == RC_QUIT )
 	return 0;
@@ -518,7 +514,7 @@ int main(int argc, char **argv)
 
   Shell shell;
   if( !shell ){
-    fputs( "nyaos: memory allocation error for shell.\n" , stderr );
+    ErrMsg::say(ErrMsg::MemoryAllocationError,"nyaos",0);
     return -1;
   }
 
@@ -526,15 +522,15 @@ int main(int argc, char **argv)
   for(;;){
     /* プロンプト文字列の作成 */
     
-    char promptstr[256];
     const char *promptenv=getShellEnv("NYAOSPROMPT");
     if( promptenv==NULL && (promptenv=getShellEnv("PROMPT")) == NULL )
       promptenv = "$p$g";
     
     /* プロンプト文字列に、最上段を使用するものがあれば、
      * シェル(Shell)に、その使用を禁止させる。*/
-    
-    if( set_prompt(promptenv , promptstr , sizeof(promptstr) ) )
+
+    Prompt prompt( promptenv );
+    if( prompt.isTopUsed() )
       shell.forbid_use_topline();
     else
       shell.allow_use_topline();
@@ -558,7 +554,7 @@ int main(int argc, char **argv)
     
     /* 一行入力 */
     const char *top;
-    int rc = shell.line_input(promptstr,">",&top);
+    int rc = shell.line_input(prompt.get2() ,">",&top);
     
     // ============== コマンドの実行 ====================
 

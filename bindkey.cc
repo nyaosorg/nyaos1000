@@ -20,10 +20,16 @@
 extern HAB hab;
 extern int execute_result;
 int printexitvalue=0;
+#ifdef NEW_HISTORY
+Shell::Histories history;
+#else
 Shell::History *Shell::history=NULL;
 int Shell::nhistories=0;
+#endif
+
 int Shell::ctrl_d_eof=0;
 
+#if 0
 const char *Shell::get_nth_history(int n)
 {
   History *p=history;
@@ -35,6 +41,7 @@ const char *Shell::get_nth_history(int n)
   }
   return (p != 0 ? p->buffer : 0) ;
 }
+#endif
 
 static struct bind_t{
   unsigned key;
@@ -342,6 +349,7 @@ Shell::Status Shell::complete_to_url()
 
 extern int are_spaces(const char *s);
 
+#ifndef NEW_HISTORY
 int Shell::regist_history(const char *s)
 {
   int length;
@@ -385,6 +393,7 @@ int Shell::regist_history(const char *s)
   nhistories++;
   return 0;
 }
+#endif
 
 Shell::Status Shell::input_terminate()
 {
@@ -396,6 +405,7 @@ Shell::Status Shell::input_terminate()
     return TERMINATE;
 }
 
+#ifndef NEW_HISTORY
 /* シェルのヒストリに追加する。
  *	s ヒストリ文字列
  * return 0:成功 , -1:失敗
@@ -415,7 +425,9 @@ int Shell::append_history(const char *s)
   history = tmp;
   return 0;
 }
+#endif
 
+#ifndef NEW_HISTORY
 int Shell::replace_last_history(const char *s)
 {
   int len=strlen(s);
@@ -440,6 +452,7 @@ int Shell::replace_last_history(const char *s)
 
   return 0;
 }
+#endif
 
 Shell::Status Shell::repaint()
 {

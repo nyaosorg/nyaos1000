@@ -13,6 +13,7 @@
 #include "finds.h"
 #include "strtok.h"
 #include "strbuffer.h"
+#include "prompt.h"
 
 extern int nhistories;
 extern int execute_result;
@@ -293,11 +294,8 @@ static void set_logo_to_prompt(StrBuffer &prompt)
       " (c) 1996-99 HAYAMA,Kaoru ";
 	
   prompt << "\x1B[s\x1B[1;44;37m\x1B[H";
-  
-  for(int i=screen_width-sizeof(logo) ; i > 0 ; i-- )
-    prompt << ' ';
-    
-  prompt << logo;
+  prompt << logo << "\x1b[K";
+  prompt << "\x1B[u\x1B[0m";
   
   if( option_vio_cursor_control )
     v_attrib(a);
@@ -311,7 +309,7 @@ static void set_multi_curdir_to_prompt(  StrBuffer &prompt
   int curdrv=_getdrive();
   if( option_vio_cursor_control )
     a = v_getattr();
-	
+  
   /* カーソル位置を記憶 ＆ 画面最上段へ移動 */
   prompt << "\x1b[s\x1B[H";
 
@@ -374,127 +372,117 @@ static void set_multi_curdir_to_prompt(  StrBuffer &prompt
 
 /* プロンプトを作成する。
  *     promptenv プロンプトの元文字列
- *     dp        プロンプトの変換後文字列の入れるバッファ
- *     size      バッファサイズ
- * return
- *     false: 画面最上段を使用しなかった。
- *     true:  画面最上段を使用した。
  */
-bool make_prompt( StrBuffer &prompt , const char *promptenv )
+int Prompt::parse( const char *promptenv )
 {
-  bool used_topline=false;
-
-  time_t now;
-  time( &now );
-  struct tm *thetime = localtime( &now );
-
-  while( *promptenv != '\0' ){
-    if( *promptenv == '$' ){
-      switch( promptenv++ , to_upper(*promptenv) ){
-      case '!':
-	prompt << nhistories+1;	break;
-      case '@':	prompt << _getvol(0);		break; /* ボリュームラベル */
-      case '$': prompt << '$';			break;
-      case '_': prompt << '\n';			break;
-      case 'A': prompt << '&';			break;
-      case 'B': prompt << '|';			break;
-      case 'C': prompt << '(';			break;
-      case 'E': prompt << '\x1b'; 		break;
-      case 'F': prompt << ')';			break;
-      case 'G': prompt << '>';			break;
-      case 'H': prompt << '\b';			break;
-      case 'L': prompt << '<';			break;
-      case 'Q': prompt << '=';			break;
-      case 'S': prompt << ' ';			break;
-      case 'N': prompt << (char)_getdrive();	break;
-      case 'R': prompt << execute_result;	break;
-      case 'D':/* 現在の日付 */
-	prompt.putNumber( thetime->tm_year+1900 , 4 , '0' ) << '-';
-	prompt.putNumber( thetime->tm_mon +1    , 2 , '0' ) << '-';
-	prompt.putNumber( thetime->tm_mday      , 2 , '0' );
-	break;
-      case 'T':/* 現在の時刻 */
-	prompt.putNumber( thetime->tm_hour	, 2 , '0' ) << ':';
-	prompt.putNumber( thetime->tm_min	, 2 , '0' ) << ':';
-	prompt.putNumber( thetime->tm_sec	, 2 , '0' );
-	break;
-      case 'I':/* ロゴ */
-	set_logo_to_prompt( prompt );
-	used_topline = true;
-	break;
-      case '{':/* 各ドライブのカレントディレクトリ */
-	set_multi_curdir_to_prompt( prompt , promptenv );
-	used_topline = true;
-	break;
-      case 'V':/* OS/2のバージョン */
-	prompt << "The Operating System/2 Version is "
-	  << _osmajor/10 << '.' << _osminor;
-	break;
-      case 'P':/* カレントディレクトリ */
-	{
-	  char curdir[ FILENAME_MAX ];
-	  getcwd_case( curdir );
-	  prompt << curdir;
-	}
-	break;
-
-      case 'W':/* カレントディレクトリ:ホームディレクトリを「~」に変換する */
-	{
-	  char curdir[ FILENAME_MAX ];
-	  getcwd_case( curdir );
-	  char *tilda_name=to_tilda_name(curdir);
-	  if( tilda_name != NULL ){
-	    prompt << tilda_name;
-	    free(tilda_name);
-	  }else{
-	    prompt << curdir;
-	  }
-	}
-	break;
-
-      case 'Z':
-	switch( ++promptenv , to_upper(*promptenv) ){
-	case 'A': 
-	  prompt << '\a'; break;
-	case 'H': /* ヒストリ番号 */
-	  prompt << nhistories+1;
-	  break;
-	case 'V': /* ボリュームラベル */
-	  prompt << _getvol(0);
-	  break;
-	case 'P': /* LONGNAME */
-	  {
-	    char curdir[FILENAME_MAX];
-	    get_cwd_long_name( curdir );
-	    prompt << curdir;
-	  }
-	  break;
-	case '\0':
-	  goto promptend;
-	}
-	break;
-      }
-      promptenv++;
-    }else{
-      if( is_kanji(*promptenv) )
-	prompt << *promptenv++;
-      prompt << *promptenv++;
-    }
-  }
- promptend:    
-  return used_topline;
-}
-
-bool set_prompt( const char *promptenv , char *dp , int size )
-{
-  StrBuffer prompt;
-  bool rv=false;
   try{
-    rv=make_prompt( prompt , promptenv );
-    strncpy( dp , prompt , size );
-  }catch(StrBuffer::MallocError){
-    strncpy( dp , "<NYAOS>" , size );
+    StrBuffer prompt;
+    used_topline=false;
+    
+    time_t now;
+    time( &now );
+    struct tm *thetime = localtime( &now );
+    
+    while( *promptenv != '\0' ){
+      if( *promptenv == '$' ){
+	switch( promptenv++ , to_upper(*promptenv) ){
+	case '!':
+	  prompt << nhistories+1;	break;
+	case '@': prompt << _getvol(0);		break; /* ボリュームラベル */
+	case '$': prompt << '$';			break;
+	case '_': prompt << '\n';			break;
+	case 'A': prompt << '&';			break;
+	case 'B': prompt << '|';			break;
+	case 'C': prompt << '(';			break;
+	case 'E': prompt << '\x1b'; 		break;
+	case 'F': prompt << ')';			break;
+	case 'G': prompt << '>';			break;
+	case 'H': prompt << '\b';			break;
+	case 'L': prompt << '<';			break;
+	case 'Q': prompt << '=';			break;
+	case 'S': prompt << ' ';			break;
+	case 'N': prompt << (char)_getdrive();	break;
+	case 'R': prompt << execute_result;	break;
+	case 'D':/* 現在の日付 */
+	  prompt.putNumber( thetime->tm_year+1900 , 4 , '0' ) << '-';
+	  prompt.putNumber( thetime->tm_mon +1    , 2 , '0' ) << '-';
+	  prompt.putNumber( thetime->tm_mday      , 2 , '0' );
+	  break;
+	case 'T':/* 現在の時刻 */
+	  prompt.putNumber( thetime->tm_hour	, 2 , '0' ) << ':';
+	  prompt.putNumber( thetime->tm_min	, 2 , '0' ) << ':';
+	  prompt.putNumber( thetime->tm_sec	, 2 , '0' );
+	  break;
+	case 'I':/* ロゴ */
+	  set_logo_to_prompt( prompt );
+	  used_topline = true;
+	  break;
+	case '{':/* 各ドライブのカレントディレクトリ */
+	  set_multi_curdir_to_prompt( prompt , promptenv );
+	  used_topline = true;
+	  break;
+	case 'V':/* OS/2のバージョン */
+	  prompt << "The Operating System/2 Version is "
+	    << _osmajor/10 << '.' << _osminor;
+	  break;
+	case 'P':/* カレントディレクトリ */
+	  {
+	    char curdir[ FILENAME_MAX ];
+	    getcwd_case( curdir );
+	    prompt << curdir;
+	  }
+	  break;
+	  
+	case 'W':/* カレントディレクトリ:ホームディレクトリを「~」に変換する */
+	  {
+	    char curdir[ FILENAME_MAX ];
+	    getcwd_case( curdir );
+	    char *tilda_name=to_tilda_name(curdir);
+	    if( tilda_name != NULL ){
+	      prompt << tilda_name;
+	      free(tilda_name);
+	    }else{
+	      prompt << curdir;
+	    }
+	  }
+	  break;
+	  
+	case 'Z':
+	  switch( ++promptenv , to_upper(*promptenv) ){
+	  case 'A': 
+	    prompt << '\a'; break;
+	  case 'H': /* ヒストリ番号 */
+	    prompt << nhistories+1;
+	    break;
+	  case 'V': /* ボリュームラベル */
+	    prompt << _getvol(0);
+	    break;
+	  case 'P': /* LONGNAME */
+	    {
+	      char curdir[FILENAME_MAX];
+	      get_cwd_long_name( curdir );
+	      prompt << curdir;
+	    }
+	    break;
+	  case '\0':
+	    goto promptend;
+	  }
+	  break;
+	}
+	promptenv++;
+      }else{
+	if( is_kanji(*promptenv) )
+	  prompt << *promptenv++;
+	prompt << *promptenv++;
+      }
+    }
+  promptend:    
+    free( promptstr );
+    promptstr = prompt.finish();
+    return 0;
+  }catch( StrBuffer::MallocError ){
+    free( promptstr );
+    promptstr = NULL;
+    return -1;
   }
-  dp[size-1] = '\0';
-  return rv;
 }

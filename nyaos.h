@@ -3,7 +3,7 @@
 #define NYAOS_H
 
 #include "macros.h"
-#define VERSION "1.57"
+#define VERSION "1.58"
 
 class Parse;
 
@@ -29,7 +29,6 @@ extern int screen_width , screen_height ;
 int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
 
 char *fgets_chop(char *dp,int max,FILE *fp);
-bool set_prompt(const char *promptenv,char *dp,int size);
 
 extern int cursor_start , cursor_end;
 extern char *cursor_on_color_str;

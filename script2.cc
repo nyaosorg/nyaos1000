@@ -71,6 +71,13 @@ int cmd_rehash(FILE *source , Parse &args )
 {
   Complete::make_command_cache();
   script_hash.destruct_all();
+  FILE *fout=args.open_stdout();
+  if( fout != NULL ){
+    fprintf(fout
+	    , "%d bytes are used for %d commands'name cache.\n"
+	    , Complete::queryBytes() , Complete::queryFiles()
+	    );
+  }
   return 0;
 }
 

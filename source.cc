@@ -8,6 +8,7 @@
 #include "nyaos.h"
 #include "edlin.h"
 #include "parse.h"
+#include "errmsg.h"
 
 extern int convroot(char *&dp,int &size,const char *sp) throw(size_t);
 
@@ -86,13 +87,13 @@ extern int source_history( const char *fname );
 int cmd_source( FILE *srcfil, Parse &params )
 {
   if( params.get_argc() < 2 ){
-    fprintf(stderr,"source: Too few arguments.\n");
+    ErrMsg::say(ErrMsg::TooFewArguments,"source",0);
     return 1;
   }
 
   static int limitter=0;
   if( limitter > 5 ){
-    fputs( "Too many source command nesting.\n" , stderr);
+    ErrMsg::say(ErrMsg::TooManyNesting,"source",0);
     return 0;
   }
   limitter++;
@@ -100,22 +101,42 @@ int cmd_source( FILE *srcfil, Parse &params )
   char *fname=(char*)alloca(params.get_length(1)+1);
   params.copy(1,fname);
 
-  if( fname[0] == '-' && fname[1] == 'h' ){
-    /* ヒストリを読み込むモード */
+  if( fname[0] == '-' ){
+    if( fname[1] != 'h' && fname[1] != 'e' ){
+      ErrMsg::say(ErrMsg::UnknownOption,"source",0);
+      return 1;
+    }
     if( params.get_argc() < 3 ){
-      fprintf(stderr,"source -h: No operand for -h flag.\n");
+      ErrMsg::say(ErrMsg::TooFewArguments,"source -h",0);
       return 1;
     }
     
-    fname=(char*)alloca(params.get_length(2)+1);
-    params.copy(2,fname);
+    char *arg=(char*)alloca(params.get_length(2)+1);
+    params.copy(2,arg);
     
-    if( source_history(fname) != 0 ){
-      fprintf(stderr,"source -h: %s: No such file.\n",fname);
-      return 1;
+    if( fname[1] == 'h' ){
+      /*
+       *  ヒストリを読み込むモード 
+       */
+      
+      if( source_history(arg) != 0 ){
+	ErrMsg::say(ErrMsg::NoSuchFile,arg,0);
+	return 1;
+      }
+    }else{
+      /*
+       * エラーメッセージを読み込むモード
+       */
+
+      int nmsgs = source_errmsg(arg);
+      if( nmsgs < 0 ){
+	ErrMsg::say(ErrMsg::NoSuchFile,arg,0);
+	return 1;
+      }
     }
     return 0;
   }
+    
   char *cmdname=(char*)alloca(params.get_length(1)+5);
   sprintf(cmdname,"%s.cmd",fname);
 
@@ -128,7 +149,7 @@ int cmd_source( FILE *srcfil, Parse &params )
      && (_path(buffer,fname),  fp=fopen(finalname=buffer,"r"))==NULL
      && (_path(buffer,cmdname),fp=fopen(buffer,"r"))==NULL ){
     
-    fprintf(stderr,"source: %s: No such file.\n",fname);
+    ErrMsg::say(ErrMsg::NoSuchFile,fname,0);
     limitter--;
     return 1;
   }
@@ -151,9 +172,18 @@ int cmd_source( FILE *srcfil, Parse &params )
     limitter--;
     return rc;
   }else{
+    int nerrors=0;
+
     while( rc != NULL ){
-      if( execute(fp,buffer) == RC_QUIT )
+      int rv=execute(fp,buffer);
+      if( rv== RC_QUIT )
 	break;
+      if( rv != 0 )
+	++nerrors;
+      if( nerrors > 7 ){
+	ErrMsg::say(ErrMsg::TooManyErrors,"source",0);
+	break;
+      }
       rc=fgets_chop(buffer,sizeof(buffer),fp);
     }
     fclose(fp);

@@ -10,6 +10,7 @@
 
 #include "macros.h"
 #include "parse.h"
+#include "errmsg.h"
 
 int Parse::option_semicolon_terminate=1;
 
@@ -84,7 +85,7 @@ int Parse::check_redirect()
       ++sp;
     }
   }else{
-    fprintf(stderr,"nyaos internal error occurs ( redirect ? )\n");
+    ErrMsg::say(ErrMsg::InternalError,"nyaos",0);
     return 1;
   }
   
@@ -272,7 +273,7 @@ FILE *Parse::open_stdout()
      */
     
     if( terminal==PIPE_TERMINAL ){
-      fprintf(stderr,"to which redirects?\n");
+      ErrMsg::say(ErrMsg::AmbiguousRedirect,0);
       return NULL;
     }
     
@@ -324,7 +325,7 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv
 
   FILE *fout=open_stdout();
   if( fout==NULL ){
-    fputs("nyaos : cannot make file or pipe.\n",stderr);
+    ErrMsg::say(ErrMsg::CantOutputRedirect,"nyaos",0);
     return -1;
   }
   return (*routine)(argc,argv,fout,*this);
