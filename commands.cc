@@ -26,6 +26,7 @@ extern int option_dots;
 extern int option_script_cache;
 extern int option_backquote;
 extern int option_backquote_in_quote;
+extern int option_ignore_cases;
 
 int echoflag=0;
 
@@ -205,6 +206,7 @@ struct Option{
   { "dots"                 , &option_dots                      , 1  , 0 },
   { "echo"                 , &echoflag                         , 1  , 0 },
   { "history_in_doublequote" , &option_history_in_doublequote  , 1  , 0 },
+  { "ignore_cases"         , &option_ignore_cases              , 1  , 0 },
 #if 0
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
 #endif

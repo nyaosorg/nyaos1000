@@ -171,9 +171,15 @@ int Edlin::seek_word_top()
     wrdtop = p;
       
     while( !isspace(strbuf[p] & 255) ){
-      if( p >= pos ){
+      if( p >= pos )
 	return wrdtop;
+
+      if(   (strbuf[p]=='+' || strbuf[p]==';' || strbuf[p]=='=')
+	 && strbuf[p+1] != '\0' ){
+	wrdtop = ++p;
+	continue;
       }
+
       if( strbuf[p] == '"' ){
 	do{
 	  if( atrbuf[p] != SBC )
@@ -189,96 +195,6 @@ int Edlin::seek_word_top()
     }
   }
 }
-
-#if 0
-char *Edlin::get_current_word(int *flag)
-{
-  int top=seek_word_top();
-  if( top==pos )
-    return NULL;
-
-  if( flag != NULL )
-    *flag = (top==0 ? 1 : 0);
-  
-  char *s=(char*)malloc(pos-top+1);
-  if( s != NULL ){
-    char *dp=s;
-    for(int i=top;i<pos;i++){
-      if( isspace(strbuf[i] & 255) && flag != NULL )
-	*flag |= 2;
-      *dp++ = strbuf[i];
-    }
-    *dp = '\0';
-  }
-  return s;
-} 
-
-void edlin::replace_current_word(const char *s)
-{
-  int flag;
-  int top=seek_word_top( &len );
-  
-  int wrdlen=pos-top;
-
-  int quote=0;
-  int newlen=0;
-  for(const char *p=s;*p != '\0' ; p++ ){
-    if( isspace(*p) )
-      quote = 1;
-    newlen++;
-  }
-
-  /* カーソルの右側の文字列を保存 */
-  char *right=(char*)alloca((len-pos)*2+1);
-  char *p=right;
-  for(int i=pos;i<len;i++){
-    *p++ = strbuf[i];
-    *p++ = atrbuf[i];
-  }
-  *p = 0;
-  
-  putbs(pos-top);
-  pos = top;
-  
-  if( quote ){
-    putchr( '"' );
-    atrbuf[pos++] = SBC;
-  }
-
-  for(int i=0;i<newlen;i++){
-    if( is_kanji( *s & 255 ) ){
-      putchr( strbuf[pos] = *s++ );
-      atrbuf[pos++] = DBC1ST;
-      putchr( strbuf[pos] = *s++ );
-      astrub[pos++] = DBC2ND;
-    }else{
-      putchr( strbuf[pos] = *s++ );
-      atrbuf[pos++] = SBC;
-    }
-  }
-
-  if( quote ){
-    putchr( '"' );
-    atrbuf[pos++] = SBC;
-    newlen += 2;
-  }
-  
-  int j=0;
-  while( *right != 0 ){
-    putchr( strbuf[pos+j] = *right++ );
-    atrbuf[pos+j] = *right++;
-    j++;
-  }
-  int newlen=pos+j;
-
-  for(; pos+j < len  ; j++ )
-    putchr( ' ' );
-
-  putbs( j );
-
-  len = newlen;
-}
-#endif
 
 int Edlin::option_conversion_complete=0;
 

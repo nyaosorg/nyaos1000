@@ -14,8 +14,8 @@ friend class HashPtr;
   }**table;
   int size;
 
-  int get_index(const char *key);
-  int get_index(const Substr &s);
+  int get_index(const char *key,int len=1000);
+  int get_index_without_cases(const char *key,int len=1000);
 protected:
   virtual void delete_node(void *){ };
   int add(const char *key, void *rep,int flag);
@@ -33,6 +33,7 @@ public:
 
   void *operator[](const char *key);
   void *operator[](const Substr &s);
+  void *lookup_tolower(const Substr &s);
   
   HashB(int s) : size(s) , table((Bullet**)NULL) { }
   ~HashB(){ }
@@ -46,7 +47,8 @@ public:
   int append(const char *key,T *rep){ return add(key,rep,1); }
   T *operator[](const char *key){ return (T*)HashB::operator[](key); }
   T *operator[](const Substr &key){ return (T*)HashB::operator[](key); }
-
+  T *lookup_tolower(const Substr &key){ return (T*)HashB::lookup_tolower(key);}
+  
   void clean_and_delete();
   Hash(int i) : HashB(i) { }
 };

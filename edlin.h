@@ -184,8 +184,7 @@ protected:
   static int option_canna;
   static void canna_to_alnum();  /* ‹­§“I‚É‰p”ƒ‚[ƒh‚Ö  */
 private:
-  void clear_bottom( int n );
-  int print_bottom( jrKanjiStatus &status , const char *mode_string );
+  int print_henkan_koho( jrKanjiStatus &status , const char *mode_string );
 };
 
 extern char dbcstable[256];

@@ -1,23 +1,24 @@
 #include <stddef.h>
+#include <ctype.h>
 
 #include "parse.h"
 #include "hash.h"
 
-int HashB::get_index(const char *key)
+int HashB::get_index(const char *p,int len)
 {
   int index=0;
-  for(const char *p=key ; *p != '\0' ; p++ ){
-    index += (*p & 255);
+  while( len-- > 0  &&  *p != '\0'){
+    index += (*p++ & 255);
   }
   return index % size;
 }
 
-int HashB::get_index(const Substr &key)
+int HashB::get_index_without_cases(const char *p,int len)
 {
   int index=0;
-  for(int i=0 ; i<key.len ; i++)
-    index += (key.ptr[i] & 255);
-  
+  while( len-- > 0  &&  *p != '\0' ){
+    index += tolower(*p & 255) ; p++;
+  }
   return index % size;
 }
 
@@ -67,11 +68,27 @@ void *HashB::operator[](const char *key)
 void *HashB::operator[](const Substr &key)
 {
   if( table == NULL ) return NULL;
-  int index=get_index(key);
+  int index=get_index(key.ptr,key.len);
   
   for(Bullet *cur=table[index] ; cur != NULL ; cur=cur->next ){
     if( cur->key[0]==key.ptr[0]
        && memcmp(cur->key , key.ptr , key.len)==0 
+       && cur->key[key.len] == '\0' ){
+      return cur->rep;
+    }
+  }
+  return NULL;
+}
+
+void *HashB::lookup_tolower(const Substr &key)
+{
+  if( table == NULL ) return NULL;
+  int index=get_index_without_cases(key.ptr,key.len);
+
+  int firstletter=tolower(key[0]);
+  for(Bullet *cur=table[index] ; cur != NULL ; cur=cur->next ){
+    if(   cur->key[0]==firstletter 
+       && memicmp(cur->key , key.ptr , key.len )==0
        && cur->key[key.len] == '\0' ){
       return cur->rep;
     }
@@ -111,7 +128,7 @@ int HashB::remove(const char *key, int destruct_flag)
 int HashB::remove(const Substr &key,int destruct_flag)
 {
   if( table == NULL ) return 1;
-  int index=get_index(key);
+  int index=get_index(key.ptr,key.len);
   
   if( table[index] == NULL ){
     return 1;

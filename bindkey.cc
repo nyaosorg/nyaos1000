@@ -550,6 +550,7 @@ struct {
   const char *name;
   Shell::Status (Shell::*method)();
 } functable[] ={
+  /* 注意 !!!! 以下のテーブルはソートしていなければいけない！ */
   { "accept_line",               Shell::input_terminate },
   { "backward_char",             Shell::backward },
   { "backward_delete_char",      Shell::backspace },
@@ -564,17 +565,17 @@ struct {
   { "end_of_line",               Shell::go_tail },
   { "forward_char",              Shell::forward },
   { "forward_word",              Shell::forward_word },
+  { "i_search",                  Shell::i_search },
   { "kill_line",                 Shell::eraseline },
   { "kill_whole_line",           Shell::cancel },
   { "next_history",              Shell::next_history },
   { "newline",                   Shell::input_terminate },
   { "previous_history",          Shell::previous_history },
-  { "vz_prev_history",           Shell::vz_prev_history },
-  { "vz_next_history",           Shell::vz_next_history },
+  { "rev_i_search",              Shell::rev_i_search },
   { "self_insert",               Shell::self_insert },
   { "up_history",                Shell::previous_history },
-  { "i_search",                  Shell::i_search },
-  { "rev_i_search",              Shell::rev_i_search },
+  { "vz_next_history",           Shell::vz_next_history },
+  { "vz_prev_history",           Shell::vz_prev_history },
 };
 
 int Shell::bindkey(const char *key, const char *funcname )

@@ -1,6 +1,6 @@
 #
-#  Nihongo Yet Another Os/2 Shell
-#   (c) 1996,97,98 HAYAMA,Kaoru
+# Nihongo Yet Another Os/2 Shell
+# (c) 1996,97,98 HAYAMA,Kaoru
 #
 
 CC = gcc -O2
@@ -15,7 +15,7 @@ NYAOS=	nyaos.o edlin.o complete.o eadir.o shell.o foreach.o script.o \
 
 nyaos.exe : $(NYAOS)
 	$(CC) $(NYAOS) -o nyaos.exe -lvideo -lwrap -Zcrtdll -lsocket
-	lxlite nyaos.exe
+#	lxlite nyaos.exe
 
 RMCLONE=rmclone.o finds.o dbcs.o getkey.o
 rmclone.exe : $(RMCLONE)

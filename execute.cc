@@ -263,6 +263,8 @@ Command jumptable[]={
   { NULL    ,NULL        },
 };
 
+int option_ignore_cases=1;
+
 Hash <Command> command_hash(512);
 
 int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
@@ -338,8 +340,13 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   
   for(const char *pointer=buffer[curbuf];;){
     Parse params(pointer);
-    
-    Command *cmd = command_hash[ params[0] ];
+    Command *cmd;
+
+    if( option_ignore_cases )
+      cmd = command_hash.lookup_tolower( params[0] );
+    else
+      cmd = command_hash[ params[0] ];
+
     if( cmd == NULL )
       goto script;
 

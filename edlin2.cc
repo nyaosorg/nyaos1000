@@ -227,6 +227,16 @@ void Edlin2::canna_to_alnum()
 
 int Edlin2::option_canna=1;
 
+int are_spaces(const char *s)
+{
+  while( *s != '\0' ){
+    if( ! isspace(*s & 255) )
+      return 0;
+    ++s;
+  }
+  return 1;
+}
+
 /* message が NULL なら *mark を、さもなければ message の内容を dp にコピー */
 static void copy_message( const char *message , int mark , SmartPtr &dp )
 {
@@ -241,15 +251,7 @@ static void copy_message( const char *message , int mark , SmartPtr &dp )
   }
 }
 
-void Edlin2::clear_bottom( int n )
-{
-  char *buffer=(char*)alloca(n+1);
-  memset(buffer,' ',n);
-  buffer[n] = '\0';
-  bottom_message("%s",buffer);
-}
-
-int Edlin2::print_bottom( jrKanjiStatus &status , const char *mode_string )
+int Edlin2::print_henkan_koho( jrKanjiStatus &status , const char *mode_string )
 {
   /* 何らかの表示を行ったら 文字数、さもなければ 0 を表示する。 */
 
@@ -290,7 +292,10 @@ int Edlin2::print_bottom( jrKanjiStatus &status , const char *mode_string )
   *dp = '\0';
   euc2sjis(buffer,buffer);
 
-  bottom_message("%s%s",mode_string , buffer );
+  if( mode_string == NULL )
+    mode_string = "\0";
+
+  bottom_message("%s%s", mode_string , buffer );
   return column;
 }
 
@@ -325,7 +330,8 @@ int Edlin2::getkey()
 
   char localbuf[256]="\0";
 
-  if( mode_string != NULL  &&  mode_string[0] != '\0' )
+  if(   mode_string != NULL  &&  mode_string[0] != '\0'
+     && ! are_spaces(mode_string) )
     bottom_message( "%s",mode_string );
   
   /* 「かんな」の変換ループ */
@@ -526,8 +532,8 @@ int Edlin2::getkey()
     euc2sjis( localbuf , localbuf );
     message( "|%s|",localbuf);
     
-    /* 画面最上段に、変換候補などを表示する */
-    if( print_bottom( status , (char*)mode_string ) <= 0  &&  use_bottom ){
+    /* 画面最下段に、変換候補などを表示する */
+    if( print_henkan_koho(status,(char*)mode_string) <= 0  &&  use_bottom ){
       if( mode_string != NULL )
 	bottom_message("%s" , mode_string);
       else
