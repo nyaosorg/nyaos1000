@@ -28,9 +28,21 @@ struct filelist{
   char name[1]; /* ‰Â•Ï’· */
 };
 
+enum{
+  SORT_BY_NAME,
+  SORT_BY_CHANGE_TIME,
+  SORT_BY_LAST_ACCESS_TIME,
+  SORT_BY_SIZE,
+  SORT_BY_SUFFIX,
+  SORT_BY_MODIFICATION_TIME,
+  UNSORT,
+  SORT_REVERSE = 0x100 ,
+};
+  
 struct filelist *fsort_and_insert(struct filelist *first,
 				  struct filelist *tmp,
-				  int *count  );
+				  int *count ,
+				  int method = 0 );
 int dircompare(struct filelist *d1,struct filelist *d2);
 int pathsplit( const char *path, char *dir, char *fname );
 int which_suffix(const char *path,...);

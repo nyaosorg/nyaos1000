@@ -173,7 +173,7 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
     int rc;
     for(;;){
       if( promptenv != NULL )
-	setprompt(promptenv,prompt,edlin);
+	setprompt(promptenv,prompt,&edlin);
       edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
 
       if (!(   (rc=shell.line_input(prompt,32767)) >= 0 

@@ -16,7 +16,7 @@ int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
 int eadir(int argc, char **argv,FILE *fout);
 char *fgets_chop(char *dp,int max,FILE *fp);
 class ShellEdlin;
-void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin);
+void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL);
 class Parse;
 
 extern const struct commandtable_tag {
@@ -71,7 +71,8 @@ int replace_envvar( const char *source , char *destinate );
 void buildin_command_to_complete_table(void);
 
 extern int option_vio_cursor_control;
-
+extern int option_prompt_even_piped;
+extern int option_cmdlike_crlf;
 
 /**** bindkey.cc *****/
 

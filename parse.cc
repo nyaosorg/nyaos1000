@@ -67,10 +67,14 @@ int Parse::check_redirect()
   if( is_kanji(*sp) )
     ++sp;
 
+  /*  >> , >& , >>& ‚ğ‹–—e */
   if( *++sp == '>' ){
     isappend = true;
     ++sp;
   }
+  if( *sp == '&' )
+    ++sp;
+
   while( isspace(*sp & 255) )
     ++sp;
 
@@ -127,6 +131,9 @@ int Parse::tailcheck()
     if( *sp=='|' ){
       nextcmds = ++sp;
       return terminal='&';
+    }else if( *sp=='&'){
+      nextcmds = ++sp;
+      return terminal='|';
     }else{
       nextcmds = sp;
       return terminal='|';

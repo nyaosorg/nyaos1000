@@ -104,6 +104,17 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
   }
   argv[argc] = NULL;
 
+  if( argc <= 0 ){
+    if( option_cd_goto_home ){
+      const char *home=getenv("HOME");
+      if( home == NULL || _chdir2(home) != 0 )
+	fputs("nyaos: %HOME% does not point a right directory.\n",stderr);
+      return 0;
+    }else{
+      return cmd_pwd(source,params);
+    }
+  }
+  
   char *cwd=argv[0];
   if( _chdir2( cwd )==0 )
     return 0;

@@ -3,6 +3,7 @@
  *   を実際に実行するモジュール。
  */
 
+#include <process.h>
 #include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -33,17 +34,21 @@ extern int screen_width;
 extern int screen_height;
 
 enum{
-  LS_MODE    = 0,
-  DIR_MODE   = 1,
-  EADIR_MODE = 2,
-  INDEX_MODE = 3,
+  LS_MODE	= 0,
+  DIR_MODE	= 1,
+  EADIR_MODE	= 2,
+  INDEX_MODE	= 3,
 
-  PRINT_MASK = 3,
+  PRINT_MASK	= 3,
 
-  MORE_MODE  = 4,
-  COLOR_MODE = 8,
-  HIDDEN_MODE= 16, /* HIDDEN属性も表示する。*/
-  HALF_MODE  = 32,
+  MORE_MODE	= 4,
+  COLOR_MODE	= 8,
+  HIDDEN_MODE	= 0x10, /* HIDDEN属性も表示する。*/
+  HALF_MODE	= 0x20,
+  IGNORE_BACKUP	= 0x40,
+  RECURSIVE_MODE= 0x80,
+
+  SORT_MODES	= 16, /* bit */
 };
 
 static char *ls_left_code="\033[";
@@ -201,7 +206,13 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
     if( *p == '\\' || *p == '/' )
       top = p+1 ;
   }
+
+  /* ドットで始まるもの */
   if( (HIDDEN_MODE & flag)==0  &&  *top=='.' )
+    return;
+
+  /* チルダで終わるもの */
+  if( (flag & IGNORE_BACKUP) != 0  && flist->name[flist->length-1] == '~' )
     return;
 
   if( flist->attr & A_DIR ){
@@ -385,6 +396,8 @@ int is_file_print(struct filelist *f,int flag)
   }
   if( *top == '.' || (f->attr & A_HIDDEN) )
     return 0;
+  if( f->name[f->length-1] == '~' && flag & IGNORE_BACKUP )
+    return 0;
   return 1;
 }
 
@@ -450,12 +463,13 @@ int the_dir(const char *dirname,int flag , FILE *fout )
   int nlists=0;
   int max_length=0;
   struct filelist *first=NULL;
+  struct filelist *dirlist=NULL;
   
   for(Dir dir(dirname) ; dir != NULL ; ++dir ){
     struct filelist *tmp;
+    int alcsiz=sizeof(struct filelist)+dir.get_name_length();
 
-    tmp = (struct filelist *)
-      alloca(sizeof(struct filelist)+dir.get_name_length() );
+    tmp = (struct filelist *)alloca( alcsiz );
     assert( tmp != NULL );
 
     strcpy( tmp->name , dir.get_name() );
@@ -467,16 +481,23 @@ int the_dir(const char *dirname,int flag , FILE *fout )
 
     if( tmp->length > max_length )
       max_length = tmp->length;
+    
+    if( is_file_print(tmp,flag) ){
+      if( (flag & RECURSIVE_MODE)!=0  &&  (tmp->attr & A_DIR )!= 0 
+	 && tmp->name[0] != '.' ){
+	struct filelist *tmp2=(struct filelist*)alloca( alcsiz );
+	memcpy( tmp2 , tmp , alcsiz );
+	dirlist = fsort_and_insert(dirlist,tmp2,NULL,flag >> SORT_MODES );
+      }
 
-    first = fsort_and_insert(first,tmp,NULL);
-
-    if( is_file_print(tmp,flag) )
+      first = fsort_and_insert(first,tmp,NULL,flag >> SORT_MODES );
       nlists++;
+    }
   }
 
   column=0;
   if( nlists == 0 )
-    return 0;
+    goto next;
 
   if( flag & EADIR_MODE ){
     char cwd[FILENAME_MAX];
@@ -493,6 +514,25 @@ int the_dir(const char *dirname,int flag , FILE *fout )
   }
 
   column=0;
+
+ next:
+  while( dirlist != NULL  &&  ctrl_c == 0 ){
+    char fullpathbuffer[512];
+    char *fullpath;
+    if( dirname[0] == '.' && dirname[1] == '\0' )
+      fullpath = dirlist->name;
+    else
+      sprintf(fullpath=fullpathbuffer,"%s/%s",dirname,dirlist->name);
+
+    if( flag & COLOR_MODE )
+      fprintf( fout, "\n%s%s:\n",ls_end_code , fullpath );
+    else
+      fprintf( fout, "\n%s:\n", fullpath );
+
+    the_dir( fullpath , flag , fout );
+    
+    dirlist = dirlist->next;
+  }
   return nlists;
 }
 
@@ -501,6 +541,21 @@ static int exit_with_ctrl_c()
   fputs("\n^C\n",stderr);
   ctrl_c = 0;
   signal(SIGINT,ctrl_c_signal);
+  return 0;
+}
+
+int call_original_ls( char **argv,FILE *fout=stdout)
+{
+  if( fout != stdout ){
+    int org_stdout=dup(1);
+    dup2(fileno(fout),1);
+    spawnvp(P_WAIT,"ls.exe",argv);
+    close(1);
+    dup2(org_stdout,1);
+    close(org_stdout);
+  }else{
+    spawnvp(P_WAIT,"ls.exe",argv);
+  }
   return 0;
 }
 
@@ -525,7 +580,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
   int filecount=0;
   int dircount=0;
   int max_length=0;
-
+  
   struct filelist *files=NULL;
   struct filelist *dirs =NULL;
 
@@ -538,30 +593,70 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     if( argv[i][0] == '-' ){
       for( const char *p=&argv[i][1] ;  *p != '\0' ; p++ ){
 	switch( *p ){
-	case 'e':
-	  flag = ((flag & ~PRINT_MASK) | EADIR_MODE );
+	  /* ------- 互換オプション ------ */
+	case 'a':
+	  flag |= HIDDEN_MODE;
 	  break;
 	case 'l':
 	  flag = ((flag & ~PRINT_MASK) | DIR_MODE );
 	  break;
+	case 'R':
+	  flag |= RECURSIVE_MODE;
+	  break;
+
+	  /* ------- ソートオプション ------- */
+	     
+	case 'c':
+	  flag |= (SORT_BY_CHANGE_TIME << SORT_MODES);
+	  break;
+	case 'S':
+	  flag |= (SORT_BY_SIZE << SORT_MODES);
+	  break;
+	case 'u':
+	  flag |= (SORT_BY_LAST_ACCESS_TIME << SORT_MODES);
+	  break;
+	case 'X':
+	  flag |= (SORT_BY_SUFFIX << SORT_MODES);
+	  break;
+	case 'U':
+	  flag |= (UNSORT << SORT_MODES);
+	  break;
+	case 'r':
+	  flag |= (SORT_REVERSE << SORT_MODES);
+	  break;
+	case 't':
+	  flag |= (SORT_BY_MODIFICATION_TIME << SORT_MODES);
+	  break;
+
+	case 'B':
+	  flag |= IGNORE_BACKUP;
+	  break;
+	case 'E':
+	  /* case 'e': */
+	  flag = ((flag & ~PRINT_MASK) | EADIR_MODE );
+	  break;
 	case '0':
 	  flag = ((flag & ~PRINT_MASK) | INDEX_MODE );
 	  break;
-	case 'p':
+	case 'P':
+	  /* case 'p': */
 	  flag |= MORE_MODE;
 	  break;
-	case 'a':
-	  flag |= HIDDEN_MODE;
+	case 'O':
+	  flag &= ~COLOR_MODE;
 	  break;
 	case 'o':
-	  flag &= ~COLOR_MODE;
+	  flag |= COLOR_MODE;
 	  break;
 	case '3':
 	  flag |= HALF_MODE;
 	  break;
-	default:
-	  fprintf(stderr,"`%s' : unknown option\n",argv[i]);
+	case 'F':
 	  break;
+
+	default:
+	  call_original_ls( argv , fout );
+	  return 0;
 	}/* end switch */
       }/* end for */
 
@@ -591,9 +686,11 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	    node->d.year   = tmbuf->tm_year-80; /* 0:1900 --> 0:1980 */
 	    
 	    if( stbuf.st_attr & A_DIR ){
-	      dirs  = fsort_and_insert(dirs ,node,&dircount);
+	      dirs  = fsort_and_insert(dirs ,node,&dircount
+				       , flag >> SORT_MODES );
 	    }else{
-	      files = fsort_and_insert(files,node,&filecount);
+	      files = fsort_and_insert(files,node,&filecount
+				       , flag >> SORT_MODES );
 	      if( len > max_length )
 		max_length = len;
 	    }
@@ -632,9 +729,11 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  node->d.year   = tmbuf->tm_year-80; /* 0:1900 --> 0:1980 */
 	  
 	  if( stbuf.st_attr & A_DIR ){
-	    dirs  = fsort_and_insert(dirs ,node,&dircount);
+	    dirs  = fsort_and_insert(dirs ,node,&dircount
+				     , flag >> SORT_MODES );
 	  }else{
-	    files = fsort_and_insert(files,node,&filecount);
+	    files = fsort_and_insert(files,node,&filecount
+				     , flag >> SORT_MODES );
 	    if( len > max_length )
 	      max_length = len;
 	  }

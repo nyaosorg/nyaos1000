@@ -36,10 +36,3 @@ script.cc	スクリプト実行支援の置換ル－チン
 
 nyaos.h		ソ－ス全体から参照される宣言
 nyaos.cc	メインル－チン
-
-
-┏ 廾 ｜ サ ━ はやまかおる(HAYAMA,Kaoru) ━━━×・□┓  
-┃ 世 ｜ 千 mailto:kaoru@ferrari6.cheme.kyoto-u.ac.jp ┠┐
-┃ 木 山 黒 http://www-mpe.cheme.kyoto-u.ac.jp/hayama/┃│
-┗┯━━━━━━━━━━━━━━━━━━━━━━━━━┛│
-  └──────────────────────────┘

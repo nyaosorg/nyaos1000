@@ -1,5 +1,5 @@
 #define INCL_WINWORKPLACE
-
+#define INCL_DOSNLS
 #include <os2.h>
 
 /* for stat() */
@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <process.h>
 
 #include "macros.h"
 #include "nyaos.h"
@@ -125,12 +126,40 @@ int cmd_which( FILE *source , Parse &params )
   return 0;
 }
 
+static void the_open( char *fname , const char *setup_string )
+{
+  char *p=fname;
+  char *lastp=NULL , *last2p=NULL;
+
+  while( *p != '\0' ){
+    last2p = lastp;
+    lastp  = p;
+    
+    if( *p == '/' )
+      *p = '\\';
+    
+    if( is_kanji(*p) )
+      p++;
+    p++;
+  }
+  *p = '\0';
+  
+  if(   lastp != NULL  &&  *lastp  == '\\' 
+     && last2p != NULL &&  *last2p != ':'  ){
+    *lastp = '\0' ;
+  }
+  
+  HOBJECT hObject=WinQueryObject( (PSZ)fname );
+  WinSetObjectData( hObject , (PCSZ) setup_string );
+}
+
 int cmd_open( FILE *source , Parse &params )
 {
   int argc = params.get_argc();
   int number = 0; /* OPEN する種類 */
   BOOL flag=TRUE; /* すでに open しているウインドウを利用するのか？*/
   const char *setup_string="OPEN=DEFAULT";
+  int nopens=0;
 
   FILE *fout=params.open_stdout();
 
@@ -184,7 +213,6 @@ int cmd_open( FILE *source , Parse &params )
       int len=params.get_length(i);
       char *fname=(char*)alloca(len+3);
       char absfname[512];
-      char *p=absfname;
 
       params.copy(i,fname);
       if( fname[0] == '[' ){
@@ -212,31 +240,33 @@ int cmd_open( FILE *source , Parse &params )
 	_abspath( absfname , fname , sizeof(absfname) );
 	fname = absfname;
       }
-
-      char *lastp=NULL , *last2p=NULL;
-      while( *p != '\0' ){
-	last2p = lastp;
-	lastp  = p;
-
-	if( *p == '/' )
-	  *p = '\\';
-	
-	if( is_kanji(*p) )
-	  p++;
-	p++;
-      }
-      *p = '\0';
-
-      if(   lastp != NULL  &&  *lastp  == '\\' 
-	 && last2p != NULL &&  *last2p != ':'  ){
-	*lastp = '\0' ;
-      }
-      
       fprintf(fout,"open %s\n", fname );
-      
-      HOBJECT hObject=WinQueryObject( (PSZ)fname );
-      WinSetObjectData( hObject , (PCSZ) setup_string );
+      the_open(fname , setup_string );
+      nopens++;
     }
+  }
+  if( nopens == 0 ){
+    char cwd[512];
+    _getcwd2(cwd,sizeof(cwd));
+    fprintf(fout,"open %s\n",cwd);
+    the_open(cwd , setup_string );
+  }
+  return 0;
+}
+
+int cmd_chcp( FILE *source , Parse &params )
+{
+  int argc = params.get_argc();
+  if( argc > 1 ){
+    int len=params.get_length(1);
+    char *cp_str=(char*)alloca(len+1);
+    params.copy(1,cp_str);
+    int cp=atoi(cp_str);
+    if( cp != 0  &&  spawnlp(P_WAIT,"cmd.exe",
+			     "cmd","/C","chcp",cp_str,NULL)==0  )
+      DosSetProcessCp( cp );
+  }else{
+    spawnlp(P_WAIT,"cmd.exe","cmd","/C","chcp",NULL);
   }
   return 0;
 }

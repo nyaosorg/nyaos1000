@@ -11,9 +11,11 @@
 #include "macros.h"
 
 int Edlin::complete_tail_char='\\';
-
 void Edlin::swapchars()  /* DOSモード未対応メソッド */
 {
+  if( pos < len ){
+    forward();
+  }
   if( pos < 2 ) return;
   
   if( atrbuf[pos-1]==SBC ){

@@ -117,7 +117,7 @@ int pathsplit( const char *path, char *dir, char *fname )
 
   return (lastroot != NULL ? *lastroot : '\0');
 }
-
+#if 0
 int dircompare(struct filelist *d1,struct filelist *d2)
 {
   static const char *dircmd=NULL;
@@ -234,6 +234,7 @@ int dircompare(struct filelist *d1,struct filelist *d2)
   }/* letter loop */
   return +1;
 }
+#endif
 
 const char *Complete::errmsg[]={
   "no error(s)",
@@ -267,11 +268,77 @@ static int instrcmp(const char *s1,const char *s2,int n)
   return 0;
 }
 
+static int compare(struct filelist *X,struct filelist *Y,int method)
+{
+  int rc=0;
+  switch( method & ~SORT_REVERSE ){
+  case SORT_BY_SUFFIX:
+    {
+      const char *x_sfx=NULL , *y_sfx=NULL;
+      const char *xp=X->name , *yp=Y->name;
+      while( *xp != '\0' ){
+	if( *xp == '.' ){
+	  x_sfx = xp+1;
+	}else if( *xp == '/' || *xp == '\\' ){
+	  x_sfx = NULL;
+	}
+	++xp;
+      }
+      while( *yp != '\0' ){
+	if( *yp == '.' ){
+	  y_sfx = yp+1;
+	}else if( *yp == '/' || *yp == '\\' ){
+	  y_sfx = NULL;
+	}
+	++yp;
+      }
+      if( x_sfx == NULL ){
+	if( y_sfx == NULL )
+	  rc = strcmp(X->name,Y->name);
+	else
+	  rc = -1;
+      }else{
+	if( y_sfx == NULL ){
+	  rc = +1;
+	}else{
+	  rc = strcmp(x_sfx,y_sfx);
+	  if( rc == 0 )
+	    rc = strcmp(X->name,Y->name);
+	}
+      }
+      break;
+    }
+  case SORT_BY_NAME:
+    rc = strcmp(X->name,Y->name);
+    break;
+  case SORT_BY_SIZE:
+    rc = X->size - Y->size;
+    break;
+
+  case SORT_BY_CHANGE_TIME:
+  case SORT_BY_LAST_ACCESS_TIME:
+  case SORT_BY_MODIFICATION_TIME:
+
+    rc = X->date - Y->date;
+    if( rc == 0 )
+      rc = X->time - Y->time;
+    break;
+    
+  default:
+    rc = -1;
+    break;
+  }
+  if( method & SORT_REVERSE )
+    return -rc;
+  else
+    return rc;
+}
+
 struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp,
-				  int *nfiles)
+				  int *nfiles,int method=0)
 {
   int diff;
-  if( first == NULL || (diff=strcmp(tmp->name,first->name)) < 0 ){
+  if( first == NULL || (diff=compare(tmp,first,method)) < 0 ){
     if( nfiles != NULL )
       ++ *nfiles;
     tmp->next = first;
@@ -287,7 +354,7 @@ struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp,
       tmp->next  = NULL;
       break;
     }
-    int diff=strcmp(tmp->name,cur->name);
+    int diff=compare(tmp,cur,method);
     
     if( diff==0 ){
       /* 同じファイル名の場合、何もしない。 */

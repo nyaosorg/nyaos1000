@@ -31,6 +31,7 @@ int cmd_history(FILE *source, Parse & );
 /* "open.cc" */
 int cmd_open(FILE *source,Parse &);
 int cmd_which( FILE *source , Parse &params );
+int cmd_chcp( FILE *source , Parse &params );
 
 /* "chdirs.cc" */
 
@@ -264,12 +265,13 @@ static int cmd_cursor( FILE *fp, Parse &params)
       fputs("cursor : cannot make a pipe or file\n",stderr);
       return 1;
     }
-
-    fprintf(fout,
-	   "Cursor Color Attribute ... ESC[%sm\n"
-	   "  Text Color Attribute ... ESC[%sm\n",
-	   cursor_on_color_str  ,
-	   cursor_off_color_str );
+#if 0
+    fprintf(fout ,
+	    "Cursor Color Attribute ... ESC[%sm\n"
+	    "  Text Color Attribute ... ESC[%sm\n"
+	    , cursor_on_color_str 
+	    , cursor_off_color_str );
+#endif
   }
   return 0;
 }
@@ -354,6 +356,7 @@ static int cmd_lecho(FILE *source, Parse &params )
 
 const struct commandtable_tag jumptable[]={
   {"alias",  cmd_alias   },
+  {"chcp",   cmd_chcp    },
   {"bind",   cmd_bind    },
   {"bindkey",cmd_bindkey },
   {"cd",     cmd_chdir   },

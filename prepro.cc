@@ -6,7 +6,7 @@
 #include "Edlin.h"
 #include "macros.h"
 
-int option_tilda_is_home=0;
+int option_tilda_is_home=1;
 int option_replace_slash_to_backslash_after_tilda=1;
 int option_tcshlike_history=0;
 

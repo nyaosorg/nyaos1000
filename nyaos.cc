@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include <time.h>
 
-#define VERSION "1.31"
+#define VERSION "1.32"
 
 // #define INCL_WINWINDOWMGR
 #define INCL_DOSFILEMGR
@@ -23,8 +23,8 @@
 #  include <sys/video.h>
 #endif
 
-#define RED "" /*"\x1B[31m"*/
-#define WHITE "" /*"\x1B[37m"*/
+#define RED	"" /*"\x1B[31m"*/
+#define WHITE	"" /*"\x1B[37m"*/
 
 int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 
@@ -33,11 +33,13 @@ extern int nhistories;
 int screen_width=80;
 int screen_height=25;
 int option_vio_cursor_control=1;
+int option_prompt_even_piped=1;
 int cursor_start;
 int cursor_end;
 char *cursor_on_color_str=NULL;
 char *cursor_off_color_str=NULL;
 int option_nyaos_rc=1;
+int option_cmdlike_crlf=0;
 
 #undef CACHE
 #ifdef CACHE
@@ -58,14 +60,40 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   *dp = '\0';
   return dp;
 }
+#if 0
+static char **env2argv(const char *envname)
+{
+  const char *envstr=getenv(envname);
+  if( envstr == NULL )
+    return NULL;
 
-void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin)
+  int len=strlen(envstr);
+  char *base=malloc(len+1);
+  if( base == NULL )
+    return NULL;
+  strcpy(base,envstr);
+
+  char **argv=(char **)malloc(sizeof(char*)*(len+1));
+  int i=0;
+  char *token=strtok(base," \t\r");
+  while( token != NULL ){
+    argv[ i++ ] = token;
+    token = strtok(NULL," \t\r");
+  }
+  argv[ i ] = NULL;
+  argv = (char**)realloc( argv , sizeof(char*)*(i+1) );
+  return argv;
+}
+#endif
+
+void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 {
   const char *sp;
   time_t now;
   time( &now );
   struct tm *thetime = localtime( &now );
-  edlin.using_i_mark=0;
+  if( edlin != NULL )
+    edlin->using_i_mark=0;
   int a;
   
   while( *promptenv != '\0' ){
@@ -103,7 +131,8 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin)
 		      " Nihongo Yet Another Os/2 Shell "VERSION
 		      " (c) 1996,97 HAYAMA,Kaoru "
 		      );
-	edlin.using_i_mark = 1;
+	if( edlin != NULL )
+	  edlin->using_i_mark = 1;
 	if( option_vio_cursor_control )
 	  v_attrib(a);
 	break;
@@ -152,7 +181,8 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin)
 	  }
 	driveloop:
 	  dp += sprintf(dp,"\x1b[K\x1b[u");
-	  edlin.using_i_mark = 1;
+	  if( edlin != NULL )
+	    edlin->using_i_mark = 1;
 	  if( option_vio_cursor_control )
 	    v_attrib(a);
 	  
@@ -221,6 +251,7 @@ int main(int argc, char **argv)
     fprintf(stderr,"nyaos: DBCS init error\n");
     return -1;
   }
+  memset( alias_hashtable , 0 , sizeof(alias_hashtable) );
   
 #ifdef CACHE
   script_cache = new PathCache;
@@ -308,22 +339,26 @@ int main(int argc, char **argv)
   if( isatty(fileno(stdin)) && !quite_mode ){
     printf("\x1b[2J\x1b[1m"
 	   "\n"
-	   RED"  oo  oo oo  oo  oooo   oooo   ooooo   "
-	   WHITE"   Free Software     \n"
-	   RED"  ooo oo oo  oo oo  oo oo  oo oo    o  "
-	   WHITE"Nihongo Yet Another  \n"
-	   RED"  oooooo  oooo  oooooo oo  oo   ooo    "
-	   WHITE" Os/2 Shell "VERSION"\n"
-	   RED"  oo ooo   oo   oo  oo oo  oo o    oo  "
-	   WHITE"       (C)           \n"
-	   RED"  oo  oo   oo   oo  oo  oooo   ooooo   "
-	   WHITE"1996,97 HAYAMA,Kaoru \n"
-	   "                                                            \n"
-	   "    This version is compiled on " __DATE__ " " __TIME__"    \n"
-	   "    Comments, suggestions, and bug reports are welcome.     \n"
-	   "    Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp       \n"
-	   "\x1b[0m\n"
+	   "  oo  oo oo  oo  oooo   oooo   oooo      Free Software     \n"
+	   "  ooo oo oo  oo oo  oo oo  oo oo   o  Nihongo Yet Another  \n"
+	   "  oooooo  oooo  oooooo oo  oo   oo     Os/2 Shell "VERSION"\n"
+	   "  oo ooo   oo   oo  oo oo  oo o   oo         (C)           \n"
+	   "  oo  oo   oo   oo  oo  oooo   oooo   1996,97 HAYAMA,Kaoru \n"
+	   "\n"
+	   "    This version is compiled on " __DATE__ " " __TIME__"   \n"
+	   "    Comments, suggestions, and bug reports are welcome.    \n"
+	   "    Please mail to kaoru@cheme.kyoto-u.ac.jp\n"
 	   );
+#if 0
+    fputs( "          YAOS\r",stdout);
+    for(int i=0 ; i<9 ; i++ ){
+      fputc( (i & 1) ? 'Z' : 'N' , stdout);
+      fflush(stdout);
+      _sleep2( 50 );
+      fputs("\b ",stdout);
+    }
+    printf( "NYAOS "VERSION"\x1b[0m\n" );
+#endif
   }
 
  end_argv:
@@ -388,10 +423,21 @@ int main(int argc, char **argv)
   // 標準入力が、リダイレクトされている場合の処理(ここで完結)
   // ---------------------------------------------------------
   if( ! isatty(fileno(stdin)) ){
-    while( fgets_chop(cmdlin,sizeof(cmdlin),stdin) != NULL 
-	  && execute(stdin,cmdlin) != RC_QUIT )
-      ;
-    return 0;
+    for(;;){
+      if( option_prompt_even_piped ){
+	char promptstr[2048];
+	const char *promptenv=getenv("NYAOSPROMPT");
+	if( promptenv==NULL && (promptenv=getenv("PROMPT")) == NULL )
+	  promptenv = "$p$g";
+	setprompt(promptenv , promptstr , NULL );
+	fputs( promptstr , stdout );
+	fflush(stdout);
+      }
+
+      if( fgets_chop(cmdlin,sizeof(cmdlin),stdin) == NULL 
+	 || execute(stdin,cmdlin) == RC_QUIT )
+	return 0;
+    }
   }
 
   // -------- 入力オブジェクト edlin を用意する ---------------
@@ -412,7 +458,7 @@ int main(int argc, char **argv)
     if( promptenv==NULL && (promptenv=getenv("PROMPT")) == NULL )
       promptenv = "$p$g";
 
-    setprompt(promptenv , promptstr , edlin );
+    setprompt(promptenv , promptstr , &edlin );
     
     // ------------------------------------------------------------------
     // 入力オブジェクト edlin に擬似カーソルの為のエスケープシーケンスを
@@ -448,10 +494,17 @@ int main(int argc, char **argv)
 
     if( rc >= 0 ){
       putchar('\n');
-      if( cmdlin[0] != '\0' && execute(stdin,cmdlin) == RC_QUIT ){
-	// --- exitコマンドなどによる終了 ----
-	fputs("Good bye.\n",stderr);
-	return 0;
+      char *top=cmdlin;
+      while( *top != '\0' && is_space(*top) )
+	++top;
+      if( top[0] != '\0' ){
+	if( execute(stdin,top) == RC_QUIT ){
+	  // --- exitコマンドなどによる終了 ----
+	  fputs("Good bye.\n",stderr);
+	  return 0;
+	}
+	if( option_cmdlike_crlf )
+	  putchar('\n');
       }
     }else{
       switch( rc ){

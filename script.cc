@@ -214,6 +214,11 @@ int replace_script( const char *sp , char *dp )
       const char *p=sp;
       for(;;){
 	switch( *p ){
+	case '>':		/* >& というリダイレクトマークもあり */
+	  if( *++p == '&' )
+	    ++p;
+	  break;
+	  
 	case '&':
 	  while( is_space(*++p) )
 	    ;
@@ -277,10 +282,20 @@ int replace_script( const char *sp , char *dp )
     if( *sp == '\0' )
       break;
     
-    assert( *sp=='&' || *sp=='|' );
-    *dp++ = *sp++;
-    if( *sp=='&' || *sp=='|' )
+    if( *sp == '|' ){
+      if( *(sp+1) == '&' ){	/*  `|&' -> '2>&1 |' */
+	*dp++ = '2';	*dp++ = '>';
+	*dp++ = '&';	*dp++ = '1';
+	*dp++ = ' ';	*dp++ = '|';
+	sp += 2;
+      }else{
+	*dp++ = *sp++;
+      }
+    }else if( *sp == '&' ){
       *dp++ = *sp++;
+      if( *sp == '&' )
+	*dp++ = *sp++;
+    }
     if( *sp=='\0' )
       break;
   }/* パイプで区切られた各コマンド毎のループ */
