@@ -1,0 +1,48 @@
+本パッケ－ジは、葉山 薫の著作物
+	NYAOS : Nihongo Yet Another Os/2 Shell 1.16
+のソ－スリストです。
+コンパイル済みのバイナリは LHA で圧縮されたパッケ－ジに含まれています。
+
+このソ－スの配布・変更などは、「GNU General Public Licence」に従ってください。
+(詳しくは、添付ファイル COPYING 参照のこと )
+
+NYAOS のリコンパイルには、0.9c以上の emx/gcc 環境が必要です。
+
+readme.1st	このファイル
+readme.116	1.15からの変更点
+nyaos.doc	ドキュメント
+COPYING		GNU General Public Licence
+makefile	メイクファイル
+
+complete.h	ファイル名補完クラス Complete
+complete.cc
+
+edlin.h		入力・編集クラス Edlin とその派生クラス
+edlin.cc
+escedlin.cc
+shell.cc
+siminput.cc
+
+params.h	構文解析クラス Params
+params.cc
+
+alias.cc	別名機能
+
+execute.cc	コマンドインタ－プリタと内蔵コマンド
+commands.cc	内蔵コマンド
+
+eadir.cc	内蔵コマンド「ls」「eadir」
+foreach.cc	内蔵コマンド「foreach」
+
+prepro.cc	チルダ・環境変数の置換ル－チン
+script.cc	スクリプト実行支援の置換ル－チン
+
+nyaos.h		ソ－ス全体から参照される宣言
+nyaos.cc	メインル－チン
+
+
+┏ 廾 ｜ サ ━ はやまかおる(HAYAMA,Kaoru) ━━━×・□┓  
+┃ 世 ｜ 千 mailto:kaoru@ferrari6.cheme.kyoto-u.ac.jp ┠┐
+┃ 木 山 黒 http://www-mpe.cheme.kyoto-u.ac.jp/hayama/┃│
+┗┯━━━━━━━━━━━━━━━━━━━━━━━━━┛│
+  └──────────────────────────┘

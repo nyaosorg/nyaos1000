@@ -5,9 +5,51 @@
 #include <sys/nls.h>
 #include <ctype.h>
 #include <fnmatch.h>
+#include <stdarg.h>
 #include "complete.h"
 
 int Complete::directory_split_char='\\';
+int Complete::complete_tail_tilda=0;
+int Complete::complete_hidden_file=0;
+
+int which_suffix(const char *path,...)
+{
+  /* まず、拡張子のドットを検索する。*/
+  while( *path != '.' ){
+    if( *path == '\0' )
+      return 0;
+    if( _nls_is_dbcs_lead(*path) )
+      path++;
+    path++;
+  }
+
+  /* 拡張子を発見、以下比較 */
+  int rc=0;
+  const char *q;
+
+  va_list varptr;
+  va_start(varptr,path);
+  
+  while( (q=va_arg(varptr,const char *)) != NULL ){
+    const char *p=path+1;
+    rc++;
+
+    while( *p != '\0' ){
+      /* まさか、拡張子に漢字は入らないだろうと楽観 */
+      if( toupper(*p) != toupper(*q) )
+	goto next_arg;
+      p++;q++;
+    }
+    if( *q == '\0' ){
+      va_end(varptr);
+      return rc;
+    }
+  next_arg:
+    ;
+  }
+  va_end(varptr);
+  return 0;
+}
 
 /* パスを (ドライブ＋ディレクトリ) と (ファイル名) に分ける */
 
@@ -197,12 +239,13 @@ static int instrcmp(const char *s1,const char *s2,int n)
       if( *++s1 != *++s2 )
 	return *s1-*s2;
       n--;
-    }else if( toupper(*s1) != toupper(*s2) ){
+    }else if( toupper(*s1 & 255) != toupper(*s2 & 255) ){
        return *s1-*s2;
     }
     s1++;
     s2++;
   }
+  return 0;
 }
 struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp)
 {
@@ -217,9 +260,13 @@ struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp)
 	tmp->next  = NULL;
 	break;
       }
-      if( dircompare(tmp,cur) < 0 ){
+      int diff=dircompare(tmp,cur);
+      if( diff < 0 ){
 	tmp ->next = cur;
 	prev->next = tmp;
+	break;
+      }else if( diff==0  &&  strcmp(tmp->name,cur->name)==0 ){
+	/* 同じファイル名の場合、何もしない。 */
 	break;
       }
       prev = cur;
@@ -229,10 +276,8 @@ struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp)
   }
 }
 
-int Complete::makelist_core(const char *path,int command_complete)
+int Complete::makelist_core(int command_complete)
 {
-  pathsplit( path , directory , fname );
-  
   DIR *dirp=opendir(directory);
   if( dirp == NULL )
     return -1;
@@ -246,11 +291,19 @@ int Complete::makelist_core(const char *path,int command_complete)
 	   && instrcmp( fname , dirbuf->d_name , common_length ) == 0 
 	   ) ){
 
-      if( command_complete
-	 && _fnmatch("*.EXE",dirbuf->d_name,_FNM_IGNORECASE |_FNM_OS2 )!=0
-	 && _fnmatch("*.CMD",dirbuf->d_name,_FNM_IGNORECASE |_FNM_OS2 )!=0
-	 && _fnmatch("*.BAT",dirbuf->d_name,_FNM_IGNORECASE |_FNM_OS2 )!=0
-	 && _fnmatch("*.COM",dirbuf->d_name,_FNM_IGNORECASE |_FNM_OS2 )!=0 )
+      /* コマンド名補完の場合、拡張子が、EXE,CMD,BAT,COM以外は除く。
+       * (スクリプト名は、コマンド名補完モ－ドで実行していない)
+       */
+      if( command_complete 
+	   && which_suffix(dirbuf->d_name,"EXE","CMD","BAT","COM",NULL)==0 )
+	continue;
+
+      /* HIDDEN属性を除く */
+      if( (dirbuf->d_attr & A_HIDDEN) != 0  &&  complete_hidden_file == 0 )
+	continue;
+
+      /* 名前の末尾がチルダのファイルを除く */
+      if( dirbuf->d_name[dirbuf->d_namlen-1]=='~' && complete_tail_tilda==0 )
 	continue;
       
       struct filelist *tmp =
@@ -285,7 +338,9 @@ int Complete::makelist(const char *path)
   max_length=0;
   list = NULL;
   nlists = 0;
-  return makelist_core(path,false);
+
+  pathsplit( path , directory , fname );
+  return makelist_core(false);
 }
 
 int Complete::makelist_with_path(const char *path)
@@ -294,42 +349,53 @@ int Complete::makelist_with_path(const char *path)
   list = NULL;
   nlists = 0;
 
+  pathsplit( path , directory , fname );
+  int rc=makelist_core(true);
+
   const char *p=path;
   while( *p != '\0'){
-    if( _nls_is_dbcs_lead(*p) )
+    if( _nls_is_dbcs_lead(*p) ){
       p++;
-    else if( *p==':' || *p=='/' || *p=='\\')
-      return makelist_core(path,true);
+    }else if( *p==':' || *p=='/' || *p=='\\'){
+      /* フルパスで記述されている場合、
+       * PATHを検索するのは無意味なので、打ちきる
+       */
+      return rc;
+    }
     p++;
   }
 
-  makelist_core(path,true);
-  char cwdsave[FILENAME_MAX];
-  _getcwd2(cwdsave,sizeof(cwdsave) );
-
+  /* ASSERT : path には、ディレクトリ名が含まれていない。*/
+  strcpy( fname , path );
+  
+  /* 環境変数 PATH をたどる */
   const char *envpath=getenv("PATH");
   if( envpath != NULL ){
     char *envpath2=(char*)alloca(strlen(envpath)+1);
     strcpy(envpath2,envpath);
+
     char *dir=strtok(envpath2,";");
     while( dir != NULL ){
-      _chdir2(dir);
-      makelist_core(path,true);
+      strcpy( directory , dir );
+
+      makelist_core(true);
       dir=strtok(NULL,";");
     }
   }
+
+  /* 環境変数 SCRIPTPATH をたどる */
   extern int scriptflag;
   if( scriptflag && (envpath=getenv("SCRIPTPATH")) != NULL ){
     char *envpath2=(char*)alloca(strlen(envpath)+1);
     strcpy(envpath2,envpath);
+
     char *dir=strtok(envpath2,";");
     while( dir != NULL ){
-      _chdir2(dir);
-      makelist_core(path,false);
+      strcpy( directory , dir );
+      makelist_core(false);
       dir=strtok(NULL,";");
     }
   }
-  _chdir2(cwdsave);
   return nlists;
 }
 

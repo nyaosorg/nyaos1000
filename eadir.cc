@@ -77,7 +77,7 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
   }else if( flist->attr & A_HIDDEN ){
     if( (flag & HIDDEN_MODE)==0 )
       return;
-    headstr  = "\x1B[1;31m";
+    headstr  = "\x1B[1;34m";
   }else if( flist->attr & A_SYSTEM ){
     headstr  = "\x1B[1;31m";
   }else if( flist->attr & A_RONLY ){
@@ -85,10 +85,7 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
     attrstr[2] = '-';
   }else if( flist->attr & A_LABEL ){
     headstr  = "\x1B[1;34m";
-  }else if( fnmatch("*.EXE",flist->name,_FNM_IGNORECASE |_FNM_OS2 )==0
-	   || fnmatch("*.COM",flist->name,_FNM_IGNORECASE|_FNM_OS2 )==0
-	   || fnmatch("*.CMD",flist->name,_FNM_IGNORECASE|_FNM_OS2 )==0
-	   || fnmatch("*.BAT",flist->name,_FNM_IGNORECASE|_FNM_OS2 )==0 ){
+  }else if( which_suffix(flist->name,"EXE","COM","CMD","BAT",NULL) != 0 ){
     headstr  = "\x1B[1;35m";
     tailchar = '*';
     attrstr[3] = 'x';

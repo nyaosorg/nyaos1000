@@ -390,7 +390,7 @@ int wrdcmp(const char *s1,const char *s2)
    */
   
   while( *s1 != 0 ){
-    if( toupper(*s1) != toupper(*s2) )
+    if( toupper(*s1 & 255) != toupper(*s2 & 255) )
       return *s1-*s2;
 
     /* Š¿š‚È‚ç‚ÎA2byte–Ú‚ğ toupper‰z‚µ‚É”äŠr‚µ‚Ä‚Í‚¢‚¯‚È‚¢ */

@@ -138,7 +138,7 @@ int Edlin::seek_word_top()
   int p=0;
 
   for(;;){
-    while( isspace(strbuf[p]) ){
+    while( isspace(strbuf[p] & 255) ){
       if( p >= pos ){
 	return wrdtop;
       }
@@ -147,7 +147,7 @@ int Edlin::seek_word_top()
       p++;
     }
     wrdtop = p;
-    while( !isspace(strbuf[p]) ){
+    while( !isspace(strbuf[p] & 255) ){
       if( p >= pos ){
 	return wrdtop;
       }
@@ -196,28 +196,28 @@ void Edlin::complete_core(int fntop,int basesize)
     return;
   }
 
+  const char *nextstr=com.nextchar();
+
+  for(int i=0 ; i<basesize ;  )
+    i += backward();
+
+  if( !quoted && (   strchr(nextstr,' ') != NULL
+		  || strchr(nextstr,'^') != NULL) ){
+    insert('"');
+    quoted = 1;
+    forward();
+  }
+
+  for(int i=0 ; i<basesize-com.get_fname_common_length() ;  )
+    i +=forward();
+
+  const char *realname=com.get_real_name1();
+  for(int i=0 ; i<com.get_fname_common_length(); i++ )
+    putchr( strbuf[pos++] = *realname++ );
+
+  insert_and_forward(nextstr);
+
   if( nfiles == 1 ){
-    const char *nextstr=com.nextchar();
-
-    for(int i=0 ; i<basesize ;  )
-      i += backward();
-
-    if( !quoted && (   strchr(nextstr,' ') != NULL
-		    || strchr(nextstr,'^') != NULL) ){
-      insert('"');
-      quoted = 1;
-      forward();
-    }
-
-    for(int i=0 ; i<basesize-com.get_fname_common_length() ;  )
-      i +=forward();
-
-    const char *realname=com.get_real_name1();
-    for(int i=0 ; i<com.get_fname_common_length(); i++ )
-      putchr( strbuf[pos++] = *realname++ );
-
-    insert_and_forward(nextstr);
-
     if( com.findfirst()->attr & A_DIR ){
       insert( complete_tail_char );
     }else{
@@ -228,12 +228,6 @@ void Edlin::complete_core(int fntop,int basesize)
       insert(' ');
     }
     forward();
-  }else{
-    const char *nxtstr = com.nextchar();
-    if( nxtstr == NULL || nxtstr[0]=='\0' )
-      alert();
-    else
-      insert_and_forward(nxtstr);
   }
 }
 
@@ -353,13 +347,13 @@ void Edlin::forward_word()
 {
   int nextpos = pos;
   /* ’PŒê‚Ì“Ç‚Ý”ò‚Î‚µ */
-  while( !isspace(strbuf[nextpos]) ){
+  while( !isspace(strbuf[nextpos] & 255) ){
     if( nextpos >= len )
       return;
     ++nextpos;
   }
   /* ‹ó”’‚Ì“Ç‚Ý”ò‚Î‚µ */
-  while( isspace(strbuf[nextpos]) ){
+  while( isspace(strbuf[nextpos] & 255) ){
     if( nextpos >= len )
       return;
     ++nextpos;

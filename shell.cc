@@ -17,15 +17,7 @@ void ShellEdlin::complete_list()
   int fntop=seek_word_top();  
   int basesize=pos-fntop;
   int command_complete=(fntop <= 0) ;
-  /* #if 0 にすると、なぜか漢字ファイル名の補完がうまくいかなくなる。
-   * しかし、適当なところに printf をはさむと直ったりする。
-   * スタックフレ－ムがこわれとんのか ?
-   */
-#if 1
-  char buffer[1024];
-#else
   char *buffer=(char*)alloca(basesize+6);
-#endif
 
   if( strbuf[fntop] == '"' ){
     fntop++;
@@ -50,7 +42,7 @@ void ShellEdlin::complete_list()
   int scrnsize[2];
   _scrsize(scrnsize);
 
-  int files_per_line   = (scrnsize[0])/(com.get_max_name_length()+2);
+  int files_per_line   = (scrnsize[0]-1)/(com.get_max_name_length()+2);
   int files_per_column = (nfiles+files_per_line-1)/files_per_line;
 
   struct filelist **ptr =

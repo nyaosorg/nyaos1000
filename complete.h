@@ -31,6 +31,7 @@ struct filelist{
 struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp);
 int dircompare(struct filelist *d1,struct filelist *d2);
 int pathsplit( const char *path, char *dir, char *fname );
+int which_suffix(const char *path,...);
 
 class Complete {
   char directory[ 256 ];
@@ -42,7 +43,7 @@ class Complete {
   struct filelist *list , *findptr ;
   static const char *errmsg[];
 
-  int makelist_core(const char *path,int command_complete);
+  int makelist_core(int command_complete);
 
 public:
   enum{
@@ -71,6 +72,8 @@ public:
   const char *get_errmsg() const { return errmsg[err]; }
 
   static int directory_split_char;
+  static int complete_tail_tilda;
+  static int complete_hidden_file;
 };
 
 #endif

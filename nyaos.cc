@@ -132,7 +132,7 @@ int main(int argc, char **argv)
     printf("\x1b[2J\x1b[1m"
 	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "    Os/2 Shell 1.15    ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "    Os/2 Shell 1.16    ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	   "                                                          \n"
