@@ -19,15 +19,95 @@ Edlin::Edlin()
 {
   pos = len = markpos = msgsize = 0;
   max = DEFAULT_BUFFER_SIZE;
+  has_marked = false;
 
   strbuf = (char*)malloc(max);
   atrbuf = (char*)malloc(max);
+
+  /* ここで、strbuf,atrbuf が NULL か否かを調べていないが、
+   * これは変数宣言直後に、
+   * Edlin edlin;
+   * if( !edlin ){
+   *    :
+   * }という形でユーザー側に検出してもらう
+   */
 }
 
 Edlin::~Edlin()
 {
   if( strbuf ) free(strbuf);
   if( atrbuf ) free(atrbuf);
+}
+
+void Edlin::putchrs(const char *s)
+{
+  while( *s != '\0' )
+    putchr(*s++);
+}
+
+static char mark_on[32]="\x1B[45m";
+static char mark_off[32]="\x1B[40m";
+
+void Edlin::init()
+{
+  markpos=pos=len=0;
+  has_marked = false;
+  strbuf[0]=0;
+  
+  const char *env_markattr = getenv("NYAOSMARKCOLOR");
+  if( env_markattr == NULL )
+    return;
+
+  char *dempos=strchr(env_markattr,'/');
+  if( dempos == NULL )
+    return;
+
+  int len_on = dempos-env_markattr;
+  snprintf(  mark_on ,sizeof(mark_on) ,"\x1B[%*.*sm"
+	   , len_on , len_on , env_markattr);
+  snprintf(  mark_off,sizeof(mark_off),"\x1B[%sm"
+	   , dempos+1 );
+}
+
+void Edlin::putnth(int nth)
+{
+  if( ! has_marked ){
+    putchr( strbuf[nth] );
+    return;
+  }
+
+  if( nth==markpos  &&  atrbuf[nth]  != DBC2ND )
+    putchrs( mark_on );
+  
+  putchr( strbuf[nth] );
+  
+  if(   (nth==markpos   && atrbuf[nth] != DBC1ST )
+     || (nth==markpos+1 && atrbuf[nth] == DBC2ND ) )
+    putchrs( mark_off );
+}
+
+void Edlin::marking(void)
+{
+  if( has_marked  &&  markpos < pos ){
+    putbs( pos-markpos );
+    for(int i=markpos ; i<pos ; i++ )
+      putchr( strbuf[i] );
+  }
+  putchrs(mark_on);
+  putnth(pos);
+  if( atrbuf[pos] == SBC ){
+    putbs(1);
+  }else{
+    putnth(pos+1);
+    putbs(2);
+  }
+  putchrs(mark_off);
+  if( has_marked  &&  markpos > pos ){
+    markpos = pos;
+    after_repaint(0);
+  }
+  markpos = pos;
+  has_marked = true;
 }
 
 /* at の位置に bytes 分だけのスペースを確保する。
@@ -104,46 +184,57 @@ void Edlin::swapchars()  /* DOSモード未対応メソッド */
       /* 半角半角 */
       int tmp=strbuf[pos-2];
       putbs( 2 );
-      putchr( strbuf[pos-2] = strbuf[pos-1] );
-      putchr( strbuf[pos-1] = tmp );
+      strbuf[pos-2] = strbuf[pos-1]; putnth(pos-2);
+      strbuf[pos-1] = tmp;           putnth(pos-1);
     }else{
+      if( markpos == pos-1 ) /* 全角の 2byte目にマークが移動しないように */
+	markpos = pos-2;
+
       /* 全角半角 -> 半角全角 */
       int tmp1=strbuf[pos-3];
       int tmp2=strbuf[pos-2];
       putbs( 3 );
-      putchr( strbuf[pos-3] = strbuf[pos-1] );
-      atrbuf[pos-3] = SBC;
-      putchr( strbuf[pos-2] = tmp1 );
-      atrbuf[pos-2] = DBC1ST;
-      putchr( strbuf[pos-1] = tmp2 );
-      atrbuf[pos-1] = DBC2ND;
 
-      if( markpos == pos-1 ) /* 全角の 2byte目にマークが移動しないように */
-	markpos = pos-2;
+      strbuf[pos-3] = strbuf[pos-1];
+      atrbuf[pos-3] = SBC;
+      putnth(pos-3);
+
+      strbuf[pos-2] = tmp1;
+      atrbuf[pos-2] = DBC1ST;
+      putnth(pos-2);
+
+      strbuf[pos-1] = tmp2;
+      atrbuf[pos-1] = DBC2ND;
+      putnth(pos-1);
     }
   }else if( pos >= 3 ){
     if( atrbuf[pos-3] == SBC ){
+      if( markpos == pos-2 ) /* 全角の 2byte目にマークが移動しないように */
+	markpos = pos-1;
+
       /* 半角全角 -> 全角半角 */
       int tmp=strbuf[pos-3];
       putbs( 3 );
-      putchr( strbuf[pos-3] = strbuf[pos-2] );
+      strbuf[pos-3] = strbuf[pos-2];
       atrbuf[pos-3] = DBC1ST;
-      putchr( strbuf[pos-2] = strbuf[pos-1] );
+      putnth( pos-3 );
+      
+      strbuf[pos-2] = strbuf[pos-1];
       atrbuf[pos-2] = DBC2ND;
-      putchr( strbuf[pos-1] = tmp );
-      atrbuf[pos-1] = SBC;
+      putnth( pos-2 );
 
-      if( markpos == pos-2 ) /* 全角の 2byte目にマークが移動しないように */
-	markpos = pos-1;
+      strbuf[pos-1] = tmp;
+      atrbuf[pos-1] = SBC;
+      putnth( pos-1 );
     }else{
       /* 全角全角 */
       int tmp1=strbuf[pos-4];
       int tmp2=strbuf[pos-3];
       putbs(4);
-      putchr( strbuf[pos-4] = strbuf[pos-2] );
-      putchr( strbuf[pos-3] = strbuf[pos-1] );
-      putchr( strbuf[pos-2] = tmp1 );
-      putchr( strbuf[pos-1] = tmp2 );
+      strbuf[pos-4] = strbuf[pos-2]; putnth(pos-4);
+      strbuf[pos-3] = strbuf[pos-1]; putnth(pos-3);
+      strbuf[pos-2] = tmp1;          putnth(pos-2);
+      strbuf[pos-1] = tmp2;          putnth(pos-1);
     }
   }
 }
@@ -398,12 +489,12 @@ int Edlin::completeFirst()
 
   char *buffer=(char*)alloca(basesize+1);
   int  command_complete = (fntop <= 1);
-  int  quoted=false;
+  bool quoted=false;
   
   if( strbuf[fntop] == '"' ){
     fntop++;
     basesize--;
-    quoted = 1;
+    quoted = true;
   }
   
   char *bp=buffer;
@@ -411,26 +502,34 @@ int Edlin::completeFirst()
     *bp++ = strbuf[fntop++];
   *bp = '\0';
 
-  int nfiles = ( command_complete
-		? com.makelist_with_path( buffer ) 
-		: com.makelist( buffer ) );
-
+  int nfiles;
+  if( command_complete ){
+    nfiles = com.makelist_with_path( buffer );
+  }else{
+    nfiles = com.makelist( buffer );
+  }
   nfiles += complete_hook(com);
 
   if( nfiles <= 0 ){
-    alert();
-    return 0;
+    if(    strpbrk(buffer,"*?") == NULL
+       || (nfiles+=com.makelist_with_wildcard( buffer )) <= 0 ){
+      alert();
+      return 0;
+    }
   }
+
+  for(int i=0 ; i<basesize ; i+= backward() )
+    ;
 
   for(;;){
     struct filelist *cur=com.findfirst();
     while( cur != NULL ){
       if( cur->attr & A_DIR ){
 	message(  "%s%c"
-		, cur->name+com.get_fname_common_length()
+		, cur->name
 		, com.get_split_char() ?: complete_tail_char );
       }else{
-	message("%s",cur->name+com.get_fname_common_length() );
+	message("%s",cur->name );
       }
       CompleteFunc completeFunc;
       unsigned int key=::getkey();
@@ -443,6 +542,9 @@ int Edlin::completeFirst()
       case COMPLETE_CANCEL:
 	/*  case '\007':  case '\033':   case KEY(LEFT):*/
 	cleanmsg();
+	for(int i=0 ; i<basesize ; i+=forward() )
+	  ;
+
 	return 0;
 
       case COMPLETE_PREV:
@@ -464,12 +566,10 @@ int Edlin::completeFirst()
 	/* case KEY(RIGHT): case '\r':  case '\n':*/
 
 	cleanmsg();
-	for(int i=0;i<basesize;)
-	  i += backward();
 
 	if( !quoted && strpbrk( cur->name , " ^!") != NULL ){
 	  insert('"');
-	  quoted = 1;
+	  quoted = true;
 	  forward();
 	}
 	for(int i=0;i<basesize-com.get_fname_common_length(); )
@@ -478,8 +578,9 @@ int Edlin::completeFirst()
 	/* 補完のベース文字列も、大文字・小文字を合わせるために
 	 * 上書きを行う */
 	const char *sp=cur->name;
-	for(int i=0;i<com.get_fname_common_length();i++ )
-	  putchr( strbuf[pos++] = *sp++ );
+	for(int i=0;i<com.get_fname_common_length();i++ ){
+	  strbuf[pos] = *sp++; putnth(pos++);
+	}
 	
 	insert_and_forward( sp );
 	
@@ -546,8 +647,10 @@ int Edlin::complete()
     i +=forward();
 
   const char *realname=com.get_real_name1();
-  for(int i=0 ; i<com.get_fname_common_length(); i++ )
-    putchr( strbuf[pos++] = *realname++ );
+  for(int i=0 ; i<com.get_fname_common_length(); i++ ){
+    strbuf[pos] = *realname++;
+    putnth(pos++);
+  }
 
   insert_and_forward(nextstr);
 
@@ -577,7 +680,7 @@ int Edlin::complete_to_fullpath(const char *header)
 
   int fntop=seek_word_top();
   int basesize=pos-fntop;
-  int  quoted=false;
+  int quoted=false;
   
   char *buffer=(char*)alloca(basesize+1);
   if( strbuf[fntop] == '"' ){
@@ -687,7 +790,16 @@ void Edlin::repaint(int termclear)
 
   int i=0;
   while( i < len )
-    putchr( strbuf[i++] );
+    putnth( i++ );
+
+  if( has_marked  &&  markpos == len  ){
+    putchrs(mark_on);
+    putchr(' ');
+    putchrs(mark_off);
+  }else{
+    putchr(' ');
+  }
+  ++i; --termclear;
 
   if( termclear >= 0 ){
     while( termclear-- > 0 ){
@@ -705,8 +817,17 @@ void Edlin::after_repaint(int termclear)
   int i=0;
   if( pos < len ){
     while( pos+i < len )
-      putchr( strbuf[pos + i++] );
+      putnth( pos+i++ );
   }
+  if( has_marked  &&  markpos == len ){
+    putchrs(mark_on);
+    putchr(' ');
+    putchrs(mark_off);
+  }else{
+    putchr(' ');
+  }
+  ++i; --termclear;
+
   if( termclear >= 0 ){
     while( termclear-- > 0 ){
       putchr( ' ' );
@@ -740,7 +861,7 @@ void Edlin::eraseline()
 {
   /* 2行にまたがる場合、Eraselineコードが1行分しか効かない */
   int i=0;
-  while( pos+i<len ){
+  while( pos+i < len+1 ){ /* '+1' は、末尾のマークの為 */
     putchr(' ');
     i++;
   }
@@ -770,7 +891,7 @@ void Edlin::forward_word()
     ++nextpos;
   }
   while( pos < nextpos )
-    putchr(strbuf[pos++]);
+    putnth( pos++ );
 }
 void Edlin::backward_word()
 {
@@ -788,14 +909,12 @@ void Edlin::backward_word()
 int Edlin::forward()
 {
   if( pos+1 <= len  &&  atrbuf[pos] == SBC ){
-    
     /* 同じ文字の二度打ちによる右移動 */
-    putchr( strbuf[pos++] );
+    putnth( pos++ );
     return 1;
   }else if( pos+2 <= len ){
-
-    putchr( strbuf[pos++] );
-    putchr( strbuf[pos++] );
+    putnth( pos++ );
+    putnth( pos++ );
     return 2;
   }
   return 0;
@@ -826,7 +945,7 @@ void Edlin::go_tail()
 {
   /* 全文字列が、画面中にでている場合、右移動だけでよい */
   while( pos < len )
-    putchr( strbuf[pos++] );
+    putnth( pos++ );
 }
 
 void Edlin::clean_up()
@@ -839,6 +958,8 @@ void Edlin::clean_up()
   }else{
     putbs( pos );
     cleaning_size = len;
+    if( has_marked )
+      ++cleaning_size;
   }
 
   for(int i=0; i<cleaning_size ; i++ )
@@ -846,6 +967,7 @@ void Edlin::clean_up()
   
   putbs( cleaning_size );
   markpos = len = pos = 0;
+  has_marked = false;
   strbuf[ 0 ] = '\0';
   atrbuf[ 0 ] = SBC;
 }
@@ -887,13 +1009,13 @@ int Edlin::message(const char *fmt,...) /* ウインドウモード未対応 */
   /* 過去のメッセージの末尾を削除 */
   if( msgsize > columns ){
     if( pos+columns < len  &&  atrbuf[pos+columns] != DBC2ND )
-      putchr( strbuf[pos+columns] );
+      putnth( pos+columns );
     else
       putchr( ' ' );
     
     for(int i=columns+1 ; i < msgsize ; i++ ){
       if( pos+i < len  )
-	putchr( strbuf[pos+i] );
+	putnth( pos+i );
       else
 	putchr(' ');
     }
@@ -916,8 +1038,8 @@ void Edlin::cleanmsg() /* ウインドウモード未対応 */
     int i=0;
     while( pos+i < len  &&  i<msgsize ){
       if( atrbuf[pos+i] != SBC )
-	putchr( strbuf[pos + i++] );
-      putchr( strbuf[pos + i++] );
+	putnth( pos+i++ );
+      putnth( pos+i++ );
     }
 
     while( i < msgsize ){
@@ -950,13 +1072,13 @@ void Edlin::bottom_message( const char *fmt ,...)
      */
     
     if( pos+msgsize < len && atrbuf[pos+msgsize] == DBC2ND ){
-      putchr( strbuf[ pos+msgsize ] );
+      putnth( pos+msgsize );
       ++bs;
     }
     
     for( ; bs < screen_width ; bs++ ){
       if( pos+msgsize+bs < len )
-	putchr( strbuf[pos+msgsize+bs] );
+	putnth( pos+msgsize+bs );
       else
 	putchr( ' ' );
     }    
@@ -1012,7 +1134,7 @@ void Edlin::locate(int x)
 {
   if( x > pos ){
     while( pos < x )
-      putchr(strbuf[pos++]);
+      putnth( pos++ );
   }else if( x < pos ){
     putbs( pos-x );
   }

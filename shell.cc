@@ -147,7 +147,7 @@ void Shell::complete_list()
   fprintf(fp,"\n%s",prompt);
   int i=0;
   while( i<len )
-    putchr( strbuf[ i++] );
+    putnth( i++ );
   putbs( i-pos );
 }
 
@@ -158,6 +158,6 @@ void Shell::cls()
 	  , prompt );
   int i=0;
   while( i < len )
-    putchr( strbuf[i++] );
+    putnth( i++ );
   putbs( i - pos );
 }

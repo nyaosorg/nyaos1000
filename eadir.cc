@@ -199,7 +199,7 @@ static void set_ls_color_table(const char *s)
 {
   if( s==NULL )
     return;
-
+  
   while( is_alpha(s[0]) && is_alpha(s[1]) && s[2]=='=' ){
     int s0=tolower(s[0] & 255) , s1=tolower(s[1] & 255 );
     s += 3;    

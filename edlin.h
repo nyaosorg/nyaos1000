@@ -5,7 +5,6 @@
  *      └ Shell  プロンプト処理や、キーバインド等も含む「シェル」
  *
  *  └ private継承    ┗ public継承
- *
  */
 
 #ifndef EDLIN_H
@@ -32,6 +31,8 @@ protected:
   int msgsize;         /* かんな等のインラインのメッセージのサイズ */
   int bottom_msgsize;  /* かんな等の最下段のメッセージのサイズ */
 
+  bool has_marked;     /* マークがされていたら、true  */
+
   /*
    * ================ バッファ操作系メソッド ================ 
    */
@@ -39,23 +40,21 @@ protected:
   /* 場所を作る/削減する(バッファ操作のみ)。戻り値 != 0 で失敗 */
   int makeRoom(int at,int bytes);
 
-  /* カーソル位置に、半角文字ｃを上書き(バッファ操作のみ) */
+  /* カーソル位置に、半角文字ｃを上書き */
   void writeSBChar(int c){
-    putchr(strbuf[pos]=c); atrbuf[pos++] = SBC;
+    strbuf[pos] = c ; atrbuf[pos] = SBC ; putnth(pos++);
   }
 
   /* カーソル位置に、全角文字c1:c2を上書き(バッファ操作のみ) */
   void writeDBChar(int c1,int c2){
-    putchr(strbuf[pos]=c1); atrbuf[pos++] = DBC1ST;
-    putchr(strbuf[pos]=c2); atrbuf[pos++] = DBC2ND;
+    strbuf[pos]=c1; atrbuf[pos] = DBC1ST; putnth(pos++);
+    strbuf[pos]=c2; atrbuf[pos] = DBC2ND; putnth(pos++);
   }
 
   /* カーソル位置の単語の先頭桁位置を得る */
   int  seek_word_top();
   
-  /* 
-   * ================ 表示更新系メソッド ================
-   *
+  /* ================ 表示更新系メソッド ================
    *   termclear を 1以上にすると、末尾をその桁数分消去する。
    */
   void after_repaint(int termclear=-1);   /* カーソル以降のみ更新 */
@@ -65,23 +64,22 @@ protected:
   virtual void putel()=0;       /* カーソル位置以降をクリア */
   virtual void putbs(int i)=0;  /* カーソルをｎ桁戻す       */
   virtual void alert()=0;       /* 警告(普通はbeep音)       */
-  
+
+  void putnth(int nth);         /* n 番目の文字を出力
+				 * その位置にマークがあれば、
+				 * ちゃんと色を変える */
+  void putchrs(const char *s);  /* putchr の複数版 */
+
+  static int setMarkAttr(const char *start,const char *end);
+
 public:
   Edlin();
   virtual ~Edlin();
   bool operator ! () const { return strbuf==0 || atrbuf==0 ; }
-
-#if 0
-  Edlin(char *buffer , int max_ )
-    : strbuf(buffer),atrbuf(new char[max_])
-      ,pos(0),len(0),max(max_),markpos(0),msgsize(0)
-	{ buffer[0]='\0'; }
-  virtual ~Edlin(){ delete atrbuf; }
-#endif
-
+  
   enum{ SBC , DBC1ST , DBC2ND };
   
-  void init(){ markpos=pos=len=0; strbuf[0]=0; }
+  void init();
   void pack(); /* 入力した制御文字を1byte形式へ置換する。 */
 
   void insert(int ch);                     /*    半角文字挿入       */
@@ -124,7 +122,7 @@ public:
   void clean_bottom();
 
   void locate(int x);
-  void marking(void){ markpos = pos; }
+  void marking(void);
 
   /*
    * -------- リポート関数 --------

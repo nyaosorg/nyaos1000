@@ -45,4 +45,6 @@ int get86key(void);
 int getkey(void);
 void ungetkey(int key);
 
+class MemoryAllocationError{ };
+
 #endif

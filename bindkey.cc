@@ -345,7 +345,7 @@ int Shell::regist_history(const char *s)
 {
   int length;
   const char *text;
-  if( text == NULL ){
+  if( s == NULL ){
     text = Edlin::getText();
     length = len;
   }else{
@@ -574,8 +574,13 @@ int Shell::line_input(const char *_prompt)
 int Shell::line_input(const char *prompt1,const char *prompt2,const char **rv )
 {
   int len=line_input(prompt1);
-  if( len <= 0 )
+  if( len < 0 )
     return len;
+  else if( len == 0 ){
+    if( rv != 0 )
+      *rv = NULL;
+    return 0;
+  }
   
   char *s=strdup( Edlin2::getText() );
   if( s == NULL )

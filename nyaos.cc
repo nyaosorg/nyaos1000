@@ -522,7 +522,7 @@ int main(int argc, char **argv)
     // 実行は、高機能system である execute がよしなにしてくれる。
     // ---------------------------------------------------------
     
-    if( rc >= 0 ){
+    if( rc > 0 ){
       putchar('\n');
       while( *top != '\0' && is_space(*top) )
 	++top;
@@ -553,6 +553,10 @@ int main(int argc, char **argv)
       case RC_ABORT:
       case Shell::ABORT:
 	// fputs("^C\n",stdout);
+	break;
+
+      case 0:
+	putchar('\n');
 	break;
 	
       default:

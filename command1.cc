@@ -203,7 +203,6 @@ struct Option{
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
   { "complete_tilda"       , &Complete::complete_tail_tilda    , 1  , 0 },
   { "ctrl_d_eof"           , &Shell::ctrl_d_eof                , 1  , 0 },
-//  { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
   { "debug"                , &option_debug_echo                , 1  , 0 },
   { "direct_key"           , &option_direct_key		       , 1  , 0 },
   { "dots"                 , &option_dots                      , 1  , 0 },

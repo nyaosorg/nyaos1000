@@ -226,13 +226,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
     strcpy(prevdir,wd);
     return 0;
   }
-  for( const char *p=cwd ; *p != '\0' ; p++ ){
-    if( *p=='/' || *p=='\\' || *p==':' ){
-      fprintf(stderr,"%s: no such directory.\n",cwd);
-      return-1;
-    }
-  }
-  
+
   // ------- CDPATH を検索する。 --------
   
   if( modeflag & BIT_CD_PATH ){
@@ -330,6 +324,24 @@ struct Dirstack{
   char buffer[1];
 } *dirstack=NULL;
 
+static char *gethome(int &size)
+{
+  char *home=getenv("HOME");
+  if( home == NULL  || (home=strdup(home))==NULL )
+    return NULL;
+
+  char *p=home;
+  while( *p != '\0' ){
+    if( *p == '\\' )
+      *p = '/';
+    if( is_kanji(*p) )
+      ++p;
+    ++p;
+  }
+  size = p-home;
+  return home;
+}
+
 /* params の定義する標準出力へ、ディレクトリスタックの内容を表示する。
  * in	params パラメータオブジェクト。出力ストリームを得るのに用いるだけ。
  * 	flag  bit0=1: 縦型表示をする(-v オプション用)
@@ -344,26 +356,43 @@ int simple_dirs ( Parse &params , int flag=0 )
 
   char cwd[FILENAME_MAX];
   getcwd_case(cwd);
+  int home_len;
+  char *home=gethome(home_len);
   
-  if( flag & 1 )
-    fprintf(fout,"%-8d%s\n",0,cwd);
-  else
-    fputs(cwd,fout);  
+  if( flag & 1 ){
+    if( home != NULL && strnicmp(cwd,home,home_len)==0 )
+      fprintf(fout,"%-8d~%s\n",0,cwd+home_len);
+    else
+      fprintf(fout,"%-8d%s\n",0,cwd);
+  }else{
+    if( home != NULL && strnicmp(cwd,home,home_len)==0 )
+      fprintf(fout,"~%s",cwd+home_len);
+    else
+      fputs(cwd,fout);  
+  }
 
   Dirstack *tmp=dirstack;
   int i=1;
   while( tmp != NULL ){
-    if( flag & 1 )
-      fprintf(fout,"%-8d%s\n",i,tmp->buffer);
-    else
-      fprintf(fout," %s",tmp->buffer);
-
+    if( flag & 1 ){
+      if( home != NULL && strnicmp(tmp->buffer,home,home_len)==0 )
+	fprintf(fout,"%-8d~%s\n",i,tmp->buffer+home_len);
+      else
+	fprintf(fout,"%-8d%s\n",i,tmp->buffer);
+    }else{
+      if( home != NULL && strnicmp(tmp->buffer,home,home_len)==0 )
+	fprintf(fout," ~%s",tmp->buffer+home_len);
+      else
+	fprintf(fout," %s",tmp->buffer);
+    }
     tmp = tmp->prev;
     i++;
   }
   if( (flag & 1)==0 )
     putc('\n',fout);
 
+  if( home != NULL )
+    free(home);
   return 0;
 }
 
@@ -521,22 +550,23 @@ static int simple_popd(int nth=0)
   if( nth == 0 ){
     if( _chdir2(dirstack->buffer) != 0 )
       return -2;
+    strcpy(prevdir,wd);
     drop_stacktop();
+  }else if( nth == 1 ){
+    Dirstack *tmp=dirstack->prev;
+    free(dirstack);
+    dirstack = tmp;
   }else{
-    Dirstack *pre=dirstack , *cur;
-    for(int i=0;;){
-      if( (cur = pre->prev) == NULL )
+    Dirstack *p=dirstack;
+    for(int i=2; i<nth ; i++){
+      p = p->prev;
+      if( p == NULL )
 	return -1;
-      if( ++i >= nth-1 )
-	break;
-      pre = cur;
     }
-    if( _chdir2(cur->buffer) != 0 )
-      return -2;
-    pre->prev = cur->prev;
-    free(cur);
+    Dirstack *q=p->prev;
+    p->prev = q->prev;
+    free(q);
   }
-  strcpy(prevdir,wd);
   return 0;
 }
 
@@ -666,6 +696,10 @@ int cmd_popd( FILE *srcfil, Parse &params)
       }
     }else if( params[i][0] == '+' ){
       nth = atoi( params[i].ptr+1 );
+      if( nth == 0 ){
+	fputs("popd: Bad directory.\n",stderr);
+	return 0;
+      }
     }
   }
 
