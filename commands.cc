@@ -12,13 +12,15 @@
 #include "complete.h"
 #include "nyaos.h"
 
+extern int option_cd_goto_home;
+extern int option_cdshort_top;
+
 static int option_dir_tail_is_forward_slash;
 
 extern int option_amp_start;
 extern int option_tilda_is_home;
 extern int option_tcshlike_history;
 
-int option_cd_goto_home=0;
 int echoflag=0;
 
 int cmd_mode( FILE *source , Parse &params )
@@ -29,18 +31,6 @@ int cmd_mode( FILE *source , Parse &params )
   if( option_vio_cursor_control ){
     v_getctype( &cursor_start , &cursor_end );
   }
-  return 0;
-}
-
-int cmd_pwd( FILE *source , Parse &params )
-{
-  char cwd[FILENAME_MAX];
-
-  _getcwd2(cwd,sizeof(cwd));
-
-  FILE *fout=params.open_stdout();
-  fputs(cwd,fout);
-  putc('\n',fout);
   return 0;
 }
 
@@ -106,67 +96,6 @@ int cmd_mkdir( FILE *source , Parse &params)
   }
 }
 
-int chdir_with_cdpath(const char *cwd)
-{
-  if( _chdir2( cwd ) == 0 )
-    return 0;
-  
-  for( const char *p=cwd ; *p != '\0' ; p++ ){
-    if( *p=='/' || *p=='\\' || *p==':' ){
-      fprintf(stderr,"%s: no such directory.\n",cwd);
-      return 0;
-    }
-  }
-  
-  /* CDPATH */
-  const char *sp=getenv("CDPATH");
-  if( sp != NULL ){
-    char cdpath[FILENAME_MAX];
-    char *dp=cdpath;
-    int lastchar = 0;
-    
-    for(;;){
-      if( *sp != '\0' && *sp != ';' ){
-	if( is_kanji(lastchar=*sp) )
-	  *dp++ = *sp++;
-	*dp++ = *sp++;
-	continue;
-      }
-      if( lastchar != '\\' && lastchar != '/' && lastchar != ':' )
-	*dp++ = '\\';
-      strcpy( dp , cwd );
-      if( access(cdpath,0)==0  &&  _chdir2(cdpath)==0 )
-	return 0;
-      
-      if( *sp == '\0' )
-	break;
-      
-      ++sp; /* for semicolon */
-      dp = cdpath;
-    }
-  }
- exit:
-  fprintf(stderr,"%s : no such directory.\n",cwd);
-  return 0;
-}
-
-int cmd_chdir( FILE *srcfil, Parse &params)
-{
-  char cwd[FILENAME_MAX];
-
-  if( params.get_argc() > 1 ){
-    params.copy(1,cwd);
-    chdir_with_cdpath(cwd);
-  }else if( option_cd_goto_home ){
-    const char *home=getenv("HOME");
-    if( home == NULL || _chdir2(home) != 0 )
-      fprintf(stderr,"chdir: $HOME does not point a right directory.\n");
-  }else{
-    return cmd_pwd(srcfil,params);
-  }
-  return 0;
-}
-
 int cmd_comment(FILE *source, Parse &params)
 {
   if( params.get_argc() < 2 ){
@@ -226,6 +155,7 @@ struct{
   { "ctrl_d_eof"           , &Shell::ctrl_d_eof                , 1  , 0 },
   { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
+  { "cd_short_top"         , &option_cdshort_top               , 1  , 0 },
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
   { "script"               , &scriptflag                       , 1  , 0 },
   { "sos"                  , &option_sos                       , 1  , 0 },
@@ -265,13 +195,13 @@ int cmd_option(FILE *source, Parse &params)
       if( strcmp(optlist[i].name,name)==0 ){
 	*optlist[i].pointor = 
 	  ( value ? optlist[i].true_value : optlist[i].false_value );
-	fprintf(fout,"%c%s\n",
-	       value ? '+' : '-' ,
-	       optlist[i].name 
-	       );
-	break;
+	goto next;
       }
     }
+    fprintf(fout,"%s : no such option.\n",name);
+    
+  next:
+    ;
   }
   return 0;
 }

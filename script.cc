@@ -13,7 +13,7 @@ int option_sos=0;
 // strcpy_tail 
 // : 帰り値がコピーした文字列の末尾である以外は、strcpy と同じ
 
-static char *strcpy_tail(char *dp,const char *sp)
+char *strcpy_tail(char *dp,const char *sp)
 {
   while( *sp != '\0' )
     *dp++ = *sp++;
@@ -277,7 +277,8 @@ int replace_script( const char *sp , char *dp )
     *dp++ = *sp++;
     if( *sp=='&' || *sp=='|' )
       *dp++ = *sp++;
-    
+    if( *sp=='\0' )
+      break;
   }/* パイプで区切られた各コマンド毎のループ */
   *dp = '\0';
   return 0;

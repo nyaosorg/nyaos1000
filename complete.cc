@@ -6,8 +6,10 @@
 #include <ctype.h>
 #include <fnmatch.h>
 #include <stdarg.h>
+
 #include "complete.h"
 #include "macros.h"
+#include "finds.h"
 
 int Complete::directory_split_char='\\';
 int Complete::complete_tail_tilda=0;
@@ -271,7 +273,7 @@ struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp,
   int diff;
   if( first == NULL || (diff=strcmp(tmp->name,first->name)) < 0 ){
     if( nfiles != NULL )
-      ++*nfiles;
+      ++ *nfiles;
     tmp->next = first;
     return tmp;
   }
@@ -306,17 +308,13 @@ struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp,
 
 int Complete::makelist_core(int command_complete, int is_with_dir)
 {
-  DIR *dirp=opendir(directory);
-  if( dirp == NULL )
-    return -1;
-  
   common_length = strlen(fname);
   struct dirent *dirbuf;
 
-  while( (dirbuf=readdir(dirp)) != NULL ){
+  for(Dir dir(directory) ; dir != NULL ; ++dir ){
     if( common_length == 0
-       || ( dirbuf->d_namlen >= common_length
-	   && instrcmp( fname , dirbuf->d_name , common_length ) == 0 
+       || ( dir.get_name_length() >= common_length
+	   && instrcmp( fname , dir.get_name() , common_length ) == 0 
 	   ) ){
 
       /* コマンド名補完の場合、拡張子が、EXE,CMD,BAT,COM以外は除く。
@@ -325,44 +323,41 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
        * is_with_dir が立っていない場合は、ディレクトリも除く。
        */
       if(    command_complete 
-	 && which_suffix(dirbuf->d_name,"EXE","CMD","BAT","COM",NULL)==0
-	 && !( is_with_dir && (dirbuf->d_attr & A_DIR)) )
+	 && which_suffix(dir.get_name(),"EXE","CMD","BAT","COM",NULL)==0
+	 && !( is_with_dir && (dir.get_attr() & Dir::DIRECTORY)) )
 	{
 	  continue;
 	}
       
       /* HIDDEN属性を除く */
-      if( (dirbuf->d_attr & A_HIDDEN) != 0  &&  complete_hidden_file == 0 )
+      if( (dir.get_attr() & Dir::HIDDEN) != 0  &&  complete_hidden_file == 0 )
 	continue;
 
       /* 名前の末尾がチルダのファイルを除く */
-      if( dirbuf->d_name[dirbuf->d_namlen-1]=='~' && complete_tail_tilda==0 )
+      if( dir[dir.get_name_length()-1]=='~' && complete_tail_tilda==0 )
 	continue;
       
-      struct filelist *tmp =
-	(struct filelist *)malloc(sizeof(struct filelist)+dirbuf->d_namlen );
+      struct filelist *tmp = (struct filelist *)
+	malloc(sizeof(struct filelist)+dir.get_name_length() );
       assert(tmp != NULL);
       if( tmp == NULL ){
 	status = ERROR;
-	closedir(dirp);
 	return -1;
       }
-      strcpy( tmp->name , dirbuf->d_name );
+      strcpy( tmp->name , dir.get_name() );
 
-      tmp->length = dirbuf->d_namlen;
-      tmp->date   = dirbuf->d_date;
-      tmp->time   = dirbuf->d_time;
-      tmp->attr   = dirbuf->d_attr;
-      tmp->size   = dirbuf->d_size;
+      tmp->length = dir.get_name_length();
+      tmp->date   = dir.get_last_write_date_by_short();
+      tmp->time   = dir.get_last_write_time_by_short();
+      tmp->attr   = dir.get_attr();
+      tmp->size   = dir.get_size();
+	
+      if( dir.get_name_length() > max_length )
+	max_length = dir.get_name_length();
       
-      if( dirbuf->d_namlen > max_length )
-	max_length = dirbuf->d_namlen;
-
       list = fsort_and_insert(list,tmp,&nlists);
-
     }
   }
-  closedir(dirp);
   return nlists;
 }
 

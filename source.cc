@@ -50,9 +50,23 @@ int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv )
 
   MAKERXSTRING( rx_rc , return_buffer , sizeof(return_buffer) );
   
+  char *truename=(char*)alloca(strlen(progname)+1);
+  char *dp=truename;
+  while( *progname != '\0' ){
+    if( *progname == '/' ){
+      *dp++ = '\\';
+      progname++;
+    }else{
+      if( is_kanji(*progname) )
+	*dp++ = *progname++;
+      *dp++ = *progname++;
+    }
+  }
+  *dp = '\0';
+  
   RexxStart(  argc		/* argc */
 	    , rx_argv		/* argv */
-	    , (PUCHAR)progname	/* program name */
+	    , (PUCHAR)truename	/* program name */
 	    , NULL		/* instore */
 	    , (PUCHAR)"NYAOS" 	/* envname */
 	    , RXCOMMAND		/* calltype */

@@ -20,8 +20,6 @@ extern int echoflag;
 int cmd_exec  (FILE *source , Parse &params );
 int cmd_mode  (FILE *source , Parse &params );
 int cmd_pwd   (FILE *source , Parse &params );
-int chdir_with_cdpath(const char *cwd);
-int cmd_chdir (FILE *srcfil, Parse &params );
 int cmd_option(FILE *source, Parse &params );
 int cmd_comment(FILE *source, Parse &params );
 int cmd_alias(FILE *source, Parse & );
@@ -33,6 +31,14 @@ int cmd_history(FILE *source, Parse & );
 /* "open.cc" */
 int cmd_open(FILE *source,Parse &);
 int cmd_which( FILE *source , Parse &params );
+
+/* "chdirs.cc" */
+
+int chdir_with_cdpath(const char *cwd);
+int cmd_chdir (FILE *srcfil, Parse &params );
+int cmd_pushd( FILE *srcfil , Parse &params);
+int cmd_popd( FILE *srcfil, Parse &params);
+int cmd_dirs( FILE *srcfil , Parse &params );
 
 int cmd_bind(FILE *source, Parse &param )
 {
@@ -117,69 +123,7 @@ static int foreach(FILE *source, Parse &params )
   return compatible(source,params,foreach);
 }
 
-struct Dirstack{
-  Dirstack *prev;
-  char buffer[1];
-} *dirstack=NULL;
 
-static int cmd_dirs( FILE *srcfil , Parse &params )
-{
-  char cwd[FILENAME_MAX];
-  _getcwd2(cwd,sizeof(cwd));
-  
-  FILE *fout=params.open_stdout();
-  if( fout == NULL ){
-    fputs("nyaos : cannot make a pipe or file\n",stderr);
-    return 1;
-  }
-  fputs(cwd,fout);
-
-  Dirstack *tmp=dirstack;
-  while( tmp != NULL ){
-    putc(' ',fout);
-    fputs(tmp->buffer,fout);
-
-    tmp = tmp->prev;
-  }
-  putc('\n',fout);
-
-  return 0;
-}
-
-static int cmd_pushd( FILE *srcfil , Parse &params)
-{
-  char cwd[FILENAME_MAX];
-  _getcwd2(cwd,sizeof(cwd));
-  
-  if( params.get_argc() > 1 ){
-    char dir[FILENAME_MAX];
-    params.copy(1,dir);
-    if( chdir_with_cdpath(dir) )
-      return 0;
-  }
-
-  Dirstack *tmp=(Dirstack*)malloc(sizeof(dirstack)+strlen(cwd));
-  tmp->prev = dirstack;
-  strcpy( tmp->buffer , cwd );
-  dirstack = tmp;
-
-  return cmd_dirs(srcfil,params);
-}
-
-static int cmd_popd( FILE *srcfil, Parse &params)
-{
-  if( dirstack != NULL ){
-    _chdir2( dirstack->buffer );
-    Dirstack *tmp=dirstack;
-    dirstack = dirstack->prev;
-    free(tmp);
-
-    return cmd_dirs( srcfil , params );
-  }else{
-    printf("dirs : directory stack is empty!\n");
-    return 0;
-  }
-}
 static int cmd_ls( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
 static int cmd_dir( FILE *srcfil, Parse &params )
@@ -528,6 +472,7 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
   if(   is_alpha(cmdline[0]) && cmdline[1]==':' 
      && (cmdline[2]=='\0' || is_space(cmdline[2])) ) {
     _chdrive(cmdline[0]);
+    _rfnlwr();
     return 0;
   }
 

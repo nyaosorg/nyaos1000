@@ -6,6 +6,8 @@
 #include <ctype.h>
 #include <process.h>
 #include <sys/video.h>
+
+#include "finds.h"
 #include "edlin.h"
 #include "nyaos.h"
 
@@ -160,15 +162,29 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
     /* キーボード入力 */
     ShellEdlin edlin("? ",buffer,sizeof(buffer));
     Shell shell(edlin);
+    const char *promptenv=getenv("NYAOSPROMPT2");
+    char prompt[1024];
+    if( promptenv == NULL ){
+      prompt[0] = '?';
+      prompt[1] = ' ';
+      prompt[2] = '\0';
+    }
 
     int rc;
-    while(   (rc=shell.line_input("? ",32767)) >= 0 
-	  && (   (buffer[0] != 'e' && buffer[0] != 'E' )
-	      || (buffer[1] != 'n' && buffer[1] != 'N' )
-	      || (buffer[2] != 'd' && buffer[2] != 'D' )
-	      ||  buffer[3] !='\0'
-	      )
-	  ){
+    for(;;){
+      if( promptenv != NULL )
+	setprompt(promptenv,prompt,edlin);
+      edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
+
+      if (!(   (rc=shell.line_input(prompt,32767)) >= 0 
+	    && (   (buffer[0] != 'e' && buffer[0] != 'E' )
+		|| (buffer[1] != 'n' && buffer[1] != 'N' )
+		|| (buffer[2] != 'd' && buffer[2] != 'D' )
+		||  buffer[3] !='\0'
+		)
+	    ))
+	break;
+      
       putchar('\n');
       if( buffer[0] != '\0' ){
 	cur = cur->next = 
@@ -216,19 +232,32 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   /* 各引数毎にループ */
   for(int i=2;i<argc;i++){
     /* 展開したファイル名ごとのループ */
-    char **list=_fnexplode(argv[i]);
+#if 0
+    Dir dir(argv[i]);
+    if( dir == NULL ){
+      eachcmd(srcfil,argv[1],argv[i],dummyfirst.next);
+    }else{
+      do{
+	int rc=eachcmd(srcfil , argv[1] , dir.get_name() , dummyfirst.next);
+	if( rc != 0 )
+	  return rc;
+      }while( ++dir != NULL );
+    }
+#else
+    char **list = fnexplode2(argv[i]);
     if( list==NULL ){
       eachcmd(srcfil,argv[1],argv[i],dummyfirst.next);
     }else{
       for(char **listptr=list ; *listptr != NULL ; listptr++ ){
 	int rc=eachcmd(srcfil,argv[1],*listptr,dummyfirst.next);
 	if( rc != 0 ){
-	  _fnexplodefree(list);
+	  fnexplode2_free(list);
 	  return rc;
 	}
       }
-      _fnexplodefree(list);
+      fnexplode2_free(list);
     }/* 展開後の名前ループ */
+#endif
   }/* パラメータループ */
   return 0;
 }

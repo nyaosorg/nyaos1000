@@ -15,7 +15,7 @@ extern int screen_width , screen_height ;
 int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
 int eadir(int argc, char **argv,FILE *fout);
 char *fgets_chop(char *dp,int max,FILE *fp);
-
+void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin);
 class Parse;
 
 extern const struct commandtable_tag {
@@ -58,7 +58,7 @@ struct Command{
 void kill_filter(struct Command *list);
 struct Command *make_filter( const char *sp );
 struct Command *alias_filter(struct Command *dummyfirst);
-
+char *strcpy_tail(char *dp,const char *sp);
 extern int scriptflag,option_sos;
 
 void alias_replace(const char *sp,char *dp);

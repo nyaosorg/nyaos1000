@@ -48,6 +48,158 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   return dp;
 }
 
+void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin)
+{
+  const char *sp;
+  time_t now;
+  time( &now );
+  struct tm *thetime = localtime( &now );
+  edlin.using_i_mark=0;
+  
+  while( *promptenv != '\0' ){
+    if( *promptenv == '$' ){
+      switch( promptenv++ , to_upper(*promptenv) ){
+	
+      case '!':
+	dp += sprintf(dp,"%d",nhistories );
+	break;
+
+      case '$': *dp++ = '$';	  break;
+      case '_': *dp++ = '\n';	  break;
+      case 'A': *dp++ = '&';	  break;
+      case 'B': *dp++ = '|';	  break;
+      case 'C': *dp++ = '(';	  break;
+	
+      case 'D':/* 現在の日付 */
+	dp += sprintf(dp,"%4d-%02d-%02d" ,
+		      thetime->tm_year+1900 ,
+		      thetime->tm_mon+1 ,
+		      thetime->tm_mday );
+	break;
+	
+      case 'E': *dp++ = '\x1b'; break;
+      case 'F': *dp++ = ')';	  break;
+      case 'G': *dp++ = '>';	  break;
+      case 'H': *dp++ = '\b';	  break;
+	
+      case 'I':
+	int a;
+	if( option_vio_cursor_control )
+	  a = v_getattr();
+	
+	dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
+		      , screen_width ,
+		      " Nihongo Yet Another Os/2 Shell 1.29 "
+		      " (c) 1996,97 HAYAMA,Kaoru "
+		      );
+	edlin.using_i_mark = 1;
+	if( option_vio_cursor_control )
+	  v_attrib(a);
+	break;
+	
+      case '{':
+	{
+	  int curdrv=_getdrive();
+	  if( option_vio_cursor_control )
+	    a = v_getattr();
+	  
+	  dp += sprintf(dp,"\x1b[s\x1B[H" );
+	  for(int length=0; *++promptenv != '}' && *promptenv != '\0'
+	      && length < screen_width-1 ;){
+	    if( isalpha(*promptenv) ){
+	      int drv=toupper(*promptenv);
+	      dp += sprintf(dp,"\x1B[1;%s;37m%c:"
+			    ,(drv==curdrv ? "41" : "44")
+			    ,drv);
+	      length += 3;
+	      
+	      _getcwd1(dp,drv);
+	      int len=strlen(dp);
+	      if( length + len < screen_width-1 ){
+		length += len;
+		dp += len;
+	      }else{
+		for(int i=length ; i<screen_width-4 ; i++ ){
+		  if( is_kanji(*dp) ){
+		    ++dp;
+		    ++i;
+		  }
+		  ++dp;
+		}
+		if( length < 74 ){
+		  *dp++ = '.';
+		  *dp++ = '.';
+		  *dp++ = '.';
+		}
+		dp += sprintf(dp,"\x1b[0m ");
+		while( *promptenv != '}' && *promptenv != '\0' )
+		  ++promptenv;
+		goto driveloop;
+	      }
+	      dp += sprintf(dp,"\x1b[0m ");
+	    }
+	  }
+	driveloop:
+	  dp += sprintf(dp,"\x1b[K\x1b[u");
+	  edlin.using_i_mark = 1;
+	  if( option_vio_cursor_control )
+	    v_attrib(a);
+	  
+	  if( *promptenv == '\0' )
+	    goto promptend;
+	}
+	break;
+	
+      case 'L': *dp++ = '<';	  break;
+	
+      case 'N':/* カレントドライブ */
+	*dp++ = _getdrive();
+	break;
+	
+      case 'P':/* カレントディレクトリ */
+	*dp++ = _getdrive();
+	*dp++ = ':';
+	/* unsigned */ char cwd[256];
+	
+	/* ULONG bufsize;
+	 * bufsize=sizeof(cwd);
+	 * if( DosQueryCurrentDir(0,cwd,&bufsize) == 0 ){
+	 */
+	if( (sp=_getcwd(cwd,sizeof(cwd))) != NULL ){
+	  /* char *sp=(char*)cwd; */
+	  while( *sp != '\0' )
+	    *dp++ = *sp++;
+	}
+	break;
+	
+      case 'Q': *dp++ = '=';	  break;
+      case 'S': *dp++ = ' ';	  break;
+	
+      case 'T':/* 現在の時刻 */
+	dp += sprintf(dp,"%02d:%02d:%02d",
+		      thetime->tm_hour ,
+		      thetime->tm_min ,
+		      thetime->tm_sec );
+	break;
+      case 'V':/* OS/2のバージョン */
+	if( _osmode == OS2_MODE )
+	  dp += sprintf(dp,"The Operating System/2 Version is %d.%d"
+			, _osmajor/10 , _osminor );
+	else
+	  dp += sprintf(dp,"PC DOS Version is %d.%d"
+			, _osmajor , _osminor );
+	break;
+      }
+      promptenv++;
+    }else{
+      *dp++ = *promptenv++;
+    }
+  }
+ promptend:    
+    *dp = '\0';
+}
+
+
 int main(int argc, char **argv)
 {
   char directory[FILENAME_MAX];
@@ -135,7 +287,7 @@ int main(int argc, char **argv)
 	   "\n"
 	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "   Os/2 Shell 1.28     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "   Os/2 Shell 1.29     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	   "                                                          \n"
@@ -227,103 +379,12 @@ int main(int argc, char **argv)
   for(;;){
     // ----- ここから、えんえんと、プロンプト関係の処理がつづく -----
 
-    char promptstr[256],*dp=promptstr,*sp;
-    const char *promptenv=getenv("PROMPT");
-    if( promptenv==NULL )
+    char promptstr[2048];
+    const char *promptenv=getenv("NYAOSPROMPT");
+    if( promptenv==NULL && (promptenv=getenv("PROMPT")) == NULL )
       promptenv = "$p$g";
-    
-    time_t now;
-    time( &now );
-    struct tm *thetime = localtime( &now );
-    edlin.using_i_mark=0;
 
-    while( *promptenv != '\0' ){
-      if( *promptenv == '$' ){
-	switch( promptenv++ , to_upper(*promptenv) ){
-
-	case '!':
-	  dp += sprintf(dp,"%d",nhistories );
-	  break;
-
-	case '$': *dp++ = '$';	  break;
-	case '_': *dp++ = '\n';	  break;
-	case 'A': *dp++ = '&';	  break;
-	case 'B': *dp++ = '|';	  break;
-	case 'C': *dp++ = '(';	  break;
-
-	case 'D':/* 現在の日付 */
-	  dp += sprintf(dp,"%4d-%02d-%02d" ,
-			thetime->tm_year+1900 ,
-			thetime->tm_mon+1 ,
-			thetime->tm_mday );
-	  break;
-	  
-	case 'E': *dp++ = '\x1b'; break;
-	case 'F': *dp++ = ')';	  break;
-	case 'G': *dp++ = '>';	  break;
-	case 'H': *dp++ = '\b';	  break;
-
-	case 'I':
-	  int a;
-	  if( option_vio_cursor_control )
-	    a = v_getattr();
-	  
-	  dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
-			, screen_width ,
-			" Nihongo Yet Another Os/2 Shell 1.28 "
-			" (c) 1996,97 HAYAMA,Kaoru "
-			);
-	  edlin.using_i_mark = 1;
-	  if( option_vio_cursor_control )
-	    v_attrib(a);
-	  break;
-	  
-	case 'L': *dp++ = '<';	  break;
-
-	case 'N':/* カレントドライブ */
-	  *dp++ = _getdrive();
-	  break;
-
-	case 'P':/* カレントディレクトリ */
-	  *dp++ = _getdrive();
-	  *dp++ = ':';
-	  /* unsigned */ char cwd[256];
-	  
-	  /* ULONG bufsize;
-	   * bufsize=sizeof(cwd);
-	   * if( DosQueryCurrentDir(0,cwd,&bufsize) == 0 ){
-	   */
-	  if( (sp=_getcwd(cwd,sizeof(cwd))) != NULL ){
-	    /* char *sp=(char*)cwd; */
-	    while( *sp != '\0' )
-	      *dp++ = *sp++;
-	  }
-	  break;
-	  
-	case 'Q': *dp++ = '=';	  break;
-	case 'S': *dp++ = ' ';	  break;
-
-	case 'T':/* 現在の時刻 */
-	  dp += sprintf(dp,"%02d:%02d:%02d",
-			thetime->tm_hour ,
-			thetime->tm_min ,
-			thetime->tm_sec );
-	  break;
-	case 'V':/* OS/2のバージョン */
-	  if( _osmode == OS2_MODE )
-	    dp += sprintf(dp,"The Operating System/2 Version is %d.%d"
-			  , _osmajor/10 , _osminor );
-	  else
-	    dp += sprintf(dp,"PC DOS Version is %d.%d"
-			  , _osmajor , _osminor );
-	  break;
-	}
-	promptenv++;
-      }else{
-	*dp++ = *promptenv++;
-      }
-    }
-    *dp = '\0';
+    setprompt(promptenv , promptstr , edlin );
     
     // ------------------------------------------------------------------
     // 入力オブジェクト edlin に擬似カーソルの為のエスケープシーケンスを

@@ -87,4 +87,16 @@ public:
   operator FILE * () { return fp; }
 };
 
+#define PARSE_SET_ARGS(params,argc,argv) \
+argc=params.get_argc();argv=(char**)alloca(sizeof(char*)*(argc+1)); \
+for(int i=0;i<argc;i++)\
+{\
+   arg[i]=(char*)alloca(alloca(params.get_length(i)+1));\
+   params.copy(i,argv[i]);\
+}\
+argv[argc-1] = NULL;
+
+  
+			 
+
 #endif

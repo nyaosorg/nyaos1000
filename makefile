@@ -8,25 +8,26 @@ CC = gcc -O2
 .cc.o :
 	$(CC) -c $<
 
-NYAOS=	nyaos.o edlin.o edlin2.o complete.o eadir.o \
-	shell.o foreach.o script.o alias.o parse.o execute.o \
-	commands.o prepro.o bindkey.o open.o source.o search.o
+NYAOS=	nyaos.o edlin.o edlin2.o complete.o eadir.o shell.o \
+	foreach.o script.o alias.o parse.o execute.o chdirs.o \
+	commands.o prepro.o bindkey.o open.o source.o search.o 
 
 nyaos.exe : $(NYAOS)
 	$(CC) $(NYAOS) -o nyaos.out -lvideo -lwrap -Zcrtdll
 	emxbind nyaos.out
 	del nyaos.out
 
+chdirs.o : chdirs.cc
 bindkey.o : bindkey.cc
 nyaos.o : nyaos.cc edlin.h
 siminput.o : siminput.cc edlin.h
 edlin2.o : edlin2.cc edlin.h
-complete.o : complete.cc complete.h
-eadir.o : eadir.cc
+complete.o : complete.cc complete.h finds.h
+eadir.o : eadir.cc finds.h
 
 source.o : source.cc
 shell.o : shell.cc edlin.h
-foreach.o : foreach.cc
+foreach.o : foreach.cc finds.h
 alias.o : alias.cc
 script.o : script.cc
 parse.o : parse.cc parse.h
