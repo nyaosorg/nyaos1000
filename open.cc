@@ -1,9 +1,9 @@
-#define INCL_WINWORKPLACE
+// #define INCL_WINWORKPLACE
 #define INCL_DOSNLS
-#define INCL_WINWINDOWMGR
+//#define INCL_WINWINDOWMGR
 #define INCL_WINSWITCHLIST
 #define INCL_WINMESSAGEMGR
-#define INCL_WINFRAMEMGR
+// #define INCL_WINFRAMEMGR
 #include <os2.h>
 
 /* for stat() */
@@ -21,10 +21,13 @@
 #include "nyaos.h"
 #include "parse.h"
 #include "hash.h"
+#include "heapptr.h"
+#include "errmsg.h"
 
 extern Hash <Command> command_hash;
 extern HAB hab;
 
+#if 0
 class SwitchList{
   int count;
   PSWBLOCK pswblock;
@@ -135,6 +138,7 @@ int cmd_bg(FILE *source , Parse &argv )
 {
   return cmd_fg_bg( argv , FALSE );
 }
+#endif
 
 int eadir( int argc, char **argv,FILE *fout,Parse &parser);
 
@@ -177,35 +181,36 @@ int cmd_which( FILE *source , Parse &params )
 
     params.copy(i,SmartPtr(argv,len+1));
     
-    char replace_buffer1[FILENAME_MAX];
-    char replace_buffer2[FILENAME_MAX];
-    
-    replace_alias( argv , replace_buffer1 , sizeof(replace_buffer1));
-    replace_script( replace_buffer1,replace_buffer2,sizeof(replace_buffer2));
+    try{
+      heapchar_t pass1(replace_alias( argv ));
+      heapchar_t pass2(replace_script( pass1 ));
 
-    char *sp=replace_buffer2; /* 置換後のコマンドライン全体が入っている   */
-    char *dp=replace_buffer1; /* 置換後のコマンド名のみを入れる(これから) */
-    while( *sp != '\0' && !is_space(*sp) )
-      *dp++ = *sp++;
-    *dp = '\0';
+      char *sp=pass2; /* 置換後のコマンドライン全体が入っている   */
+      StrBuffer cmdname;
 
-    if( strcmp(replace_buffer1,argv) != 0 ){
-      printf("replaced to `%s'\n",replace_buffer2 );
-      continue;
-    }
+      while( *sp != '\0' && !is_space(*sp) )
+	cmdname << *sp++;
 
-    if( command_hash[ params[i] ] != NULL ){
-      printf( "%s: nyaos built-in command\n",argv);
-    }else{
-      /* 実行ファイルの検索 */
-      type=SearchEnv(argv,"PATH",buffer);
-      if(   type == NO_FILE
-	 || type == FILE_EXISTS
-	 || print_file(buffer,params) !=0 ){
-	printf( "%s : not found %s.\n"
-	       , argv
-	       , scriptflag ? "in PATH and SCRIPTPATH" : "in PATH" );
+      if( strcmp(cmdname,argv) != 0 ){
+	printf("replaced to `%s'\n",(const char*)pass2 );
+	continue;
       }
+
+      if( command_hash[ params[i] ] != NULL ){
+	printf( "%s: nyaos built-in command\n",argv);
+      }else{
+	/* 実行ファイルの検索 */
+	type=SearchEnv(argv,"PATH",buffer);
+	if(   type == NO_FILE
+	   || type == FILE_EXISTS
+	   || print_file(buffer,params) !=0 ){
+	  printf( "%s : not found %s.\n"
+		 , argv
+		 , scriptflag ? "in PATH and SCRIPTPATH" : "in PATH" );
+	}
+      }
+    }catch( Noclobber ){
+      ErrMsg::say(ErrMsg::FileExists,argv,0);
     }
   }
   return 0;
@@ -347,7 +352,7 @@ int cmd_chcp( FILE *source , Parse &params )
     int len=params.get_length(1);
     char *cp_str=(char*)alloca(len+1);
     params.copy(1,cp_str);
-    int cp=atoi(cp_str);
+    unsigned int cp=atoi(cp_str);
     if( cp != 0  &&  spawnlp(P_WAIT,"cmd.exe",
 			     "cmd","/C","chcp",cp_str,NULL)==0  ){
       DosSetProcessCp( cp );

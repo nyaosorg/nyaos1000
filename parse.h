@@ -4,8 +4,12 @@
 #include <stdio.h>
 #include <string.h>
 
+class StrBuffer;
+class Noclobber;
+
 #include "smartptr.h"
 #include "substr.h"
+#include "strbuffer.h"
 
 /* Žš‹å‰ðÍƒNƒ‰ƒX */
 class Parse{
@@ -34,29 +38,60 @@ private:
   int argc,limit;
 
   Substr argbase[30],*args;
-  Substr redirect[3]; /* 0:stdin  1:stdout  2:stderr */
 
 protected:
-  int appendflag[3];
-  FILE *output_fp , *input_fp;
-  enum{ STD , PIPE , REDIRECT } pipemode;
-
   int err;
-  int check();
-  int check_redirect();
+  int parseAll();
+  int parseRedirect();
 
-public:
+public:  
+  class RedirectInfo {
+    char flag,handle;
+    enum{
+      APPEND=0x1 , /* >> mark */
+      FORCED=0x2 , /*  ! mark */
+      PIPE  =0x4 , /* to close with pclose() */
+    };
+  public:
+    FILE *fp;
+    Substr path;
+
+    bool isAppend() const { return flag & APPEND ; }
+    bool isForced() const { return flag & FORCED ; }
+
+    bool isToFile()   const { return path != 0; }
+    bool isToHandle() const { return handle != -1; }
+    bool isRedirect() const { return isToFile() || isToHandle(); }
+
+    void setAppend(){ flag |= APPEND; }
+    void setForced(){ flag |= FORCED; }
+    void setHandle(int n){ handle = n; }
+    int  getHandle(){ return handle; }
+
+    void close();
+    void reset() { path.reset(); handle = -1 ; this->close(); }
+
+    FILE *openFileToWrite();
+    FILE *openFileToRead();
+    FILE *openPipe(const char *cmds,const char *mode);
+			    
+    RedirectInfo() : flag(0),handle(-1),fp(0) { }
+    ~RedirectInfo(){ this->close(); }
+  } redirect[3] ;
+  
+  void restoreRedirects(StrBuffer &) throw(Noclobber);
+
   Parse(const char *source)
-    :  sp(source)  , terminal(NOT_TERMINAL), argc(0), limit(30), args(argbase)
-      , output_fp(stdout) , input_fp(stdin) , pipemode(STD) ,err(0)
-	{ check(); }
-
+    :sp(source),terminal(NOT_TERMINAL),argc(0),limit(30),args(argbase),err(0)
+      { parseAll(); }
   ~Parse();
   
-  operator const void* () const { return err ? NULL : this; }
+  bool isForce(int n) const { return redirect[n].isForced(); }
+  bool isErr2Out() const { return redirect[2].isToHandle(); }
+
+  operator const void* () const { return err ? 0 : this; }
   int operator ! () const { return err; }
   const Substr &operator [](int n){ return args[n]; }
-  const Substr *get_redirect(){ return redirect; }
   
   enum{
     QUOTE_NOT_COPY = 0,
@@ -70,7 +105,7 @@ public:
   Terminal get_terminal(){ return terminal; }
   
   int get_argc(){ return argc; }
-  const char *get_argv(int n){ return n < argc ? args[n].ptr : NULL; }
+  const char *get_argv(int n){ return n < argc ? args[n].ptr : 0; }
   int   get_length(int n){ return n < argc ? args[n].len : 0; }
   
   int get_length_later(int n){ return n < argc ? sp-args[n].ptr : 0; }
@@ -80,6 +115,10 @@ public:
   SmartPtr copy(int n, SmartPtr dp,int flag=0 ) throw();
   SmartPtr copyall(int n,SmartPtr dp,int flag=QUOTE_COPY);
   SmartPtr betacopy(SmartPtr dp,int n=0);
+
+  void betacopy(StrBuffer &,int n=0 );
+  void copy(int n,StrBuffer &,int flag=false ) throw(MallocError);
+  void copyall(int n,StrBuffer &,int flag=QUOTE_COPY) throw(MallocError);
 
   Substr getAfter(int n) const
     { return Substr(args[n].ptr,tail-args[n].ptr); }
@@ -96,7 +135,16 @@ public:
   FILE *open_stdout();
   void close_stdout();
 
-  int is_append_redirect(int i) const { return appendflag[i]; }
+  // int is_append_redirect(int i) const { return appendflag[i]; }
+  bool is_append_redirect(int i) const { return redirect[1].isAppend(); }
+
+  static bool isRedirectMark(const char *sp){
+    if( sp[0]=='>' || sp[0]=='<' )
+      return 1;
+    if( (sp[0]=='1' || sp[0]=='2') && sp[1] == '>' )
+      return 2;
+    return 0;
+  }
 };
 
 #endif

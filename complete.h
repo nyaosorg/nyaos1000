@@ -57,6 +57,7 @@ public:
   int add_buildin_command(const char *name); /* after makelist only */
   
   char *nextchar();
+  void unique();
   
   /* ƒŠƒ|[ƒgŠÖ” */
   int get_max_name_length() const { return max_length; }

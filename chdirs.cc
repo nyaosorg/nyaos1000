@@ -199,7 +199,7 @@ static int cdshort_1( char *list[] ,int modeflag )
   char *cwdx = (char*)malloc( strlen(*list)+3 );
   
   *cwdx = '*';
-  strcpy_tail(strcpy_tail( cwdx+1 , *list ) , "*" );
+  sprintf(cwdx+1,"%s*",*list);
 
   int rc=cdshort_2(cwdx+1,list,modeflag);
   if( rc != 0 && (modeflag & BIT_CD_SHORT_MID) !=0 ){

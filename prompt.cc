@@ -1,13 +1,13 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+// #include <stdlib.h>
+// #include <string.h>
 #include <ctype.h>
 #include <time.h>
-#include <sys/ea.h>
+// #include <sys/ea.h>
 #include <sys/video.h>
 
 #define INCL_DOSMISC
-#include <os2.h>
+// #include <os2.h>
 
 #include "nyaos.h"
 #include "finds.h"
@@ -479,6 +479,10 @@ int Prompt::parse( const char *promptenv )
   promptend:    
     free( promptstr );
     promptstr = prompt.finish();
+    if( used_topline ){
+      prompt << "\x1B[1A\x1B[1B" << promptstr;
+      promptstr = prompt.finish();
+    }
     return 0;
   }catch( StrBuffer::MallocError ){
     free( promptstr );

@@ -1,11 +1,21 @@
 /* -*- c++ -*-
  *
  * If you will compile NYAOS without CANNA library/header files ,
- * Please write `#define CANNA 0'
+ * Please write `#define ICANNA' or add option -DICANNA to gcc.exe .
  *
- * 「かんな」のライブラリが無い場合は、「#define CANNA 0 」を定義ください。
  */
 
+#undef DEBUG
+
+#ifdef DEBUG
+#  define DEBUG1(x) (x)
+#else
+#  define DEBUG1(x)
+#endif
+
+#ifdef ICANNA
+#  define CANNA 0
+#endif
 #ifndef CANNA
 #  define CANNA 1
 #endif
@@ -13,6 +23,8 @@
 #define CANNA_MODULE ((PUCHAR)"canna")
 /* マルチスレッド化する場合、"cannamt" にしなくてはいけない */
 
+typedef unsigned long u_long;
+#include <netdb.h>
 #include <sys/kbdscan.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -24,6 +36,8 @@
 #define INCL_DOSMODULEMGR
 #include <os2.h>
 
+#include "strbuffer.h"
+#include "heapptr.h"
 #include "smartptr.h"
 #include "macros.h"
 #include "Edlin.h"
@@ -121,7 +135,7 @@ static void euc2sjis(const char *sp , char *dp )
 /* -------- CANNA Dynamic Load ------- */
 
 static int (*DLL_jrKanjiString )(int,int,char*,int,jrKanjiStatus *) = 0;
-static int (*DLL_jrKanjiControl)(int,int,char*) = 0;
+static int (*DLL_jrKanjiControl)(int,int,const char*) = 0;
 
 static HMODULE module_handle;
 static int canna_loaded=0;
@@ -137,21 +151,23 @@ static void print_warning( char **warning )
     }
   }
 }
-
-static void release_canna()
-{
-  char **warning=NULL;
-  (*DLL_jrKanjiControl)(0,KC_FINALIZE,(char*)&warning);
-  if( warning && option_honest ){
-    print_warning(warning);
-  }
-  DosFreeModule(module_handle);
-}
 #endif
 
+extern bool option_quite_mode;
 int canna_init()
 {
 #if CANNA
+  /* ホスト名を参照できない状況では、canna.dll 内で abnormal termination
+   * を起こしてしまう。よって、canna.dll を呼び出す前に、ホスト名を参照
+   * できるか否かをチェックしている */
+
+  char ownhost[40];
+  gethostname(ownhost,sizeof(ownhost));
+
+  struct hostent *hostinfo = gethostbyname(ownhost);
+  if( hostinfo == NULL )
+    return 0;
+
   /* ------- DLL Loading ------ */
 
   UCHAR errmsg[100];
@@ -163,9 +179,8 @@ int canna_init()
 			 , (PFN*)&DLL_jrKanjiControl )){
     return 1;
   }
-  
-  fputs("canna.dll loaded.\n",stdout);  
-  atexit(release_canna);
+  if( ! option_quite_mode )
+    fputs("canna.dll loaded.\n",stdout);
   
   /* ------ CANNA customize file ----- */
 
@@ -173,10 +188,10 @@ int canna_init()
   /* -- かんな初期化の際に /usr/local/canna/lib のあるドライブに移動する--
    * set cannya=ドライブ[,初期化ファイル]
    * --------------------------------------------------------------------*/
-  
-  char *dotcanna=getShellEnv("CANNYA");
+
+  const char *dotcanna=getShellEnv("CANNYA");
   int orgdrv = _getdrive();
-  
+
   if( dotcanna != NULL  &&  *dotcanna != '\0' ){
     if( *dotcanna != ',' ){
       _chdrive( *dotcanna++ );
@@ -197,12 +212,16 @@ int canna_init()
     }
   }
   
+  DEBUG1( fputs("pass-1",stderr) );
+
   int rc=(*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
   _chdrive(orgdrv);
   if( rc == -1 ){
     print_warning(warning);
     return 1;
   }
+
+  DEBUG1( fputs("pass-2",stderr) );
   
   if( warning != NULL ){
     print_warning(warning);
@@ -258,16 +277,12 @@ void Edlin2::canna_to_alnum()
 
 #if CANNA
 /* message が NULL なら *mark を、さもなければ message の内容を dp にコピー */
-static void copy_message( const char *message , int mark , SmartPtr &dp )
+static void copy_message( const char *message , int mark , StrBuffer &buf )
 {
   if( message != NULL && *message != '\0' ){
-    *dp++ = '\033';
-    *dp++ = '[';
-    while( *message != '\0' )
-      *dp++ = *message++;
-    *dp++ = 'm';
+    buf << "\x033[" << (char)*message++ << 'm';
   }else{
-    *dp++ = mark ;
+    buf << (char)mark;
   }
 }
 #endif
@@ -295,33 +310,29 @@ int Edlin2::print_henkan_koho( jrKanjiStatus &status ,const char *mode_string)
   int column=0;
   int standout=0;
 
-  char *buffer=(char*)alloca(status.gline.length+10);
-  SmartPtr dp(buffer,status.gline.length+10);
-  try{
-    for( const unsigned char *sp=status.gline.line; *sp != '\0' ; ++sp ){
-      /* 反転部分の処理 */
-      if( column == status.gline.revPos ){
-	copy_message( cursor_on , '<' , dp );
-	standout = 1;
-      }else if( column == status.gline.revPos + status.gline.revLen ){
-	copy_message( cursor_off , '>' , dp );
-	standout = 0;
-      }
-      *dp++ = *sp;
-      column++;
+  StrBuffer buf;
+  for( const unsigned char *sp=status.gline.line; *sp != '\0' ; ++sp ){
+    /* 反転部分の処理 */
+    if( column == status.gline.revPos ){
+      copy_message( cursor_on , '<' , buf );
+      standout = 1;
+    }else if( column == status.gline.revPos + status.gline.revLen ){
+      copy_message( cursor_off , '>' , buf );
+      standout = 0;
     }
-    if( standout )
-      copy_message( cursor_off , '>' , dp );
-    *dp = '\0';
-  }catch( SmartPtr::BorderOut ){ /* バッファを溢れた時 */
-    dp.terminate();
+    buf << (char)*sp;
+    column++;
   }
+  if( standout )
+    copy_message( cursor_off , '>' , buf );
+  heapchar_t buffer(buf.finish());
+
   euc2sjis(buffer,buffer);
 
   if( mode_string == NULL )
     mode_string = "\0";
 
-  bottom_message("%s%s", mode_string , buffer );
+  bottom_message("%s%s", mode_string , (const char*)buffer );
   return column;
 }
 #endif
@@ -362,7 +373,7 @@ int Edlin2::getkey()
   static char mode_buf[20];
   int use_bottom=0;
 
-  char localbuf[256]="\0";
+  heapchar_t localbuf;
 
   if(   mode_string != NULL  &&  mode_string[0] != '\0'
      && ! are_spaces((const char*)mode_string) )
@@ -411,7 +422,7 @@ int Edlin2::getkey()
 
     /* ローカルバッファが空で、特殊キーが入力されたら、
      * そのキーコードをそのまま返す。*/
-    if( localbuf[0] == '\0' && orgkey > 0xFF ){
+    if( localbuf == NULL  &&  orgkey > 0xFF ){
       if( mode_string != NULL ){
 	if( !are_spaces((const char*)mode_string) )
 	  bottom_message( "%s",mode_string );
@@ -463,7 +474,7 @@ int Edlin2::getkey()
     if( kakutei > 0 ){
       cleanmsg();
 
-      SmartPtr dp(kakbuf,sizeof(kakbuf));      
+      SmartPtr dp(kakbuf,sizeof(kakbuf));
       try{
 	for(int i=0 ; i<kakutei ; i++ ){
 	  if( eucbuf[i] & 0x80 ){
@@ -529,28 +540,24 @@ int Edlin2::getkey()
 
     /* local echo */
 
-    SmartPtr dp(localbuf,sizeof(localbuf));
-    try{
-      int quote=0;
-      for(int i=0; i < status.length; i++ ){
-	if( i== status.revPos ){
-	  copy_message( cursor_on , '<' , dp );
-	  quote = 1;
-	}else if( i == status.revPos + status.revLen ){
-	  copy_message( cursor_off , '>' , dp );
-	  quote = 0;
-	}
-	*dp++ = status.echoStr[i];
+    StrBuffer buf;
+    int quote=0;
+    for(int i=0; i < status.length; i++ ){
+      if( i== status.revPos ){
+	copy_message( cursor_on , '<' , buf );
+	quote = 1;
+      }else if( i == status.revPos + status.revLen ){
+	copy_message( cursor_off , '>' , buf );
+	quote = 0;
       }
-      if( quote )
-	copy_message( cursor_off , '>' , dp );
-      
-      *dp = '\0';
-    }catch( SmartPtr::BorderOut ){
-      dp.terminate();
+      buf << (char)status.echoStr[i];
     }
+    if( quote )
+      copy_message( cursor_off , '>' , buf );
+    
+    localbuf = buf.finish();
     euc2sjis( localbuf , localbuf );
-    message( "|%s|",localbuf);
+    message( "|%s|",(const char*)localbuf);
     
     /* 画面最下段に、変換候補などを表示する */
     if( print_henkan_koho(status,(char*)mode_string) <= 0  &&  use_bottom ){

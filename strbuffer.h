@@ -115,4 +115,6 @@ public:
   StrBuffer(int x) : length(0),buffer(zero),max(0),inc(x){ }
   ~StrBuffer();
 };
+
+
 #endif

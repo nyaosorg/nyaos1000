@@ -1,6 +1,4 @@
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <stdlib.h>
 #include <alloca.h>
 #include "parse.h"
 #include "hash.h"

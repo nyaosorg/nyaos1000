@@ -1,5 +1,6 @@
 #ifndef NDEBUG
 
+#include <stdio.h>
 #include <stdarg.h>
 #include <sys/video.h>
 

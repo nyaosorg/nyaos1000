@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <io.h>
 #include "hash.h"
 #include "nyaos.h"
 #include "parse.h"
@@ -9,30 +10,24 @@
 #include "strbuffer.h"
 #include "errmsg.h"
 
+extern int option_noclobber;
+
 Hash <Alias> alias_hash(1024);
 
-static void translate_copy( const Substr &arg , SmartPtr &dp )
+static void translate_copy( const Substr &arg , StrBuffer &buf )
 {
-  if( arg[0] == '-' )
-    *dp++ = '/';
-  else
-    *dp++ = (char)arg[0];
+  buf << (arg[0] == '-' ? '/' : (char)arg[0] );
   
   int quote=(arg[0] == '"' ? 1 : 0);
   for(int i=1;i<arg.len;i++){
     if( arg[i] == '"' )
       quote ^= 1;
 
-    if( quote && arg[i] == '/' )
-      *dp++ = '\\';
-    else
-      *dp++ = arg[i];
+    buf << ( quote && arg[i] == '/' ? '\\' : arg[i] );
   }
 
   if( arg[arg.len-1] == '/' || arg[arg.len-1] == '\\' )
-    *dp++ = '.';
-  
-  *dp = '\0';
+    buf << '.';
 }
 
 /*  ワイルドカード展開を行う。
@@ -40,7 +35,7 @@ static void translate_copy( const Substr &arg , SmartPtr &dp )
  *	dp		展開先
  *	translate_flag	
  */
-static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp 
+static void wildcard_expand_copy( const Substr &arg , StrBuffer &buf
 				 ,int translate_flag )
 {
   int quote=0;
@@ -58,11 +53,10 @@ static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp
   if( wildcard == 0 ){
     /* ワイルドカード展開無しの場合 */
     if( translate_flag ){
-      translate_copy( arg , dp );
+      translate_copy( arg , buf );
     }else{
       for(int i=0;i<arg.len ; i++)
-	*dp++ = arg[i];
-      *dp = '\0';
+	buf << arg[i];
     }
     return;
   }
@@ -78,11 +72,10 @@ static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp
   char **filelist=fnexplode2(buffer);
   if( filelist == NULL ){
     if( translate_flag ){
-      translate_copy( arg , dp );
+      translate_copy( arg , buf );
     }else{
       for(int i=0 ; i<arg.len ; i++)
-	*dp++ = arg[i];
-      *dp = '\0'; 
+	buf << arg[i];
     }
     return;
   }
@@ -92,23 +85,18 @@ static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp
     for(const char *sp=*ptr ; *sp != '\0' ; ++sp ){
       if( isspace(*sp & 255) ){
 	need_quote = 1;
-	*dp++ = '"';
+	buf << '"';
 	break;
       }
     }
-    for(const char *sp=*ptr ; *sp != '\0' ; ++sp ){
-      if( translate_flag  &&  *sp == '/' )
-	*dp++ = '\\';
-      else
-	*dp++ = *sp;
-    }
+    for(const char *sp=*ptr ; *sp != '\0' ; ++sp )
+      buf << ( translate_flag  &&  *sp == '/' ? '\\' : *sp );
+
     if( need_quote )
-      *dp++ = '"';
-    *dp++ = ' ';
+      buf << '"';
+    buf << ' ';
   }
-  *dp = '\0';
   fnexplode2_free(filelist);
-  return;
 }
 
 /* %1:h , %2:r などを実現する為の加工ルーチン
@@ -120,7 +108,7 @@ static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp
  *	true  … option が適切。部分文字列をコピーした。
  *	false … option が不適。文字列全体をコピーした。
  */
-static bool word_design(SmartPtr &dp,const Substr &argv,int option)
+static bool word_design(StrBuffer &buf,const Substr &argv,int option)
 {
   /* cut_with_designer は prepro2.cc で定義されている関数。
    * 与えられた文字列を切り刻んで、ディレクトリとか、
@@ -139,23 +127,22 @@ static bool word_design(SmartPtr &dp,const Substr &argv,int option)
     /* ⇒ option 値が適切で、ちゃんと部分文字列が切り出せた。
      */
     while( *part != '\0' )
-      *dp++ = *part++;
-    *dp = '\0';
+      buf << *part++;
     return true;
   }else{
     /* ⇒ option 値が不適か、そもそも、切り刻んでほしくない場合は
      *    文字列全体をコピーする。
      */
     for( int i=0 ; i<argv.len ; i++ )
-      *dp++ = argv.ptr[i];
+      buf << argv.ptr[i];
     return false;
   }
 }
 
-void replace_alias(const char *sp , char *destinate , int max )
+char *replace_alias(const char *sp) throw(Noclobber)
 {
-  SmartPtr dp(destinate,max);
   try{
+    StrBuffer buf;
     for(;;){ /* 各コマンド単位 */
       Parse params(sp);
       
@@ -167,24 +154,30 @@ void replace_alias(const char *sp , char *destinate , int max )
 	if( *sp == '\0' )
 	  break;
 	while( sp < params.get_nextcmds() )
-	  *dp++ = *sp++;
+	  buf << *sp++;
 	if( *sp == '\0' )
-	break;
+	  break;
 	
 	continue;
       }
       
       Alias *ptr = alias_hash[ params[0] ];
       if( ptr == NULL ){
-	dp = params.betacopy(dp);
+	/* エイリアスに定義されていないので、
+	 * 元の入力文字列をそのまま反映する */
+	for(int i=0;i<params.get_argc();i++){
+	  buf.paste( params[i].ptr, params[i].len );
+	  buf << ' ';
+	}
       }else{
+	/* エイリアスに置換大作戦 */
 	const char *spa=ptr->base;
 	bool percent_used=false;
 	
 	while( *spa != '\0' ){
 	  if( *spa == '%' ){
 	    /* 引数(％の展開)の展開を行う */
-
+	    
 	    /* ワイルドカード展開を行うか、
 	     * %+1 , %+2 となっているかをチェックする */
 	    int wildcard_flag = 0;
@@ -197,43 +190,43 @@ void replace_alias(const char *sp , char *destinate , int max )
 	    default:
 	      if( is_digit(*spa) ){
 		percent_used = true;
-                int n=0;
-                do{
-                  n *= 10;
-                  n += (*spa-'0');
-                }while( is_digit(*++spa) );
+		int n=0;
+		do{
+		  n *= 10;
+		  n += (*spa-'0');
+		}while( is_digit(*++spa) );
 		
 		if( n < params.get_argc() ){
 		  if( wildcard_flag ){
 		    /* ワイルドカード展開する場合 */
-		    wildcard_expand_copy( params[n] , dp , *spa=='@' ? 1 : 0 );
+		    wildcard_expand_copy( params[n] , buf ,*spa=='@' ? 1 : 0);
 		  }else if( spa[0]==':'  &&  is_alpha(spa[1]) ){
 		    /* 「:x」など、パスを部分的に取り出す場合 */
-		    if( word_design( dp , params[n] , spa[1] ) ){
+		    if( word_design( buf , params[n] , spa[1] ) ){
 		      spa += 2; /* 「:x」を読み飛ばす */
 		    }
 		  }else{
 		    /* 文字列全体を素直に取り出す場合 */
-		    dp = params.copy(n,dp);
+		    params.copy(n,buf);
 		  }
 		}
 		
 		if( *spa == '*' ){
 		  while( ++n < params.get_argc() ){
-		    *dp++ = ' ';
+		    buf << ' ';
 		    if( wildcard_flag )
-		      wildcard_expand_copy( params[n] , dp , 0 );
+		      wildcard_expand_copy( params[n] , buf , 0 );
 		    else
-		      dp = params.copy(n,dp);
+		      params.copy(n,buf);
 		  }
 		  ++spa;
 		}else if( *spa == '@' ){
 		  while( ++n < params.get_argc() ){
-		    *dp++ = ' ';
+		    buf << ' ';
 		    if( wildcard_flag )
-		      wildcard_expand_copy( params[n] , dp , 1 );
+		      wildcard_expand_copy( params[n] , buf , 1 );
 		    else
-		      dp = params.copy(n,dp,Parse::QUOTE_COPY);
+		      params.copy(n,buf,Parse::QUOTE_COPY);
 		  }
 		  ++spa;
 		}
@@ -245,9 +238,9 @@ void replace_alias(const char *sp , char *destinate , int max )
 	      spa++;
 	      if( wildcard_flag ){
 		for(int i=1;i<params.get_argc();i++)
-		  wildcard_expand_copy( params[i] , dp , 0 );
+		  wildcard_expand_copy( params[i] , buf , 0 );
 	      }else{
-		dp = params.copyall(1,dp);
+		params.copyall(1,buf);
 	      }
 	      break;
 	      
@@ -256,71 +249,65 @@ void replace_alias(const char *sp , char *destinate , int max )
 	      spa++;
 	      if( wildcard_flag ){
 		for(int i=1;i<params.get_argc() ; i++)
-		  wildcard_expand_copy( params[i] , dp , 1 );
+		  wildcard_expand_copy( params[i] , buf , 1 );
 	      }else{
-		dp = params.copyall(1,dp,Parse::REPLACE_SLASH);
+		params.copyall(1,buf,Parse::REPLACE_SLASH);
 	      }
 	      break;
 	      
 	    case '%':
 	      spa++;
-	      *dp++ = '%';
+	      buf << '%';
 	      break;
-	      
-	    case '\\':case '/':
-	      if( dp==destinate || (dp[-1] != '\\' && dp[-1] != '/') )
-		*dp++ = *spa;
-	      spa++;
-	    }
-	  }else{
-	    *dp++ = *spa++;
-	  }
-	}
-	if( percent_used == false ){
-	  *dp++ = ' ';
-	  dp = params.copyall(1,dp);
-	}
-	
-	/* リダイレクト文字列の再現 */
-	const Substr *redirect=params.get_redirect();
-	if( redirect[0] != NULL ){
-	  *dp++ = ' ';
-	  *dp++ = '<';
-	  redirect[0] >> dp;
-	  dp += redirect[0].len;
-	}
-	if( redirect[1] != NULL ){
-	  *dp++ = ' ';
-	  *dp++ = '>';
-	  if( params.is_append_redirect(1) )
-	    *dp++ = '>';
-	  redirect[1] >> dp;
-	  dp += redirect[1].len;
-	}
-	if( redirect[2] != NULL ){
-	  *dp++ = ' ';
-	  *dp++ = '2';
-	  *dp++ = '>';
-	  if( params.is_append_redirect(2) )
-	    *dp++ = '>';
-	  redirect[2] >> dp;
-	  dp += redirect[2].len;
-	}
+
+	   case '\\':case '/':
+	     if(   buf.getLength() <= 0
+		|| (   buf[ buf.getLength()-1 ] != '\\' 
+		    && buf[ buf.getLength()-1 ] != '/' ) )
+	       buf << *spa;
+	     spa++;
+	   }
+	 }else{
+	   buf << *spa++;
+	 }
+       }
+       if( percent_used == false ){
+	 buf << ' ';
+	 params.copyall(1,buf);
+       }
       }
       
+      params.restoreRedirects(buf);
+
       sp = params.get_tail();
       if( *sp == '\0' )
 	break;
-
+      
       while( sp < params.get_nextcmds() )
-	*dp++ = *sp++;
+	buf << *sp++;
       
       if( *sp == '\0' )
 	break;
     }/* for(;;) */
-    *dp = '\0';
-  }catch(SmartPtr::BorderOut){
-    dp.terminate();
+    return buf.finish();
+  }catch( Noclobber ){
+    throw;
+  }catch( StrBuffer::MallocError ){
+    throw Noclobber();
+  }
+}
+
+void replace_alias(const char *sp , char *destinate , int max )
+{
+  try{
+    char *result=replace_alias(sp);
+    strncpy( destinate , result , max );
+    destinate[max-1] = '\0';
+    free(result);
+  }catch( StrBuffer::MallocError  ){
+    strncpy( destinate , sp , max );
+  }catch( Noclobber ){
+    destinate[0] = '\0';
   }
 }
 
@@ -374,6 +361,23 @@ int cmd_alias(FILE *fp, Parse &params)
     }
     for( HashIndex <Alias> cur(alias_hash) ; *cur != NULL ; ++cur )
       fprintf( fout,"%s=\"%s\"\n" , cur->name , cur->base );
+  }else if( sp[0]=='-'  &&  sp[1]=='s'  ){
+    /* alias -s ... リダイレクトの出力をそのまま source できる形にする。*/
+    FILE *fout=params.open_stdout();
+    if( fout == NULL ){
+      ErrMsg::say(ErrMsg::CantOutputRedirect,"alias",0);
+      return 1;
+    }
+    for( HashIndex <Alias> cur(alias_hash) ; *cur != NULL ; ++cur ){
+      fprintf( fout,"alias %s=\"" , cur->name );
+      /* 一個の引用符を二個に変換する */
+      for(const char *sp=cur->base ; *sp != '\0' ; ++sp ){
+	if( *sp == '"' )
+	  putc( '"' , fout);
+	putc( *sp , fout );
+      }
+      fprintf( fout,"\"\n" );
+    }
   }else{
     /* 引数があるので、エイリアスを定義、あるいは、表示する */
     int length=strlen(sp);

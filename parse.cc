@@ -1,18 +1,88 @@
-#include <stdlib.h>
-#include <string.h>
 #include <assert.h>
 #include <ctype.h>
-#include <process.h>
-#include <signal.h>
+#include <io.h>
+#include <stdio.h>
 
-#include <sys/types.h>
-#include <sys/wait.h>
-
+#include "nyaos.h"
 #include "macros.h"
 #include "parse.h"
 #include "errmsg.h"
 
 int Parse::option_semicolon_terminate=1;
+
+extern int option_noclobber;
+
+void Parse::restoreRedirects(StrBuffer &buf) throw(Noclobber)
+{
+  if( redirect[0].isRedirect() ){
+    buf << " <";
+    buf.paste( redirect[0].path.ptr , redirect[0].path.len );
+  }
+  for(int i=1 ; i <= 2 ; i++ ){
+    if( redirect[i].isToFile() ){
+      buf << ' ' << "012"[i] << '>';
+      if( redirect[i].isAppend() )
+	buf << '>';
+      
+      char *fname=(char*)alloca(redirect[i].path.len+1);
+      redirect[i].path >> fname;
+      
+      if(   ! redirect[i].isForced()
+	 && ! redirect[i].isAppend()
+	 && option_noclobber
+	 && access(fname,0444)==0 )
+	throw Noclobber();
+      
+      buf << fname << ' ';
+    }
+    if( redirect[i].isToHandle() ){
+      buf << ' ' << "0123456789"[i] << ">&" 
+	<< "0123456"[ redirect[i].getHandle() & 7] << ' ';
+    }
+  }
+}
+
+
+void Parse::RedirectInfo::close()
+{
+  if( fp != 0 ){
+    if( flag & PIPE )
+      pclose(fp);
+    else
+      fclose(fp);
+    fp = 0;
+  }
+}
+
+FILE *Parse::RedirectInfo::openFileToWrite()
+{
+  this->close();
+  flag &= ~PIPE;
+  
+  char *fname = (char*)alloca( path.len+1 );
+  path.quote(fname);
+  
+  return fp=fopen(fname,isAppend() ? "a":"w");
+}
+
+FILE *Parse::RedirectInfo::openFileToRead()
+{
+  this->close();
+  flag &= ~PIPE;
+  
+  char *fname = (char*)alloca( path.len+1 );
+  path.quote(fname);
+  
+  return fp=fopen(fname,"r");
+}
+
+FILE *Parse::RedirectInfo::openPipe(const char *cmds,const char *mode)
+{
+  this->close();
+  flag |= PIPE;
+  return fp=popen(cmds,mode);
+}
+
 
 /* char配列へ、コピーする。
  *	・単一の二重引用符は無視する。
@@ -53,26 +123,14 @@ extern volatile int ctrl_c;
 
 Parse::~Parse()
 {
-  /*
-   * ---- パイプの後始末 ----
-   */
-
-  /* 標準入力 */
-  if( input_fp != NULL  &&  input_fp != stdin )
-    fclose(input_fp);
-
-  /* 標準出力 */
-  close_stdout();
-
-  /* 引数の後始末 */
   if( args != argbase  &&  args != NULL )
     delete args;
 }
 
-int Parse::check_redirect()
+int Parse::parseRedirect()
 {
   int ionum = 1;
-
+  
   if( *sp=='0' || *sp=='1' || *sp=='2' )
     ionum = *sp++ - '0';
 
@@ -81,7 +139,26 @@ int Parse::check_redirect()
     ++sp;
   }else if( *sp == '>' ){
     if( *++sp == '>' ){
-      appendflag[ ionum ] = 1;
+      redirect[ ionum ].setAppend();
+      // appendflag[ ionum ] = true;
+      ++sp;
+    }
+    // sp points next of '>'
+    if( *sp == '&' ){
+      ++sp; // sp points next of '&'
+
+      if( isdigit(*sp & 255) ){ /* 2>&1 or 2>&1 */
+	redirect[ ionum ].setHandle(*sp++ -'0');
+	return 0;
+      }else{ /* 単なる「>&」形式 */
+	if( ionum == 1 )
+	  redirect[ 2 ].setHandle( 1 );
+	else
+	  redirect[ 1 ].setHandle( 2 );
+      }
+    }
+    if( *sp=='!' ){
+      redirect[ ionum ].setForced();
       ++sp;
     }
   }else{
@@ -89,13 +166,10 @@ int Parse::check_redirect()
     return 1;
   }
   
-  if( *sp == '&' )
-    ++sp;
-
   while( isspace(*sp & 255) )
     ++sp;
-
-  redirect[ ionum ].ptr = sp;
+  
+  redirect[ ionum ].path.ptr = sp;
   
   if( tailcheck() )
     return err=-1;
@@ -107,7 +181,7 @@ int Parse::check_redirect()
     if( *sp=='"' ){
       do{
 	if( is_kanji(*sp) )
-	   ++sp;
+	  ++sp;
 	++sp;
 	if( *sp == '\0' )
 	  goto exit;
@@ -117,7 +191,7 @@ int Parse::check_redirect()
   }while( *sp != '\0'  &&  !isspace(*sp & 255) );
 
  exit:
-  redirect[ ionum ].len = sp - redirect[ ionum ].ptr ;
+  redirect[ ionum ].path.len = sp - redirect[ ionum ].path.ptr ;
   return 0;
 }
 
@@ -168,13 +242,13 @@ int Parse::tailcheck ()
  *
  * return コマンドの終結文字 '\0','&'…
  */
-int Parse::check ()
+int Parse::parseAll()
 {
   argc = 0;
 
-  redirect[0].reset(); appendflag[0] = 0;
-  redirect[1].reset(); appendflag[1] = 0;
-  redirect[2].reset(); appendflag[2] = 0;
+  redirect[0].reset();
+  redirect[1].reset();
+  redirect[2].reset();
 
   terminal = NOT_TERMINAL;
 
@@ -205,10 +279,8 @@ int Parse::check ()
       return terminal;
     }
 
-    if(   *sp == '<' || *sp == '>'
-       || ((*sp=='1' || *sp=='2' ) && sp[1] == '>') ){
-      
-      if( check_redirect() != 0 )
+    if( isRedirectMark(sp) ){
+      if( parseRedirect() != 0 )
 	return err=-1;
       continue;
     }
@@ -267,30 +339,17 @@ int Parse::check ()
 
 FILE *Parse::open_stdout()
 {
-  if( redirect[1] != NULL ){
+  if( redirect[1].isRedirect() ){
     /* リダイレクト先が、ファイルに指定されている場合
      * 末尾が '|' では、おかしい
      */
-    
     if( terminal==PIPE_TERMINAL ){
       ErrMsg::say(ErrMsg::AmbiguousRedirect,0);
       return NULL;
     }
-    
-    char *fname = (char*)alloca( redirect[1].len+1 ); /* ! */
-    redirect[1].quote(fname);
-    pipemode = REDIRECT;
-    return output_fp = fopen( fname , appendflag[1] ? "a" : "w" );
-    
+    return redirect[1].openFileToWrite();
   }else if( terminal==PIPE_TERMINAL || terminal==PIPEALL_TERMINAL ){
-    
-    pipemode = PIPE;
-    // void (*prev_sig)(int)=signal(SIGINT,&kill_popen);
-    // pp_kill_popen = 
-    output_fp = popen( nextcmds , "w" );
-    // signal(SIGINT,prev_sig);
-    return output_fp;
-
+    return redirect[1].openPipe( nextcmds , "w" );
   }else{
     return stdout;
   }
@@ -298,18 +357,7 @@ FILE *Parse::open_stdout()
 
 void Parse::close_stdout()
 {
-  if( output_fp != NULL  &&  output_fp != stdout ){
-    if( pipemode == PIPE ){
-      // pp_kill_popen = output_fp;
-      // void (*prev_sig)(int) = signal(SIGINT,&kill_popen);
-      pclose( output_fp );
-      // wait(NULL);
-      // signal(SIGINT,prev_sig);
-    }else{
-      fclose( output_fp );
-    }
-    output_fp = stdout;
-  }
+  redirect[1].close();
 }
 
 int Parse::call_as_main(int (*routine)(int argc,char **argv
@@ -411,6 +459,80 @@ SmartPtr Parse::copy(int n, SmartPtr dp, int flag ) throw()
   return dp;
 }
 
+void Parse::copy(int n , StrBuffer &buf,int flag) throw(MallocError)
+{
+  if( n >= argc )
+    return;
+
+  const char *sp   = args[n].ptr ;
+  const char *tail = sp + args[n].len ;
+
+  /* 基本的に引用符とキャレットはコピ－しない。
+   * 二重キャレット「^^」は「^」としてコピ－する。
+   * ただし、引用符に囲まれたキャレットはそのままコピ－する。
+   */
+  
+  bool quote=false;
+  
+  /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
+   * (1) s|^-|/|;
+   */
+  
+  if( (flag & REPLACE_SLASH)  &&  *sp == '-' ){
+    buf << '/';
+    ++sp;
+  }
+
+  int lastchar = -1;
+
+  while( sp < tail ){
+    if( *sp == '"' ){
+      /* 引用符の場合は、フラグを反転させて、ポインタを進めるだけ。*/
+      
+      if( (flag & QUOTE_COPY)==0 && *(sp+1) == '"' ){
+	/* 連続する二つの引用符は、単一の引用符に変換する。*/
+	buf << '"';
+	sp += 2;
+      }else{
+	quote = !quote;
+	++sp;
+	if( flag & QUOTE_COPY )
+	  buf << '"';
+      }
+      
+    }else if( *sp == '^' && !quote ){
+      /* キャレットの次の文字を無条件に put する。 */
+      if( *++sp != '\0' ){
+	if( is_kanji(lastchar=*sp) )
+	  buf << *sp++;
+	buf << *sp++;
+      }else{
+	return;
+      }
+    }else if( (flag & REPLACE_SLASH) && !quote && *sp == '/' ){
+      /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
+       * (2) s|/|\|g; (ただし引用符に囲まれていないもの)
+       */
+      
+      buf << '\\';
+      lastchar = '\\';
+      sp++;
+    }else{
+      /* それ以外はコピ－ */
+      if( is_kanji(lastchar=*sp) ){
+	buf << *sp++;
+	assert(*sp != '\0' );
+      }
+      buf << *sp++;
+    }
+  }
+  if(   (flag & REPLACE_SLASH) != 0  
+     && (lastchar=='/' || lastchar=='\\' ) )
+    buf << '.';
+  
+}
+
+
 SmartPtr Parse::betacopy(SmartPtr dp,int n)
 {
   const char *ssp=args[n].ptr;
@@ -420,6 +542,13 @@ SmartPtr Parse::betacopy(SmartPtr dp,int n)
 
   *dp = '\0';
   return dp;
+}
+
+void Parse::betacopy(StrBuffer &buf,int n)
+{
+  const char *ssp=args[n].ptr;
+  while( ssp < tail )
+    buf << *ssp++;
 }
 
 SmartPtr Parse::copyall(int n, SmartPtr dp, int flag)
@@ -504,4 +633,88 @@ SmartPtr Parse::copyall(int n, SmartPtr dp, int flag)
     *dp = '\0';
   }
   return dp;
+}
+
+void Parse::copyall(int n, StrBuffer &buf, int flag) throw( MallocError )
+{
+  if( n < argc ){
+    
+    /* 基本的に引用符は普通の文字と同様にコピ－する。
+     * ただし、キャレットの次の機能文字を無効化する。
+     * キャレット自身はコピーしない(「^^」は別)
+     */
+    
+    const char *ssp=args[n].ptr;
+    bool quote=false;
+
+    /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
+     * (1) s|^-|/|;
+     */
+    if( (flag & REPLACE_SLASH) &&  *ssp == '-' ){
+      buf << '/';
+      ++ssp;
+    }
+
+    int lastchar = -1;
+
+    while( ssp < tail ){
+      if( *ssp == '"' ){
+	/* 引用符は、フラグを反転させる。*/
+
+	if( (flag & QUOTE_COPY)==0 && *(ssp+1) == '"' ){
+	  /* 連続する二つの引用符は、単一の引用符に変換する。*/
+	  buf << '"';
+	  ssp += 2;
+	}else{
+	  quote = !quote;
+	  ++ssp;
+	  if( flag & QUOTE_COPY )
+	    buf << '"';
+	}
+	continue;
+      }
+
+      if( *ssp=='^' && !quote ){
+	/* 引用符の中にないキャレットは次の特殊文字の機能を
+	 * 無効化する。
+	 */
+	if( *++ssp != '\0' ){
+	  if( is_kanji(lastchar=*ssp) )
+	    buf << *ssp++;
+	  buf << *ssp++;
+	}else{
+	  return;
+	}
+	continue;
+      }
+      
+      if( (flag & REPLACE_SLASH) && !quote ){
+	/* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理 */
+	
+	if( *ssp == '/' ){
+	  /* (2) s|/|\|g; (ただし引用符に囲まれていないもの) */
+	  buf << '\\';
+	  lastchar = '\\';
+	  ssp++;
+	  if( *ssp == '\0' || is_space(*ssp) )
+	    buf << '.';
+	  continue;
+	}else if( *ssp == '-' && is_space(lastchar) ){
+	  buf << '/';
+	  lastchar = '/';
+	  ssp++;
+	  continue;
+	}else if( *ssp=='\\' && (ssp[1]=='\0' || is_space(ssp[1]) )){
+	  buf << *ssp++;
+	  buf << '.';
+	  lastchar = '.';
+	  continue;
+	}
+      }
+      /* それ以外はコピ－ */
+      if( is_kanji(lastchar=*ssp) )
+	buf << *ssp++;
+      buf << *ssp++;
+    }
+  }
 }

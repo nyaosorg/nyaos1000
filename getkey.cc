@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <io.h>
-#include <fcntl.h>
 #include <sys/types.h>
 
 #include <string.h> /* for memset */
@@ -20,17 +19,24 @@
 int option_esc_key_sequences=0;
 int option_direct_key=0;
 
+#ifndef S2NYAOS
 static int tty=-255;
 static struct termios orig,s;
+#endif
 
 void raw_mode(void)
 {
-  if( _osmode == DOS_MODE )
+#ifndef S2NYAOS
+  if( _osmode == DOS_MODE  || option_direct_key )
+#endif
     return;
+#ifndef S2NYAOS
 
   if( tty == -255 ){
-    tcgetattr(tty=2,&s);
+    tcgetattr(tty=0,&s);
     orig = s;
+  }else{
+    tcgetattr(tty,&s);
   }
 
   /* 機能を off にする */
@@ -65,23 +71,31 @@ void raw_mode(void)
   s.c_cc[VTIME] = 0;
   
   tcsetattr(tty,TCSADRAIN,&s);
+#endif
 }
 
 void cocked_mode(void)
 {
-  if( tty == 2  &&  _osmode != DOS_MODE  &&  option_direct_key==0 )
-    tcsetattr(tty,TCSADRAIN,&orig);
+#ifndef S2NYAOS
+  if( tty != -255 &&  _osmode != DOS_MODE  &&  option_direct_key==0 ){
+    tcsetattr(tty,TCSANOW,&orig);
+    tty = -255;
+  }
+#endif
 }
 
 int get86key(void)
 {
+#ifndef S2NYAOS
   if( _osmode == DOS_MODE ){
     /* DOSでは_read_kbdで、漢字の第二バイト目が取得できない。*/
     union REGS regs;
     regs.h.ah = 0x7;
     return _int86( 0x21, &regs , &regs ) & 0xFF ;
   }else if( option_direct_key ){
+#endif
     return _read_kbd(0,1,0);
+#ifndef S2NYAOS
   }else{
     unsigned char key;
     int rc;
@@ -96,6 +110,7 @@ int get86key(void)
 	FD_SET(tty,&readfds );
 	if( select(tty+1,&readfds,NULL,NULL,NULL) == -1 )
 	  return 0;
+     
       }
       rc= read( tty , &key , sizeof(char) );
       if( rc < 0 )
@@ -104,6 +119,7 @@ int get86key(void)
 
     return key & 0xFF;
   }
+#endif
 }
 
 static int keybuf[16],left=0;

@@ -2,13 +2,16 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <fnmatch.h>
+#include <stdio.h> /* for sprintf */
 
 #define INCL_DOSNLS
 #include "macros.h"
 #include "finds.h"
 
-/* #define is_kanji(x) 0 */
 #define DEBUG(x) x
+
+int dbcs_fnmatch (const char *mask, const char *name, int flags);
+#define _fnmatch dbcs_fnmatch
 
 int convroot(char *&dp,int &size,const char *sp) throw(size_t)
 {
@@ -72,17 +75,6 @@ Dir::~Dir()
   
   /* 変更したコードページを元に戻す */
   DosSetProcessCp( codepage );
-}
-
-// strcpy_tail 
-// : 帰り値がコピーした文字列の末尾である以外は、strcpy と同じ
-
-char *strcpy_tail(char *dp,const char *sp)
-{
-  while( *sp != '\0' )
-    *dp++ = *sp++;
-  *dp = '\0';
-  return dp;
 }
 
 // 引数はディレクトリ名のみ。純粋に opendir に対応する。
@@ -222,8 +214,7 @@ char **fnexplode2(const char *path)
 	
     result[ nfiles ] = 
       (char*)malloc( lendir + dir.get_name_length()+1 );
-    strcpy_tail( strcpy_tail( result[ nfiles ] , dirname )
-		, dir.get_name() );
+    sprintf( result[ nfiles ] , "%s%s" , dirname , dir.get_name() );
     result = (char**)realloc( result , (++nfiles+1) * sizeof(char*) );
   }while( ++dir != NULL );
   result[ nfiles ] = NULL;

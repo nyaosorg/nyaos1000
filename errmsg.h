@@ -47,7 +47,11 @@ public:
 
     EventNotFound,		/* そんなヒストリはねぇぇぇ */
     TooManyErrors,		/* エラーが多すぎる */
-  };
+    FileExists,			/* ファイルを上書きしようとしている */
+#ifdef VMAX
+    BadCommandOrFileName	/* コマンドまたはファイル名が違います。*/
+#endif
+    };
   static void say(int x,...);
   static void mount(int x,const char *s);
 };

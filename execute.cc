@@ -10,6 +10,7 @@
 #include "nyaos.h"
 #include "complete.h"
 #include "errmsg.h"
+#include "heapptr.h"
 
 extern char *cmdexe_path; /* in nyaos.cc */
 extern char drivealias[];
@@ -20,6 +21,7 @@ int option_single_quote=0;
 int option_backquote=1;
 int option_backquote_in_quote=0;
 int option_debug_echo;
+extern option_vmax;
 
 int cmd_ver   (FILE *source , Parse &params );
 int cmd_exec  (FILE *source , Parse &params );
@@ -64,7 +66,6 @@ int cmd_set( FILE *srcfil, Parse &params );
 int cmd_cursor( FILE *fp, Parse &params);
 int cmd_lecho(FILE *source, Parse &params );
 int cmd_echo(FILE *srcfil, Parse &params );
-int cmd_cls(FILE *source, Parse &params );
 
 /* その他：１ソース＝１コマンド */
 int eadir(int argc, char **argv,FILE *fout,Parse &);	/* "eadir.cc" */
@@ -87,85 +88,77 @@ void ctrl_c_signal(int sig)
   signal(sig,SIG_ACK);
 }
 
+
+extern int yanyaos( const char *s );
+
 /* 逆クォート処理をするパス */
-void backquote_replace(const char *sp , char *dp , int max )
+char *backquote_replace(const char *sp )
 {
+  StrBuffer buf;
   int quote=0;
-  char *border=dp+max-2;
 
-  char *buffer[2];
-  buffer[0] = (char*)alloca(max);
-  buffer[1] = (char*)alloca(max);
-
-  while( *sp != '\0'  &&  dp < border ){
+  while( *sp != '\0' ){
     if( *sp == '"' ){
       /* 引用符の中か外かを一応チェックしておく */
       if( quote & 2 ){
-	*dp++ = '\\';
-	*dp++ = '"';
+	buf << "\\\"";
 	++sp;
       }else{
 	quote ^= 1;
-	*dp++ = *sp++;
+	buf << *sp++;
       }
     }else if( *sp == '\'' && (quote & 1)==0 && option_single_quote ){
       quote ^= 2;
-      *dp++ = '"'; ++sp;
+      buf << '"'; ++sp;
     }else if( is_kanji(*sp) ){
-      *dp++ = *sp++;
-      *dp++ = *sp++;
+      buf << sp[0] << sp[1]; sp+=2;
     }else if( *sp != '`' ){
       /* 逆クォート以外の文字は、そのままコピーする */
-      *dp++ = *sp++;
+      buf << *sp++;
     }else if( *(sp+1) == '`' ){
       /* 連続する二つの逆クォートは、一つの逆クォートに置換するだけ */
-      *dp++ = '`';
+      buf << '`';
       sp += 2;
     }else if( quote & 2 ){
       /* シングルクォート内の逆クォートは無視 */
-      *dp++ = *sp++;
+      buf << *sp++;
     }else{
-
-      { /* 逆クォート内の命令を複写する。*/
-	char *ddp=buffer[0];
-	int qquote=0;
-	while(  *++sp != '\0' && ddp < buffer[0]+max 
-	      && (*sp != '`' || *++sp == '`') ){
-	  
-	  if( *sp == '\''  &&  (qquote & 1)==0  ){
-	    *ddp++ = '"';
-	    qquote ^= 2;
-	  }else if( *sp == '"' ){
-	    if( qquote & 2 ){
-	      *ddp++ = '\\';
-	      *ddp++ = '"';
-	    }else{
-	      *ddp++ = *sp;
-	      qquote ^= 1;
-	    }
+      /* 逆クォート内の命令を複写する。*/
+      StrBuffer qbuf;
+      int qquote=0;
+      while( *++sp != '\0' && (*sp != '`' || *++sp == '`') ){
+	if( *sp == '\''  &&  (qquote & 1)==0  ){
+	  qbuf << '"';
+	  qquote ^= 2;
+	}else if( *sp == '"' ){
+	  if( qquote & 2 ){
+	    qbuf << '\\' << '"' ;
 	  }else{
-	    *ddp++ = *sp;
+	    qbuf << *sp;
+	    qquote ^= 1;
 	  }
+	}else{
+	  qbuf << *sp;
 	}
-	*ddp = '\0';
       }
+      if( option_debug_echo )
+	printf("--> `%s`\n",(const char*)qbuf );
 
+      char *pass1 = replace_alias( (const char *)qbuf );
       if( option_debug_echo )
-	printf("--> `%s`\n",buffer[0]);
-      replace_alias(  buffer[0] , buffer[1] , max );
+	printf( "--> `%s'\n",pass1);
+      char *pass2 = replace_script( pass1 );
       if( option_debug_echo )
-	printf("--> `%s`\n",buffer[1]);
-      replace_script( buffer[1] , buffer[0] , max );
-      if( option_debug_echo )
-	printf("--> `%s`\n",buffer[0]);
-      
-      FILE *pp=popen( buffer[0] , "r" );
-      
+	printf( "--> `%s'\n",pass2);
+      free( pass1 );
+      FILE *pp=popen( pass2 , "rt" );
+      free( pass2 );
+
       if( pp != NULL ){
 	int ch;
 	while( (ch=fgetc(pp)) != EOF  ){
 	  if( !quote  && isspace(ch & 255) ){
-	    *dp++ = ' ';
+	    buf << ' ';
 	    do{
 	      ch=fgetc(pp);
 	      if( ch==EOF )
@@ -174,14 +167,13 @@ void backquote_replace(const char *sp , char *dp , int max )
 	  }
 	    
 	  if( !quote && strchr("<>&|^",ch) != NULL ){
-	    *dp++ = '^';
-	    *dp++ = ch;
+	    buf << '^' << (char)ch;
 	  }else{
-	    *dp++ = ch;
+	    buf << (char)ch;
 	    if( is_kanji(ch) )
-	      *dp++ = fgetc(pp);
+	      buf << (char)fgetc(pp);
 	  }
-	  if( dp >= border-100 ){
+	  if( buf.getLength() > 4000 ){
 	    while( fgetc(pp) != EOF )
 	      ;
 	    break;
@@ -192,33 +184,30 @@ void backquote_replace(const char *sp , char *dp , int max )
       }
     }
   }
-  *dp = '\0';
+  return buf.finish();
 }
-
-
 
 Command jumptable[]={
   {"alias",  cmd_alias   },
-  {"bg",     cmd_bg      },
+//  {"bg",     cmd_bg      },
   {"cache",  cmd_cache   },
   {"chcp",   cmd_chcp    },
-  {"cls",    cmd_cls     },
   {"bind",   cmd_bind    },
   {"bindkey",cmd_bindkey },
   {"call",   cmd_source  },
   {"cd",     cmd_chdir   },
   {"cds",    cmd_chdir   },
   {"chdir",  cmd_chdir   },
-  {"comment",cmd_comment },
+//  {"comment",cmd_comment },
   {"dirs",   cmd_dirs    },
   {"echo",   cmd_echo    },
   {"exec",   cmd_exec    },
   {"exit",   cmd_exit    },
-  {"fg",     cmd_fg      },
+//  {"fg",     cmd_fg      },
   {"foreach",cmd_foreach },
   {"history",cmd_history },
   {"hotkey", cmd_hotkey  },
-  {"jobs",   cmd_jobs    },
+//  {"jobs",   cmd_jobs    },
   {"lecho",  cmd_lecho   },
   {"let" ,   cmd_let     },
   {"ls",     cmd_ls      },
@@ -236,7 +225,7 @@ Command jumptable[]={
   {"rmdir",  cmd_rmdir   },
   {"set",    cmd_set     },
   {"source", cmd_source  },
-  {"subject",cmd_subject },
+//  {"subject",cmd_subject },
   {"unalias",cmd_unalias },
   {"ver",    cmd_ver     },
   {"which"  ,cmd_which   },
@@ -248,6 +237,7 @@ int option_ignore_cases=1;
 Hash <Command> command_hash(512);
 
 int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
+     throw( Noclobber )
 {
   ctrl_c = 0;
   signal(SIGINT,ctrl_c_signal);
@@ -303,54 +293,42 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
     return 0;
   }
 
-  if( cmdline[0]=='\0' )
-    return 0;
-  
-  if( option_debug_echo )
-    printf("PASS-0:{%s}\n",cmdline);
-
-  /* ヒストリの置換処理 */
-  char buffer[2][4096];
-  int curbuf=0;
-
-  replace_history( cmdline , buffer[curbuf] , sizeof(buffer[0]) );
-  
-  if( option_debug_echo )
-    printf("PASS-1:{%s}\n",buffer[curbuf] );
-
-  /* 一般的プリプロセス(環境変数など) */
-  
-  preprocess( buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
-  curbuf ^= 1;
-  if( option_debug_echo )
-    printf("PASS-2:{%s}\n",buffer[curbuf] );
+  if( cmdline[0]=='\0' )	return 0;
+  if( option_debug_echo )	printf("PASS-0:{%s}\n",cmdline);
 
   try{
+    /* ヒストリの置換処理 */
+    heapchar_t pass1( replace_history(cmdline) );
+    if( pass1 == NULL )		return 0;
+    if( option_debug_echo )	printf("PASS-1:{%s}\n",(char*)pass1 );
+    
+    /* 一般的プリプロセス(環境変数など) */
+    heapchar_t pass2(preprocess(pass1));
+    if( pass2 == NULL )		return 0;
+    if( option_debug_echo )	printf("PASS-2:{%s}\n",(char*)pass2 );
+    
     /* エイリアスの置換処理 */
-    replace_alias( buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
-    curbuf ^= 1;
-
-    if( option_debug_echo )
-      printf( "PASS-3:{%s}\n" , buffer[curbuf] );
+    heapchar_t pass3(replace_alias( pass2 ));
+    if( pass3 == NULL )		return 0;
+    if( option_debug_echo )	printf("PASS-3:{%s}\n",(char*)pass3 );
     
     /* 逆クォートの置換処理 */
+    heapchar_t pass4;
     if( option_backquote ){
-      backquote_replace( buffer[curbuf] , buffer[curbuf^1] ,sizeof(buffer[0]));
-      curbuf ^= 1;
+      pass4 = backquote_replace( pass3 );
+      if( pass4 == NULL )	return 0;
+    }else{
+      pass4 = pass3;
     }
+    if( option_debug_echo )	printf("PASS-4:{%s}\n" , (char*)pass4 );
 
-    if( option_debug_echo )
-      printf( "PASS-4:{%s}\n" , buffer[curbuf] );
-    
-    replace_script(  buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
-    curbuf ^= 1;
-    
-    /* スクリプト置換 */
-    if( option_debug_echo )
-      printf("PASS-5:{%s}\n", buffer[curbuf] );
+    /* スクリプトの置換処理 */
+    heapchar_t pass5(replace_script( pass4 ));
+    if( pass5 == NULL )		return 0;
+    if( option_debug_echo )	printf("PASS-5:{%s}\n", (char*)pass5 );
   
     /* 内臓コマンド実行 */
-    for(const char *pointer=buffer[curbuf];;){
+    for(const char *pointer=pass5;;){
       Parse params(pointer);
       
       /* ヒストリ変換などで文字列が０になることもあるので、
@@ -401,10 +379,18 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
     }
     
     if( echoflag )
-      puts( buffer[curbuf] );
+      puts( pass5 );
     
   spawn:
-    return spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",buffer[curbuf],NULL);
+#if defined(VMAX)  &&  !defined(S2NYAOS)
+    if( option_vmax ){
+      return yanyaos( pass5 );
+    }else{
+#endif
+      return spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",(char*)pass5,NULL);
+#if defined(VMAX)  &&  !defined(S2NYAOS)
+    }
+#endif
 
 #if 0
   }catch( SyntaxError e ){
@@ -415,6 +401,9 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 	  "Nyaos didn't execute the command(s).",stderr);
     return -1;
 #endif
+  }catch(Noclobber e){
+    ErrMsg::say(ErrMsg::FileExists,0);
+    return -1;
   }catch(...){
     ErrMsg::say( ErrMsg::InternalError , 0 );
     return -1;

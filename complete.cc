@@ -10,6 +10,10 @@
 #include "nyaos.h"
 #include "strtok.h"
 
+#ifndef S2NYAOS
+#  define SHARED_CACHE  /* ← コマンド名キャッシュを共有する */
+#endif
+
 extern int option_tilda_without_root;
 
 int Complete::directory_split_char='\\';
@@ -139,7 +143,7 @@ static int pathsplit( const char *path, char *dir, char *fname )
   /* '.'を付けることで 末尾が ':','/'でも有効に働く (^_^) */
   *dir++ = '.';
   *dir   = '\0';
-
+  
   if( *p != '\0' ){
     do{
       *fname++ = *p++;
@@ -198,6 +202,36 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
   return get_num();
 }
 
+inline bool strequ(const char *x,const char *y)
+{
+  return *x==*y  &&  strcmp(x,y)==0;
+}
+
+/* 重複ファイルを削除するメソッド。sort の後に実行しないと意味なし。
+ */
+void Complete::unique()
+{
+  FileListT *cur=get_top();
+  if( cur == NULL )
+    return;
+
+  while( cur->next != NULL ){
+    /* if ではなく、while にしているのは、2連続だけでなく、
+     * 3連続して、重複があるかもしれないから
+     */
+    while( strequ(cur->name+common_length,cur->next->name+common_length) ){
+      FileListT *nxt=cur->next->next;
+      free( cur->next );
+      cur->next = nxt;
+      if( nxt == NULL )
+	return;
+      nxt->prev = cur;
+    }
+    cur = cur->next;
+  }
+}
+
+
 /* ファイル名補完を行うの為の、ファイル名リストを作成するメソッド。
  * in	path 不完全なファイル名
  * return 候補となるファイルの数
@@ -214,6 +248,7 @@ int Complete::makelist(const char *path)
 
   int rc=makelist_core(false,true);
   this->sort();
+  this->unique();
   return rc;
 }
 
@@ -260,9 +295,12 @@ void Sbrk::clear()
   }
 }
 
+#ifndef SHARED_CACHE
+
 /* PathCache は Complete ヘ順にコピーされるだけだから
  * 双方向リストである必要は無い
  */
+
 class PathCache {
 public:
   struct Node{
@@ -337,7 +375,6 @@ void PathCache::insert( const char *name ) throw(MallocError)
   ++nfiles;
 }
 
-
 /* コマンド名補完の為のキャッシュっす。
  * 本来は、静的メンバ変数にでもすべきところだが、
  * あまり、ほいほい、ヘッダファイルに宣言するのも
@@ -346,8 +383,38 @@ void PathCache::insert( const char *name ) throw(MallocError)
  */
 static PathCache path_cache;
 
-unsigned Complete::queryBytes(){  return path_cache.queryBytes();  }
-unsigned Complete::queryFiles(){  return path_cache.queryFiles();  }
+#else
+
+#include "shared.h"
+typedef PathCacheShared PathCache;
+static PathCacheShared path_cache;
+
+#endif
+
+unsigned Complete::queryBytes()
+{
+#ifdef SHARED_CACHE
+  try{
+#endif
+    return path_cache.queryBytes();
+#ifdef SHARED_CACHE
+  }catch( SharedMem::SemError ){
+    return ~0u;
+  }
+#endif
+}
+unsigned Complete::queryFiles()
+{
+#ifdef SHARED_CACHE
+  try{
+#endif
+    return path_cache.queryFiles();
+#ifdef SHARED_CACHE
+  }catch( SharedMem::SemError ){
+    return ~0u;
+  }
+#endif  
+}
 
 /* コマンド名補完の為に、PATH,SCRIPTPATH 上のコマンド名を
  * グローバル変数 path_cache に設定する。
@@ -466,7 +533,7 @@ int Complete::makelist_with_path(const char *path)
   /* ASSERT : path には、ディレクトリ名が含まれていない。*/
   strcpy( fname , path );
 
-  if( path_cache.get_top() == NULL ){
+  if( path_cache.queryFiles() <= 0 ){
     try{
       make_command_cache();
     }catch(MallocError){
@@ -475,24 +542,35 @@ int Complete::makelist_with_path(const char *path)
   }
   
   common_length=strlen(fname);
-
-  for(PathCache::Cursor cur(path_cache) ; cur ; ++cur ){
-
-    if(    cur->length >= common_length
-       &&  strnicmp(fname,cur->name,common_length ) == 0 ){
-      
-      FileListT *tmp=(FileListT *)malloc(sizeof(FileListT)+cur->length);
-      if( tmp != 0 ){
-	strcpy(tmp->name,cur->name);
-	tmp->length = cur->length;
-	tmp->attr = tmp->size = tmp->easize = 0;
-	insert( tmp );
+  
+#ifdef SHARED_CACHE
+  try{
+#endif
+    for(PathCache::Cursor cur(path_cache) ; cur ; ++cur ){
+      if(    cur->length >= common_length
+	 &&  strnicmp(fname,cur->name,common_length ) == 0 ){
 	
-	if( cur->length > max_length )
-	  max_length = cur->length;
+	FileListT *tmp=(FileListT *)malloc(sizeof(FileListT)+cur->length);
+	if( tmp != 0 ){
+	  strcpy(tmp->name,cur->name);
+	  tmp->length = cur->length;
+	  tmp->attr = tmp->size = tmp->easize = 0;
+	  insert( tmp );
+	  
+	  if( cur->length > max_length )
+	    max_length = cur->length;
+	}
       }
     }
+#ifdef SHARED_CACHE
+  }catch( SharedMem::SemError e){
+    fprintf(stderr,
+	    "\n\a<<< NYAOS Internal Error >>>"
+	    "\nCannot lock the shared memory for command-name completion.\n"
+	    "\nerror code = %d\n"
+	    , e.errcode );
   }
+#endif
 
   for(Dir dir(".") ; dir != NULL ; ++dir ){
     if(   dir.get_name_length() >= common_length
@@ -507,6 +585,8 @@ int Complete::makelist_with_path(const char *path)
     }
   }
   status = SIMPLE_COMMAND_COMPLETED;
+  this->sort();
+  this->unique();
   return get_num();
 }
 

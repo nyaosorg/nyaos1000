@@ -19,7 +19,7 @@ int cmd_hotkey(FILE *source , Parse &parse )
   
   parse.copy(1,keyName);
   parse.copy(2,progName);
-  if( Shell::bind_hotkey(keyName,progName) != 0 ){
+  if( Shell::bind_hotkey(keyName,progName,0) != 0 ){
     ErrMsg::say( ErrMsg::InvalidKeyName , keyName , 0 );
     return 1;
   }
@@ -360,7 +360,7 @@ int cmd_echo(FILE *srcfil, Parse &params )
 	    putc( *sp , fout);
 	  }
 	}
-      }else if( !quote && (*sp == '<' || *sp == '>') ){
+      }else if( !quote && Parse::isRedirectMark(sp) ){
 	break;
       }else if( *sp == '"' ){
 	if( *(sp+1) == '"' ){
@@ -387,11 +387,5 @@ int cmd_lecho(FILE *source, Parse &params )
     printf("[%s] ",argv);
   }
   putchar('\n');
-  return 0;
-}
-
-int cmd_cls(FILE *source, Parse &params )
-{
-  puts("\x1B[2J");
   return 0;
 }

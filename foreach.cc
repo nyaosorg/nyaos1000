@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <io.h>
 #include <ctype.h>
 
@@ -333,11 +332,11 @@ static int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
 	strcpy( cur->buffer  , buffer );
       }
     }/* end:for */
-    if( rc==Shell::ABORT || rc==RC_ABORT ){
+    if( rc==Edlin::ABORT || rc==RC_ABORT ){
       puts("^C");
       return 1;
     }
-    if( rc==Shell::FATAL ){
+    if( rc==Edlin::FATAL ){
       ErrMsg::say( ErrMsg::InternalError , "foreach" , 0 );
       return 1;
     }
@@ -381,7 +380,8 @@ static int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   int rv=0;
   for(int i=2;i<argc;i++){
     /* 展開したファイル名ごとのループ */
-    char **list = fnexplode2(argv[i]);
+    char **list = 0;
+    list = (char**)fnexplode2(argv[i]);
     try{
       if( list==NULL ){
 	if( eachcmd(srcfil,argv[1],argv[i],dummyfirst.next) != 0 )

@@ -1,6 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
-#include <string.h>
+// #include <string.h>
 #include "strbuffer.h"
 
 char StrBuffer::zero[1]={ '\0' };

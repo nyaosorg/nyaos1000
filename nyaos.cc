@@ -7,10 +7,10 @@
 
 #define USE_SET_WIN_TITLE 0
 
-#define INCL_RXSUBCOM
-#define INCL_RXFUNC
 #define INCL_VIO
 #define INCL_WIN
+#define INCL_RXSUBCO
+#define INCL_RXFUNC
 #define INCL_DOSPROCESS
 
 #include <os2.h>
@@ -21,9 +21,12 @@
 #include "smartptr.h"
 #include "errmsg.h"
 #include "prompt.h"
+#include "heapptr.h"
+#include "shared.h"
 
 HAB   hab, hmq;
 
+extern int option_vmax;
 int prompt_myself=1;
 int screen_width=80;
 int screen_height=25;
@@ -42,7 +45,8 @@ char *cmdexe_path=comspec+8;
 
 int execute_result=0;
 extern int printexitvalue;
-
+int option_noclobber=0;
+char *check_redirect_to_exist_file(const char *sp);
 extern int killAllPublicHistory(void);
 
 int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
@@ -54,7 +58,11 @@ int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 int cmd_ver( FILE *source , Parse &argv )
 {
   fputs("Nihongo Yet Another Os/2 Shell is "VERSION
-	"\ncompiled on "__DATE__ , stdout );
+#ifdef S2NYAOS
+	"\n (static linked version)"
+#endif
+	"\ncompiled on "__DATE__
+	, stdout );
   fflush(stdout);
   return RC_HOOK;
 }
@@ -168,9 +176,8 @@ char *fgets_chop(char *dp, int max, FILE *fp)
  * あいにく「start nyaos.exe」で起動した時か、アイコンにタイトルが無い
  * 時しか、FCF_TASKLIST は立たない。
  */
-extern "C" {
-  void _THUNK_C_FUNCTION (WinSetTitle) (PSZ szTITLE);
-}
+extern "C" void _THUNK_C_FUNCTION (WinSetTitle) (PSZ szTITLE);
+
 void set_win_title( const char *title )
 {
   _THUNK_C_PROLOG ( 4 );
@@ -190,6 +197,8 @@ static void nyaosAtExit()
   }
 }
 
+bool option_quite_mode=0;	/* ロゴを表示しない */
+
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
@@ -207,14 +216,11 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  /* シェル変数 CWD にカレントディレクトリを設定する */
-  resetCWD();
-  
-  // ---- 画面表示は、fflush せずとも、ただちにやれ！ -----
-  setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
-
-  // ---- とりあえず、キーバインドを好評の tcsh ライクにする -----
-  Shell::bindkey_nyaos();
+  resetCWD();				/* シェル変数 CWD にカレント
+					 * ディレクトリを設定する */
+  setvbuf(stdout,NULL,_IOLBF,BUFSIZ);	/* 画面表示は改行するまで
+					 * バッファリングする。*/
+  Shell::bindkey_nyaos();		/* キーバインドを設定する */
 
   // ----------------------------------------
   // COMSPEC に、NYAOS自身が設定されていると、
@@ -229,7 +235,6 @@ int main(int argc, char **argv)
 
   // -------- オプション分析 ----------
 
-  int quite_mode=0;	/* ロゴを表示しない */
   int warning_mode=0;	/* 警告あり：!0 で画面をクリアしない */
 
   for(int i=1;i<argc;i++){
@@ -348,7 +353,11 @@ int main(int argc, char **argv)
 	break;
 
       case 'q':
-	quite_mode = 1;
+	option_quite_mode = 1;
+	break;
+	
+      case 'v':
+	option_vmax = 1;
 	break;
 
       case '-':
@@ -385,7 +394,7 @@ int main(int argc, char **argv)
   }
   pretend_pm_application();
 
-  if( isatty(fileno(stdin)) && !quite_mode ){
+  if( isatty(fileno(stdin)) && !option_quite_mode ){
     extern int get_current_cp(void);
     
     if( ! warning_mode )
@@ -393,22 +402,29 @@ int main(int argc, char **argv)
 
     int cp=get_current_cp();
     if( cp==932 || cp==942 || cp==943 ){
-      fputs("\n  ┏┓┳┳  ┳┳　┳┏━┓┏━┓  " 
-	    "\n  ┃┃┃┗━┫┣━┫┃  ┃┗━┓  "
-	    "\n  ┻┗┛┗━┛┗━┛┗━┛┗━┛  "
+      // Japanese Message.
+      fputs("\n  ┏┓┳┳  ┳┏━┓┏━┓┏━┓" 
+	    "\n  ┃┃┃┗━┫┣━┫┃  ┃┗━┓"
+	    "\n  ┻┗┛┗━┛┻　┻┗━┛┗━┛"
 	    ,stdout );
     }else{
-      fputs("\n   //  // //  // //  //  ////   ////"
-	    "\n  /// // ////// ////// //  // ///   "
-	    "\n // ///    /// //  // //  //    /// "
-	    "\n//  //  ////   ////   ////  /////   "
+      // English Message.
+      fputs("\n   //  // //  //  ////   ////   //// "
+	    "\n  /// // ////// //  // //  // ///    "
+	    "\n // ///    /// ////// //  //    ///  "
+	    "\n//  //  ////  //  //  ////  /////    "
 	    ,stdout);
     }
     
     fputs("\n     The Open Source Software     "
 	  "\n- Nihongo Yet Another Os/2 Shell -"
-	  "\n  1996,97,98,99 (c) HAYAMA,Kaoru  "
+	  "\n    1996-2000 (c) HAYAMA,Kaoru  "
+#ifdef S2NYAOS
+	  "\n   Static linked version "VERSION
+	  "\n     compiled on "__DATE__
+#else
 	  "\n Ver."VERSION" compiled on "__DATE__
+#endif
 	  "\n\n\x1b[0m"
 	  , stdout );
   }
@@ -534,7 +550,7 @@ int main(int argc, char **argv)
       shell.forbid_use_topline();
     else
       shell.allow_use_topline();
-    
+
     /* カーソルを BOX 型にする。
      */
     if( option_vio_cursor_control ){
@@ -554,6 +570,8 @@ int main(int argc, char **argv)
     
     /* 一行入力 */
     const char *top;
+
+    // pretend_pm_application();
     int rc = shell.line_input(prompt.get2() ,">",&top);
     
     // ============== コマンドの実行 ====================
@@ -586,13 +604,13 @@ int main(int argc, char **argv)
       }
     }else{
       switch( rc ){
-      case Shell::QUIT:
+      case Edlin::QUIT:
 	// ---- CTRL-Z などによる終了 ----
 	nyaosAtExit();
 	return 0;
 
       case RC_ABORT:
-      case Shell::ABORT:
+      case Edlin::ABORT:
 	fputs("^C\n",stdout);
 	break;
 

@@ -10,6 +10,7 @@
 #include "nyaos.h"
 #include "errmsg.h"
 
+extern int option_vmax;
 extern int option_tilda_without_root;
 extern int option_direct_key;
 extern int option_complete_etc;
@@ -31,6 +32,7 @@ extern int option_auto_close;
 extern int option_honest;
 extern int printexitvalue;
 extern int option_icanna;
+extern int option_noclobber;
 
 int echoflag=0;
 
@@ -138,6 +140,7 @@ int cmd_mkdir ( FILE *source , Parse &params)
   return 0;
 }
 
+#if 0
 union MultiPtr {
   void *value;
   unsigned short *word;
@@ -198,7 +201,6 @@ int cmd_subject(FILE *source, Parse &params)
   return rc; 
 }
 
-
 int cmd_comment(FILE *source, Parse &params)
 {
   if( params.get_argc() < 2 ){
@@ -237,6 +239,7 @@ int cmd_comment(FILE *source, Parse &params)
   }
   return rc;
 }
+#endif
 
 /* オプション一覧：
  *	option 文で使用するオプションを増す時は、option結果を代入する変数
@@ -271,6 +274,7 @@ struct Option{
   { "honest"               , &option_honest                    , 1  , 0 },
   { "icanna"		   , &option_icanna		       , 1  , 0 },
   { "ignore_cases"         , &option_ignore_cases              , 1  , 0 },
+  { "noclobber"		   , &option_noclobber		       , 1  , 0 },
   { "printexitvalue"       , &printexitvalue                   , 1  , 0 },
   { "prompt_even_piped"    , &option_prompt_even_piped         , 1  , 0 },
   { "script"               , &scriptflag                       , 1  , 0 },
@@ -283,6 +287,9 @@ struct Option{
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
   { "tilda_without_root"   , &option_tilda_without_root        , 1  , 0 },
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
+#ifdef VMAX
+  { "vmax"		   , &option_vmax		       , 1  , 0 },
+#endif
   { NULL , NULL , 1 , 0 },
 };
 

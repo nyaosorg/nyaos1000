@@ -12,7 +12,7 @@
 #ifndef EDLIN_H
 #define EDLIN_H
 
-#include <cstdio>
+#include <stdio.h>
 #include "macros.h"
 
 #ifdef NEW_HISTORY
@@ -24,6 +24,15 @@ class Complete;		/* ファイル名補完の為のクラス   */
 class jrKanjiStatus;	/* かんな標準ライブラリの構造体 */
 
 class Edlin{
+public:
+  enum Status {
+    CONTINUE,	// 編集続行
+    TERMINATE,	// ^M ^J (ヒストリに登録する)
+    CANCEL,	// ^M ^J (ヒストリに登録しない)
+    QUIT  = -1,	// ^D
+    ABORT = -2,	// ^C
+    FATAL = -3, // 未知のトラブル
+  };
   enum{ DEFAULT_BUFFER_SIZE = 80 };
 protected:
   char *strbuf;        /* アスキーコード              */
@@ -86,10 +95,9 @@ public:
   void init();
   void pack(); /* 入力した制御文字を1byte形式へ置換する。 */
 
-  void insert(int ch);                     /*    半角文字挿入       */
-  void insert(int ch1,int ch2);            /*    全角文字挿入       */
-  void insert_and_forward(const char *s);  /*    文字列挿入         */
-  void quoted_insert(int ch);              /*    制御文字挿入       */
+  void insert(int ch);                     /* １文字挿入 */
+  void insert_and_forward(const char *s);  /* 文字列挿入 */
+  void quoted_insert(int ch);              /* 制御文字挿入 */
 
   void cut();
   void erase();               /* ^D 一文字削除         */
@@ -99,8 +107,10 @@ public:
   int  backward(int x);        /*    ｘ桁分左移動       */
   void forward_word();        /* @F カーソル右単語移動 */
   void backward_word();       /* @B カーソル左単語移動 */
-  void go_ahead();            /* ^A 先頭へ             */
-  void go_tail();             /* ^E 末尾へ             */
+
+  // void go_ahead();            /* ^A 先頭へ             */
+
+  //void go_tail();             /* ^E 末尾へ             */
   void clean_up();            /* ^U 入力破棄           */
   void erasebol();            /*    カーソル手前を消す */
   void eraseline();           /* ^K カーソル以降を消す */
@@ -154,6 +164,8 @@ public:
 private:
   static CompleteFunc completeBindmap[ 0x200 ];
 public:
+  Status go_ahead();
+  Status go_tail();
   static void initComplete();
   static int  bindCompleteKey(const char *key,const char *func);
 };
@@ -194,6 +206,8 @@ int dbcs_table_init();
  *	クラス Histories で扱うように変更する。
  */
 
+class BindCommand0;
+
 class Shell : private Edlin2 {
   const char *prompt;
   bool topline_permission;
@@ -217,14 +231,6 @@ public:
   void forbid_use_topline(){ topline_permission = false; }
 
   /* 元 Shell のパート */
-  enum Status {
-    CONTINUE,	// 編集続行
-    TERMINATE,	// ^M ^J (ヒストリに登録する)
-    CANCEL,	// ^M ^J (ヒストリに登録しない)
-    QUIT  = -1,	// ^D
-    ABORT = -2,	// ^C
-    FATAL = -3, // 未知のトラブル
-  };
 private:
   bool changed;		/* 変更フラグ   */
   bool overwrite;	/* 上書きモード */
@@ -234,9 +240,7 @@ private:
 
   enum{ NUMOF_BINDMAP = 0x200 };
   static void bindkey_base();
-  static Status (Shell::*bindmap[ NUMOF_BINDMAP ])();
-  static const char *bindmap_usage_key[ NUMOF_BINDMAP ];
-  static char *bindmap_usage_func[ NUMOF_BINDMAP ];
+  static BindCommand0 *bindmap[ NUMOF_BINDMAP ];
   
   Status search_engine(int isrev);
   int line_input(const char *prompt);
@@ -249,13 +253,13 @@ public:
   static void bindkey_tcshlike();
   static void bindkey_nyaos();
   static int bindkey(const char *key,const char *funcname);
-  static Status (Shell::*get_bindkey_function(int key))()
-    { return (unsigned(key) < NUMOF_BINDMAP ) ? bindmap[ key ] : NULL ; }
-  static int bind_hotkey(const char *key,const char *program);
+  static Status (Shell::*get_bindkey_function(int key))();
+
+  static int bind_hotkey(const char *key,const char *program,int opt);
   static void bindlist(FILE *fp);
 
   Shell( FILE *fp=stdout );
-  ~Shell();
+  ~Shell(){}
   bool operator ! () const { return Edlin2::operator !(); }
 
   int line_input(const char *prompt1,const char *prompt2,const char **str);
@@ -268,34 +272,10 @@ private:
   History *cur;
 #endif
 public:
-  // 最新のヒストリ内容を引数の内容と置きかえる。
-  static int replace_last_history(const char *s)
-#ifdef NEW_HISTORY
-    {
-      Histories::Cursor cur(histories); /* bindkey.cc でのみ使用 */
-      ++cur; cur->replace(s);
-    }
-#else
-  ;
-#endif
-  int regist_history(const char *s=0)
-#ifdef NEW_HISTORY
-    {
-      histories.append(s); /* bindkey.cc でのみ、利用されているようだ */
-    }
-#else
-  ;
-#endif
-
-
-  static int append_history(const char *s)
-#ifdef NEW_HISTORY
-    {
-      histories.append(s); /* prepro2.cc でのみ使用 */
-    }
-#else
-  ;
-#endif
+  // 最新のヒストリ内容を引数の内容と置きかえる.
+  static int replace_last_history(const char *s);
+  int regist_history(const char *s=0);
+  static int append_history(const char *s);
 
   bool isOverWrite(){ return overwrite; }
 
@@ -333,7 +313,7 @@ public:
   Status vz_next_history();
   Status quoted_insert();
   Status keyname_insert();
-  Status hotkey();
+  Status hotkey(const char *cmdline,int opt);
   Status copy();
   Status cut();
   Status paste();
@@ -343,5 +323,23 @@ public:
   /* option命令用。Edlin から参照されるのみ */
   static int beep_ok;
 };
+
+/* いわゆる「関数オブジェクト」というもの。
+ * キーがタイプされる度に、そのキーにバインドされている
+ * BindCommand0 の派生クラスのインスタンスの
+ * operator() (Shell &) が呼び出されるのだ！
+ */
+class BindCommand0 {
+public:
+  typedef Edlin::Status (Shell::*cmd_t)();
+
+  virtual Edlin::Status operator() (Shell &s)=0;
+  virtual void printUsage(FILE *fp)=0;
+  virtual ~BindCommand0(){}
+  virtual operator cmd_t ()=0;
+};
+
+inline Edlin::Status (Shell::*Shell::get_bindkey_function(int key))()
+{  return (unsigned(key) < NUMOF_BINDMAP ) ? *bindmap[ key ] : NULL ; }
 
 #endif /* EDLIN_H */

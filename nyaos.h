@@ -3,7 +3,7 @@
 #define NYAOS_H
 
 #include "macros.h"
-#define VERSION "1.60"
+#define VERSION "1.61"
 
 class Parse;
 
@@ -26,8 +26,17 @@ extern struct Alias{
 } *alias_hashtable[256];
 
 extern int screen_width , screen_height ;
-int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
+class Noclobber{}; // error object
+int execute(FILE *srcfil,const char *cmdline,int use_spawn=0 )
+     throw(Noclobber) ;
+char *replace_alias( const char *src ) throw(Noclobber);
 
+class StrBuffer;
+class MallocError;
+
+char *replace_history( const char *src );
+char *preprocess( const char *src );
+char *replace_script( const char *src ) throw(MallocError);
 char *fgets_chop(char *dp,int max,FILE *fp);
 
 extern int cursor_start , cursor_end;
@@ -38,20 +47,15 @@ extern volatile int ctrl_c;
 void ctrl_c_signal(int sig);
 
 char *strcpy_tail(char *dp,const char *sp);
-extern int scriptflag,option_sos;
 
+extern int scriptflag,option_sos;
 extern int option_tilda_is_home;
 extern int option_replace_slash_to_backslash_after_tilda;
 extern int option_vio_cursor_control;
 extern int option_prompt_even_piped;
 extern int option_cmdlike_crlf;
 
-void replace_alias( const char *source, char *destinate ,int max );
-void replace_history( const char *source , char *destinate ,int max );
-void preprocess( const char *sp , char *destinate , int max );
-int replace_script( const char *source , char *destinate , int max );
 void buildin_command_to_complete_table(void);
-
 extern char *cmdexe_path;
 
 /* NYAOS.CC */

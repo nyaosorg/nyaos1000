@@ -11,7 +11,7 @@ public:
   int len;
   const char *ptr;
   
-  int operator[](int n) const
+  char operator[](int n) const
     { return ptr[n] & 255; }
 
   /* ‰Šú‰» */

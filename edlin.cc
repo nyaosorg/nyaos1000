@@ -247,19 +247,30 @@ void Edlin::swapchars()  /* DOSモード未対応メソッド */
   }
 }
 
+/* 一文字挿入して、直ちに表示に反映させる。
+ * 0x0000 ～ 0x00FF : SBCS とみなす。
+ * 0x0100 ～ 0x01FF : 無視する(挿入しない)。
+ * 0x0200 ～ 0xFFFF : DBCS とみなす。
+ */
 void Edlin::insert(int ch)
 {
-  if( ch > 0x1FF ){
-    insert(ch>>8 , ch & 0xFF);
+  if( (unsigned)ch > 0x1FF ){	/* DBCS */
+    if( makeRoom(pos,2) != 0 )
+      return;
+    
+    strbuf[ pos   ] = ch >> 8 ;
+    atrbuf[ pos   ] = DBC1ST;
+    strbuf[ pos+1 ] = ch & 255;
+    atrbuf[ pos+1 ] = DBC2ND;
+  }else if( (unsigned)ch < 0x100 ){ /* SBCS */
+    if( makeRoom(pos,1) != 0 )
+      return;
+    
+    strbuf[pos] = ch;
+    atrbuf[pos] = SBC;
+  }else{
     return;
   }
-
-  if( makeRoom(pos,1) != 0 )
-    return;
-
-  strbuf[pos] = ch;
-  atrbuf[pos] = SBC;
-  
   after_repaint(0);  /* 挿入したときは、右へ動くので末端のクリアはいらない */
 }
 
@@ -814,7 +825,7 @@ int Edlin::complete_to_fullpath(const char *header)
   return 1;
 }
 
-
+#if 0
 void Edlin::insert(int ch1,int ch2)
 {
   if( makeRoom(pos,2) != 0 )
@@ -827,6 +838,7 @@ void Edlin::insert(int ch1,int ch2)
   
   after_repaint(0);
 }
+#endif
 
 void Edlin::erase()
 {
@@ -1022,18 +1034,19 @@ int Edlin::backward()
   return 0;
 }
 
-void Edlin::go_ahead()
+Edlin::Status Edlin::go_ahead()
 {
   putbs( pos );
   pos = 0;
+  return CONTINUE;
 }
 
-
-void Edlin::go_tail()
+Edlin::Status Edlin::go_tail()
 {
   /* 全文字列が、画面中にでている場合、右移動だけでよい */
   while( pos < len )
     putnth( pos++ );
+  return CONTINUE;
 }
 
 void Edlin::clean_up()
@@ -1070,7 +1083,7 @@ int Edlin::message(const char *fmt,...) /* ウインドウモード未対応 */
   if( msgsize > 0 )
     putbs(msgsize);
 
-  (void)vsprintf(msg,fmt,vp);  
+  (void)vsnprintf(msg,sizeof(msg),fmt,vp);  
   va_end(vp);
 
   int columns=0; /* 実際の表示桁数(エスケープシーケンス部分を除く) */

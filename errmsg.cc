@@ -51,6 +51,10 @@ static char *errorMessages[]={
 
   "Event Not Found",
   "Too Many Errors.",
+  "File exists.",
+#ifdef VMAX
+  "Bad Command or Filename.",
+#endif
 };
 
 static char *mountedErrorMessages[ numof( errorMessages ) ];
@@ -63,7 +67,7 @@ void ErrMsg::mount(int x,const char *s)
     memset( mountedErrorMessages , 0 , sizeof(mountedErrorMessages) );
     inited = true;
   }
-  if( x >= numof(errorMessages) )
+  if( x >= (int)numof(errorMessages) )
     return;
 
   if( mountedErrorMessages[x] != NULL )

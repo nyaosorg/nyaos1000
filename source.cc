@@ -1,4 +1,4 @@
-#define INCL_DOSMEMMGR
+// #define INCL_DOSMEMMGR
 #define INCL_RXSUBCOM
 #define INCL_RXFUNC
 #include <os2.h>

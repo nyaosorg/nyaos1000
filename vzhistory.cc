@@ -8,6 +8,9 @@
 #include "edlin.h"
 #include "quoteflag.h"
 
+//#define DEBUG1(x) (x)
+#define DEBUG1(x) /**/
+
 extern int option_single_quote;
 
 struct WHist{
@@ -15,7 +18,7 @@ struct WHist{
   const char *buffer;
 };
 
-Shell::Status Shell::vz_next_history()
+Edlin::Status Shell::vz_next_history()
 {
   return CONTINUE;
 }
@@ -58,12 +61,15 @@ static int history_core(WHist *tmp,int rightmove,Edlin &ed)
     int key=::getkey();
     ed.cleanmsg();
     
-    Shell::Status (Shell::*function)() = Shell::get_bindkey_function(key);
+    Edlin::Status (Shell::*function)() = Shell::get_bindkey_function(key);
     
     if(   function==&Shell::next_history
        || function==&Shell::vz_next_history ){
       /* 次候補 */
       if( tmp->next != NULL ){
+	/*     AAA(1) → BBB(2) → BBB(3) → BBB(4:現在)
+	 * と登録されている時、最初のループで、(2) まで移動
+	 * 継いで、(1) へ移動 */
 	tmp = tmp->next;
       }else{
 	return 0;
@@ -164,8 +170,7 @@ static void get_current_word(int &wordtop,int &wordlen,Edlin &ed)
   }
 }
 
-
-Shell::Status Shell::vz_prev_history()
+Edlin::Status Shell::vz_prev_history()
 {
   /* 補完対象となる、入力済み文字列の範囲 */
   int targetTop;
@@ -202,6 +207,7 @@ Shell::Status Shell::vz_prev_history()
       /******** 行単位での検索 *********/
       for(int i=0 ;; i++){
 	if( i >= targetLen ){
+	  /* 行の既に入力した部分と一致したら… */
 	  tmp = (WHist*)alloca(sizeof(WHist));
 	  tmp->buffer = sp;
 	  tmp->next = whist;
@@ -285,7 +291,12 @@ Shell::Status Shell::vz_prev_history()
     }/* 行レベル比較ループ */
 
   nextline:
-    ;
+
+    /* 重複行をスキップする */
+    while(    cur->prev != NULL  
+	  &&  strcmp(cur->buffer,cur->prev->buffer)==0 ){
+      cur = cur->prev;
+    }
   }
   return CONTINUE;
 }

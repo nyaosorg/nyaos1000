@@ -4,110 +4,138 @@
 # Free Software : Nihongo Yet Another Os/2 Shell
 # (c) 1996,97,98,99 HAYAMA,Kaoru
 #
-# If you have canna.a, please add '-DCANNA=0' to CFLAGS.
+# D1xxx is dynamically linked, which supports CANNA.
+# S2xxx is statically  linked, which doesn't support CANNA.
 #
+# If you don't have header file <canna/jrkanji.h>,
+# 	then add option `-DICANNA' to CFLAGS or D1CFLAGS.
 
-CFLAGS=-Wall -O2 -DNDEBUG
-#CFLAGS=-Wall -g
-#CFLAGS=-Wall -O2 -DCANNA=0
-
-LDFLAGS=-lvideo -lsocket -lwrap -Zcrtdll
 CC=gcc
+CFLAGS=-Wall -DNDEBUG -O2
+D1CFLAGS=$(CFLAGS)
+S2CFLAGS=$(CFLAGS) -Zomf -Zsys -DS2NYAOS -DICANNA
 
-# make package=46 とした場合、make package VER=46 と等価にする。
+LDFLAGS=-lvideo
+D1LDFLAGS=$(LDFLAGS) -lsocket -lwrap -Zcrtdll
+S2LDFLAGS=$(LDFLAGS)
 
-ifeq (/$(package)/,//)
-all : nyaos.exe nyaos.doc
-VER=XX
-else
-all : package
-VER=$(package)
-endif
+all : nyaos.exe
 
 # -------------- 自動生成ルール ----------------
 
-.SUFFIXES : .cc .o .tbl .exe .cmd .doc .html
+.SUFFIXES : .cc .o .obj .tbl .exe .cmd .doc .html
 
 .tbl.cc : 
 	mkbtable.cmd < $< >$@
 
-.cc.o :
-	$(CC) $(CFLAGS) -c $<
+%.o : %.cc
+	$(CC) $(D1CFLAGS) -c $< -o $@
+
+%.obj : %.cc
+	$(CC) $(S2CFLAGS) -c $< -o $@
 
 # -------------- ファイルリスト -----------------
 
+NYAOS_TBL=\
+	bindfunc.tbl keynames.tbl eadirop.tbl
 NYAOS_HDR=\
 	complete.h edlin.h finds.h hash.h macros.h nyaos.h substr.h \
 	parse.h pathlist.h smartptr.h strtok.h keyname.h strbuffer.h \
-	quoteflag.h autofileptr.h autofreeptr.h prompt.h errmsg.h
-NYAOS_SRC=\
-	alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
-	command2.cc dbcs.cc eadir2.cc edlin.cc edlin2.cc execute.cc \
-	finds.cc filelist.cc foreach2.cc getkey.cc hash.cc nyaos.cc \
-	open.cc parse.cc pathlist.cc prepro2.cc prompt3.cc script2.cc \
-	search.cc shell.cc source.cc vzhistory.cc strtok.cc keynameseek.cc \
-	strbuffer.cc debugger.cc let.cc errmsg.cc
-# suffix.cc 
+	quoteflag.h heapptr.h autofreeptr.h prompt.h errmsg.h shared.h
 
-NYAOS_TBL=\
-	bindfunc.tbl keynames.tbl eadirop.tbl
-NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
+NYAOS_SRC=alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
+	command2.cc dbcs.cc eadir.cc edlin.cc canna.cc execute.cc \
+	finds.cc filelist.cc foreach.cc getkey.cc hash.cc nyaos.cc \
+	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script.cc \
+	search.cc shell.cc source.cc vzhistory.cc strtok.cc \
+	strbuffer.cc debugger.cc let.cc errmsg.cc yanyaos.cc shared.cc \
+	fnmatch.cc keynameseek.cc
+
+
+
+
+
+NYAOS_OBJ1=$(NYAOS_SRC:.cc=.o)
+NYAOS_OBJ2=$(NYAOS_SRC:.cc=.obj)
 
 # ------------- パッケージ作成 -----------------
-
-# pknyaos.cmd から呼び出される。
-# 「make README1ST=readme.XXX nyaos.tar」と呼び出す必要がある。
-
-nyaos.tar :
-	tar -C .. -cvf nyaos/$@ $(foreach A, \
-		Makefile pknyaos.cmd $(NYAOS_HDR) $(NYAOS_SRC) \
-		mkbtable.cmd $(README1ST) $(NYAOS_TBL),nyaos/$(A))
-
-# 「make package=XX」と呼び出せば、
+# 「make package」と呼び出せば、
 #	nyaos1XX.lzh	   (バイナリパッケージ)
+#	s2nya1xx.lzh       (スタティック版実行ファイルのみ)
 #	nyaos-1.XX.tar.gz  (ソースパッケージ)
 # が出来る。
+# ----------------------------------------------
+
+READMES=$(wildcard readme.1??)
+VER=$(subst .1,,$(suffix $(word $(words $(READMES)),$(READMES))))
 
 LZH=nyaos1$(VER).lzh
-TGZ=nyaos-1.$(VER).tar.gz 
+SLZH=s2nya1$(VER).lzh
+TBZ=nyaos-1.$(VER).tar.bz2
 
-upload :
-	cp $(LZH) $(TGZ) $(HOME)/www/warp/.
-	mv $(LZH) $(TGZ) $(HOME)/src/package/nyaos/.
+upload : package
+	cp $(LZH) $(SLZH) $(TBZ) nyaosdoc.html $(HOME)/www/warp/.
+	mv $(LZH) $(SLZH) $(TBZ) $(HOME)/src/package/nyaos/.
 
-package : 
-	lxlite nyaos.exe
-	lha a $(LZH) readme.1$(VER) nyaos.doc nyaosdoc.html \
-		nyaos.exe nyaos.rc nyaos1.ico nyaos2.ico nyaos-fc.ico \
-		nyaos-fo.ico sample.err install.cmd
-	cd .. && tar cvf - $(foreach A, \
-		Makefile pknyaos.cmd $(NYAOS_HDR) $(NYAOS_SRC) mkbtable.cmd \
-		$(NYAOS_TBL) readme.1$(VER) install.cmd,nyaos/$(A)) \
-	| gzip > nyaos/$(TGZ)
+package : $(LZH) $(SLZH) $(TBZ)
+
+$(LZH) :
+	cd .. && lha a $(foreach A,\
+		$(LZH) readme.1$(VER) nyaos.doc nyaos.faq \
+		nyaos.exe nyaos.rc nyaos1.ico nyaos2.ico \
+		nyaos-fc.ico nyaos-fo.ico sample.err install.cmd \
+		,nyaos/$(A))
+
+$(SLZH) :
+	lha a $(SLZH) s2nyaos.exe
+
+$(TBZ) :
+	cd .. && tar cvf - $(foreach A,\
+	Makefile *.h $(NYAOS_SRC) mkbtable.cmd \
+	$(NYAOS_TBL) readme.1$(VER),nyaos/$(A)) | bzip2 > $(TBZ)
+
+cleanpkg :
+	rm -rf $(LZH) $(SLZH) $(TBZ)
 
 # ------------- 実行ファイル作成 ----------------
 
-nyaos.exe : $(NYAOS_OBJ)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+nyaos.exe : $(NYAOS_OBJ1)
+	$(CC) $(D1CFLAGS) $^ -o $@ $(D1LDFLAGS)
+	lxlite $@
 
-$(NYAOS_OBJ) : %.o : %.cc
-	$(CC) $(CFLAGS) -c $<
+s2nyaos.exe : $(NYAOS_OBJ2)
+	$(CC) $(S2CFLAGS) $^ nyaos.def -o $@ $(S2LDFLAGS)
+	lxlite $@
+
+
+# ------------ ソース用テーブル類の依存関係 ------
 
 keynameseek.o : keynameseek.cc keynames.cc
-bindkey.o : bindkey.cc bindfunc.cc
-eadir2.o : eadir2.cc eadirop.cc
-
-tables : $(NYAOS_TBL:.tbl=.cc)
-bindfunc.cc : bindfunc.tbl mkbtable.cmd
+keynameseek.obj : keynameseek.cc keynames.cc
 keynames.cc : keynames.tbl mkbtable.cmd
+
+bindkey.o : bindkey.cc bindfunc.cc
+bindkey.obj : bindkey.cc bindfunc.cc
+bindfunc.cc : bindfunc.tbl mkbtable.cmd
+
+eadir.o : eadir.cc eadirop.cc
+eadir.obj : eadir.cc eadirop.cc
 eadirop.cc : eadirop.tbl mkbtable.cmd
 
+shared.o : shared.cc shared.h
+complete.o : complete.cc shared.h
+
 # ------------- ドキュメント作成 -----------------
+# NKF2 , w3m , XTR を使用する。
+# ------------------------------------------------
+
+document : nyaos.doc nyaos.faq nyaos.eng
 
 nyaos.doc : nyaosdoc.html
-	nkf -e $< > tmp.html
-	lynx -dump -euc tmp.html | nkf -s >$@
-	rm -f tmp.html
+	w3m-ja -dump $< | nkf2 -s > $@
+
+nyaos.faq : ../../www/warp/nyaos-faq.html
+	w3m-ja -dump $< | nkf2 -s > $@
 
 nyaos.eng : nyaoseng.xx
 	xtr -e $< > $@
@@ -115,5 +143,7 @@ nyaos.eng : nyaoseng.xx
 # ------------- お掃除 -------------
 
 clean :
-	rm -f *.o *~ $(NYAOS_TBL:.tbl=.cc)
+	rm -f *.o *.obj *~ $(NYAOS_TBL:.tbl=.cc)
 
+install :
+	cp nyaos.exe s2nyaos.exe $(HOME)/bin/.

@@ -1,7 +1,7 @@
 #include <ctype.h>
 #include <io.h>
 #include <stdlib.h>
-#include <stdio.h>
+// #include <stdio.h>
 
 #include "parse.h"
 #include "Edlin.h"
@@ -205,7 +205,7 @@ char *cut_with_designer(char *path,int option)
  *	dp ... コピー先(スマートポインタ)
  * return コピー先の末尾
  */
-SmartPtr insert_env(const char *env,SmartPtr dp)
+static void insert_env(const char *env,StrBuffer &buf)
 {
   const char *sp;
   const char *opt=strchr(env,':');
@@ -223,10 +223,8 @@ SmartPtr insert_env(const char *env,SmartPtr dp)
 
     /* %bar% の値を得る。未定義ならば終了 */
     const char *value = getShellEnv(envtmp);
-    if( value == NULL ){
-      *dp = '\0';
-      return dp;
-    }
+    if( value == NULL )
+      return;
     
     /* %bar% の値を加工する為に、別の領域にコピーする。*/
     int vallen=strlen(value);
@@ -244,14 +242,7 @@ SmartPtr insert_env(const char *env,SmartPtr dp)
     /* ⇒ 単純な %bar% の場合 */
     sp = getShellEnv(env);
   }
-
-  /* SmartPtr で示される展開先へ展開する */
-  if( sp != NULL ){
-    while( *sp != '\0' )
-      *dp++ = *sp++;
-  }
-  *dp = '\0';
-  return dp;
+  buf << sp;
 }
 
 /* 単語修飾子、すなわち「!」の後に続く「$」「^」などで、
@@ -261,8 +252,8 @@ SmartPtr insert_env(const char *env,SmartPtr dp)
  *	dp ... コピー先(スマートポインタ)
  */
 
-static SmartPtr word_designator(const char *&sp , const char *histring ,
-				SmartPtr dp )
+static void word_designator(const char *&sp , const char *histring ,
+			    StrBuffer &buf )
 {
   /* sp は、':' の後にあるとする */
 
@@ -272,28 +263,24 @@ static SmartPtr word_designator(const char *&sp , const char *histring ,
   if( *sp=='$' ){
     ++sp;
 
-    argv[ argc-1 ] >> dp;
-    return dp + argv[ argc-1 ].len;
-
+    buf.paste( argv[ argc-1 ].ptr , argv[ argc-1 ].len );
+    return ;
   }else if( *sp=='^' ){
     ++sp;
 
-    if( 1 < argc ){
-      argv[ 1 ] >> dp;
-      return dp + argv[ 1 ].len;
-    }else{
-      return dp;
-    }
+    if( 1 < argc )
+      buf.paste( argv[ 1 ].ptr , argv[ 1 ].len );
+
+    return;
 
   }else if( *sp=='*' ){
     ++sp;
     
     for( int i=1 ; i<argc ; i++ ){
-      argv[ i ] >> dp;
-      dp += argv[ i ].len;
-      *dp++ = ' ';
+      buf.paste( argv[ i ].ptr , argv[ i ].len );
+      buf << ' ';
     }
-    return dp;
+    return;
 
   }else if( *sp=='-' && isdigit(sp[1] & 255) ){
     ++sp;
@@ -307,11 +294,10 @@ static SmartPtr word_designator(const char *&sp , const char *histring ,
       n = argv.get_argc()-1;
 
     for(int i=0 ; i<=n ; i++ ){
-      argv[ i ] >> dp;
-      dp += argv[ i ].len;
-      *dp++ = ' ';
+      buf.paste( argv[ i ].ptr , argv[ i ].len );
+      buf << ' ';
     }
-    return dp;
+    return;
 
   }else if( isdigit(*sp) ){
 
@@ -320,10 +306,8 @@ static SmartPtr word_designator(const char *&sp , const char *histring ,
       n = n*10 + (*sp-'0');
     }while( isdigit(*++sp & 255) );
       
-    if( n < argc ){
-      argv[ n ] >> dp;
-      dp += argv[ n ].len ;
-    }
+    if( n < argc )
+      buf.paste( argv[ n ].ptr , argv[ n ].len );
 
     if( *sp == '-' ){
       int end=0;
@@ -337,24 +321,21 @@ static SmartPtr word_designator(const char *&sp , const char *histring ,
 	end = argc-1;
       }
       while( ++n <= end ){
-	*dp++ = ' ';
-	argv[ n ] >> dp;
-	dp += argv[ n ].len;
+	buf << ' ';
+	buf.paste( argv[ n ].ptr , argv[ n ].len );
       }
     }
-    return dp;
+    return;
   }
-  while( *histring != '\0' )
-    *dp++ = *histring++;
-  *dp = '\0';
-  return dp;
+  buf << histring;
+  return;
 }
 /* 「!」で始まるヒストリ参照子を、対応するヒストリ内容に置換する。
  *	sp ... 置換前の「!」を差すポインタ
  *	dp ... 置換後の結果をコピーするスマートポインタ
  * return コピーした末尾を差すスマートポインタ
  */
-static SmartPtr history_copy(const char *&sp, SmartPtr dp )
+static void history_copy(const char *&sp, StrBuffer &buf)
 {
   /* 引数 sp は、「!」を指していると仮定 */
   const char *histring=0;
@@ -425,7 +406,7 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
   }/* end of switch */
 
   if( histring == NULL )
-    return dp;
+    return;
 
   switch( *sp ){
   case ':':
@@ -433,13 +414,12 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
   case '^':
   case '$':
   case '*':
-    return word_designator( sp , histring , dp );
+    word_designator( sp , histring , buf );
+    return;
     
   default:
-    while( *histring != '\0' )
-      *dp++ = *histring++;
-    *dp = '\0';
-    return dp;
+    buf << histring;
+    return;
   }
 }
 
@@ -448,16 +428,16 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
  *	_dp .. 置換結果を入れるバッファ
  *	max .. バッファサイズ
  */
-void replace_history(const char *sp, char *_dp , int max )
+char *replace_history(const char *sp) throw(StrBuffer::MallocError)
 {
-  SmartPtr dp(_dp,max);
+  StrBuffer buf;
   
   int is_history_refered=0;
   int quote=0;
   int prevchar=' ';
 
   if( *sp=='!' ){
-    dp = history_copy(sp,dp);
+    history_copy(sp,buf);
     is_history_refered = 1 ;
   }
 
@@ -469,19 +449,14 @@ void replace_history(const char *sp, char *_dp , int max )
   if(   (sp[0]=='c' || sp[0]=='C')
      && (sp[1]=='d' || sp[1]=='D')
      && (sp[2]=='.' || sp[2]=='\\' || sp[2]=='/' ) ){
-    *dp++ = *sp++; // c
-    *dp++ = *sp++; // d
-    *dp++ = ' ';
-    *dp++ = *sp++; // 「.」「/」or「\」
+    buf << sp[0] << sp[1] << ' ' << sp[2];
+    sp += 3;
   }else if(   (sp[0]=='d' || sp[0]=='D')
 	   && (sp[1]=='i' || sp[1]=='I')
 	   && (sp[2]=='r' || sp[2]=='R')
 	   && (sp[3]=='.' || sp[3]=='\\' || sp[3]=='/' ) ){
-    *dp++ = *sp++; // d
-    *dp++ = *sp++; // i
-    *dp++ = *sp++; // r
-    *dp++ = ' ';
-    *dp++ = *sp++; // 「.」「/」or「\」
+    buf << sp[0] << sp[1] << sp[2] << ' ' << sp[3];
+    sp += 4;
   }
   
   while( *sp != '\0' ){
@@ -496,6 +471,24 @@ void replace_history(const char *sp, char *_dp , int max )
 	quote ^= 1;
       break;
 
+    case '>': /* リダイレクトに関わる「!」がひっかからないようにする */
+      if( sp[1] == '!' ){
+	buf << ">!";
+	sp+=2;
+      }else if( sp[1]=='&'  &&  sp[2] == '!' ){
+	buf << ">&!";
+	sp+=3;
+      }else if( sp[1]=='>'  &&  sp[2] == '!' ){
+	buf << ">>!";
+	sp+=3;
+      }else if( sp[1]=='>'  &&  sp[2] == '&' &&  sp[3] == '!' ){
+	buf << ">>&!";
+	sp+=4;
+      }else{
+	break;
+      }
+      continue;
+      
     case '!':
       if(  option_tcshlike_history
 	 && (   option_history_in_doublequote
@@ -503,30 +496,29 @@ void replace_history(const char *sp, char *_dp , int max )
 	/* history_in_doublequote が有効(not 0)ならば、
 	 *    "～!～"はヒストリ変換する。
 	 */
-
-	dp = history_copy(sp,dp);
+	
+	history_copy(sp,buf);
 	/* is_history_refered = 1; */
       }
       break;
     } // end of switch
 
-    prevchar = *dp++ = *sp++;    
-    if( is_kanji(prevchar) ){
-      *dp++ = *sp++;
-    }
-
+    buf << (char)(prevchar = *sp++);
+    if( is_kanji(prevchar) )
+      buf << *sp++;
   } // end of while
-  *dp = '\0';
 
   // ヒストリが参照されている場合は、変換後文字列を画面に表示する。
   if( is_history_refered ){
-    fputs_ctrl( _dp , stdout );
+    fputs_ctrl( (const char *)buf , stdout );
     putc( '\n' , stdout );
   }
 
   /* ヒストリを登録する。*/
   PublicHistory *tmp=new PublicHistory;
-  if( tmp != NULL && !are_spaces(_dp) && (tmp->string=strdup(_dp))!=NULL ){
+  if(   tmp != NULL
+     && !are_spaces((const char*)buf)
+     && (tmp->string=strdup((const char*)buf))!=NULL ){
     /* (prev)   旧public_history ≪ tmp ≪ public_history->next  (next) 
      *  古い                     (1)    (2)   (=NULL)            新しい
      */
@@ -547,147 +539,164 @@ void replace_history(const char *sp, char *_dp , int max )
     public_history = public_history->next = tmp ;
 #endif
     nhistories++;
-    if( option_same_history ){
+    if( option_same_history )
       Shell::replace_last_history( tmp->string );
-    }
   }
+  return buf.finish();
 }
+void replace_history(const char *sp, char *_dp , int max )
+{
+  try{
+    char *result=replace_history(sp);
+    strncpy( _dp , result , max );
+    free(result);
+  }catch( StrBuffer::MallocError ){
+    strncpy( _dp , sp , max );
+  }
+  _dp[ max-1 ] = '\0';
+}
+
 
 /* プリプロセス：環境変数、チルダ、「...」などの展開を行う。
  *	sp 変換前文字列
  *	_dp コピー先バッファ
  *	max バッファサイズ
  */
-void preprocess(const char *sp, char *_dp , int max )
+char *preprocess(const char *sp) throw (StrBuffer::MallocError)
 {
-  SmartPtr dp(_dp,max);
+  StrBuffer buf;
   QuoteFlag qf;
   int prevchar=' ';
 
-  try{
-    if( *sp == '@' )
+  if( *sp == '@' )
+    ++sp;
+  
+  while( *sp != '\0' ){
+    switch( *sp ){
+    case '\'':
+    case '"':
+      qf.eval( *sp );
+      break;
+      
+    case ';': /* 空白＋「；」を「&;」に変換する */
       ++sp;
-
-    while( *sp != '\0' ){
-      switch( *sp ){
-      case '\'':
-      case '"':
-	qf.eval( *sp );
-	break;
-	
-      case ';': /* 空白＋「；」を「&;」に変換する */
-	++sp;
-	if(   Parse::option_semicolon_terminate 
-	   && !qf.isInQuote() && is_space(prevchar) ){
-	  *dp++ = '&';
-	}
-	*dp++ = ';';
-	continue;
-	
-      case '.': /* 空白＋「...」を「..\..」に変換する */
-	if(   option_dots 
-	   && !qf.isInQuote()
-	   && is_space(prevchar) && sp[1]=='.' && sp[2]=='.' ){
-	  
-	  ++sp;
-	  /* sp は二つ目の . を差している。*/
-	  for(;;){
-	    dp << "..";
-	    if( *++sp != '.' )
-	      break;
-	    *dp++ = '\\';
-	  }
-	  continue;
-	}
-	break;
-	
-      case '~':
-	if(    option_tilda_is_home  &&  !qf.isInQuote()
-	   &&  is_space(prevchar) ){
-	  if( *(sp+1) != '\\' && *(sp+1) != '/' && !option_tilda_without_root){
-	    /* option tilda_without_root が off の時は
-	     * "~hogehoge" で変換しない。 
-	     * ちょっと、こんな書き方、醜いけど…。
-	     */
-	    break;
-	  }else if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
-	    ++sp;
-	    const char *system_ini = getShellEnv("SYSTEM_INI");
-	    if( system_ini == NULL ){
-	      *dp++ = '?';
-	    }else{
-	      *dp++ = *system_ini;
-	    }
-	  }else{ /* 普通の UNIX 的チルダの変換 */
-	    dp = insert_env("HOME",dp);
-	    if( isalnum(*++sp&255) || is_kanji(*sp&255) ){
-	      dp << (char) Edlin::complete_tail_char << ".."
-		<< (char)(prevchar=Edlin::complete_tail_char) ;
-	    }else{
-	      prevchar = '~';
-	    }
-	  }
-	  if( option_replace_slash_to_backslash_after_tilda ){
-	    /* チルダの後の「/」を全て「\」に変換する。 */
-	    for(;;){
-	      if( *sp == '\0' )
-		goto exit;
-	      if( is_space(*sp) )
-		break;
-	      if( is_kanji(*sp) ){
-		prevchar = *dp++ = *sp++;
-		*dp++ = *sp++;
-	      }else if( *sp=='/' ){
-		++sp;
-		prevchar = *dp++ = '\\';
-	      }else{
-		prevchar = *dp++ = *sp++;
-	      }
-	    }
-	  }
-	  continue;
-	}
-	break;
-	
-      case '%':
-
-	if( !qf.isInDoubleQuote() ){
-	  char envname[128];
-	  
-	  ++sp; /* 最初の％を読みとばす */
-	  char *ddp=envname;
-	  while( *sp != '\0' && ddp < envname+sizeof(envname)-2 ){
-	    if( *sp=='%' ){
-	      /* 最後の sp を読みとばす */
-	      prevchar = *sp++;
-	      break;
-	    }
-	    prevchar = *ddp++ = toupper(*sp & 255);
-	    ++sp;
-	  }
-	  *ddp = '\0';
-	  if( envname[0] == '\0' ){
-	    *dp++ = '%';	/* 「%%」は一つの「%」へ変換する */
-	  }else{
-	    dp = insert_env(envname,dp);
-	  }
-	  continue;
-	}
-	break;
-	
-      } /* end of switch () */
-      if( is_kanji(*sp) ){
-	prevchar = *dp++ = *sp++;
-	*dp++ = *sp++;
-      }else{
-	prevchar = *dp++ = *sp++;
+      if(   Parse::option_semicolon_terminate 
+	 && !qf.isInQuote() && is_space(prevchar) ){
+	buf << '&';
       }
+      buf << ';';
+      continue;
+      
+    case '.': /* 空白＋「...」を「..\..」に変換する */
+      if(   option_dots 
+	 && !qf.isInQuote()
+	 && is_space(prevchar) && sp[1]=='.' && sp[2]=='.' ){
+	
+	++sp;
+	/* sp は二つ目の . を差している。*/
+	for(;;){
+	  buf << "..";
+	  if( *++sp != '.' )
+	    break;
+	  buf << '\\';
+	}
+	continue;
+      }
+      break;
+      
+    case '~':
+      if(    option_tilda_is_home  &&  !qf.isInQuote()
+	 &&  is_space(prevchar) ){
+	if( *(sp+1) != '\\' && *(sp+1) != '/' && !option_tilda_without_root){
+	  /* option tilda_without_root が off の時は
+	   * "~hogehoge" で変換しない。 
+	   * ちょっと、こんな書き方、醜いけど…。
+	   */
+	  break;
+	}else if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
+	  ++sp;
+	  const char *system_ini = getShellEnv("SYSTEM_INI");
+	  if( system_ini == NULL ){
+	    buf << '?';
+	  }else{
+	    buf << *system_ini;
+	  }
+	}else{ /* 普通の UNIX 的チルダの変換 */
+	  insert_env("HOME",buf);
+	  if( isalnum(*++sp&255) || is_kanji(*sp&255) ){
+	    buf << (char) Edlin::complete_tail_char << ".."
+	      << (char)(prevchar=Edlin::complete_tail_char) ;
+	  }else{
+	    prevchar = '~';
+	  }
+	}
+	if( option_replace_slash_to_backslash_after_tilda ){
+	  /* チルダの後の「/」を全て「\」に変換する。 */
+	  for(;;){
+	    if( *sp == '\0' )
+	      return buf.finish();
+	    if( is_space(*sp) )
+	      break;
+	    if( is_kanji(*sp) ){
+	      buf << (char)(prevchar=*sp++);
+	      buf << *sp++;
+	    }else if( *sp=='/' ){
+	      ++sp;
+	      buf << (char)(prevchar='\\');
+	    }else{
+	      buf << (char)(prevchar = *sp++);
+	    }
+	  }
+	}
+	continue;
+      }
+      break;
+      
+    case '%':
+      
+      if( !qf.isInDoubleQuote() ){
+	StrBuffer envname;
+	
+	++sp; /* 最初の％を読みとばす */
+	while( *sp != '\0' ){
+	  if( *sp=='%' ){
+	    /* 最後の sp を読みとばす */
+	    prevchar = *sp++;
+	    break;
+	  }
+	  envname << (char)(prevchar = toupper(*sp & 255) );
+	  ++sp;
+	}
+	if( envname[0] == '\0' ){
+	  buf << '%';	/* 「%%」は一つの「%」へ変換する */
+	}else{
+	  insert_env((const char*)envname,buf);
+	}
+	continue;
+      }
+      break;
+      
+    } /* end of switch () */
+    if( is_kanji(*sp) ){
+      buf << (char)(prevchar=*sp++);
+      buf << *sp++;
+    }else{
+      buf << (char)(prevchar=*sp++);
     }
-  exit:
-    *dp = '\0';
-  }catch( SmartPtr::BorderOut ){
-    dp.terminate();
   }
+  return buf.finish();
+}
+
+void preprocess(const char *sp, char *_dp , int max )
+{
+  try{
+    char *result=preprocess(sp);
+    strncpy( _dp , result , max );
+    free(result);
+  }catch( StrBuffer::MallocError ){
+    strncpy( _dp , sp , max );
+  }
+  _dp[ max-1 ] = '\0';
 }
 
 

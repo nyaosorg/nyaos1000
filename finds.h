@@ -72,8 +72,6 @@ public:
   int is_hidden()   const { return buffer.attrFile & HIDDEN; }
   int is_readonly() const { return buffer.attrFile & READONLY; }
 
-
-
   /* FDATE ‚ÍA5bit:“ú 4bit:Œ 7bit:”N
    * FTIME ‚ÍA5bit:•b‚Ì2”{ 4bit:•ª 5: */
 

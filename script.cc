@@ -69,14 +69,40 @@ int cmd_cache(FILE *source, Parse &args )
  */
 int cmd_rehash(FILE *source , Parse &args )
 {
-  Complete::make_command_cache();
+  bool quiet=false;
+  bool atzero=false;
+
+  for(int i=0;i<args.get_argc();i++){
+    if( args[i][0]=='-' ){
+      for(int j=1;j<args[i].len;j++){
+	switch( args[i][j] ){
+	case 'q':
+	case 'Q':
+	  quiet = true;
+	  break;
+	  
+	case 'n':
+	case 'N':
+	  atzero = true;
+	  break;
+	}
+      }
+    }
+  }
   script_hash.destruct_all();
-  FILE *fout=args.open_stdout();
-  if( fout != NULL ){
-    fprintf(fout
-	    , "%d bytes are used for %d commands'name cache.\n"
-	    , Complete::queryBytes() , Complete::queryFiles()
-	    );
+
+  if( atzero  &&  Complete::queryFiles() > 0 )
+    return 0;
+
+  Complete::make_command_cache();
+  if( !quiet ){
+    FILE *fout=args.open_stdout();
+    if( fout != NULL ){
+      fprintf(fout
+	      , "%d bytes are used for %d commands'name cache.\n"
+	      , Complete::queryBytes() , Complete::queryFiles()
+	      );
+    }
   }
   return 0;
 }
@@ -257,7 +283,8 @@ static void expand_sos(  StrBuffer &buf
  *	fname スクリプトのファイル名
  *	return インタプリタ名(ヒープの文字列:freeが必要)
  */
-static char *read_script_header( const char *fname ) throw(StrBuffer::MallocError)
+static char *read_script_header( const char *fname )
+     throw(StrBuffer::MallocError)
 {
   AutoFilePtr fp(fname,"r");
   if( fp==NULL )
@@ -355,7 +382,7 @@ static bool is_inner_command( const char *name ) throw()
  * throw
  *	StrBuffer::MallocError 文字通り
  */
-char *replace_script( const char *sp ) throw(StrBuffer::MallocError)
+char *replace_script( const char *sp ) throw(MallocError)
 {
   StrBuffer buf;
   

@@ -1,7 +1,7 @@
 #include <io.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <stdlib.h>
+// #include <stdlib.h>
 #include "macros.h"
 #include "finds.h"
 

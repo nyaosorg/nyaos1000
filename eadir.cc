@@ -3,6 +3,8 @@
  *
  */
 
+#undef DEBUG
+
 #include <process.h>
 #include <assert.h>
 #include <ctype.h>
@@ -16,7 +18,7 @@
 #include <signal.h>
 
 #include "strbuffer.h"
-#include "SmartPtr.h"
+// #include "SmartPtr.h"
 #include "keyname.h"
 #include "errmsg.h"
 
@@ -26,6 +28,12 @@
 #include "nyaos.h"
 #include "complete.h"
 #include "finds.h"
+
+#ifdef DEBUG
+#  define DEBUG1(x) (x)
+#else
+#  define DEBUG1(x)
+#endif
 
 extern volatile int ctrl_c;
 extern int screen_width;
@@ -146,19 +154,31 @@ static int print_num_with_comma(int width,int n,FILE *fp)
  */
 char *get_asciitype_ea( const char *fname , const char *eatype , int *pLen=0 )
 {
+#ifdef S2NYAOS
+  return NULL;
+#else
   struct _ea ea;
   union MultiPtr ptr;
   
+  DEBUG1( fputs("(get_asciitype_ea) enter\n",stderr) );
+
   if( _ea_get( &ea , fname , 0 , eatype ) != 0 
-     || ea.size <= 0 || ea.value == NULL )
+     || ea.size <= 0 || ea.value == NULL ){
+    DEBUG1( fputs("(get_asciitype_ea) leave : case 1\n",stderr) );
     return NULL;
+  }
+
+  DEBUG1( fputs("(get_asciitype_ea) hogehoge\n",stderr) );
 
   ptr.value = ea.value;
   int type = *ptr.word++;
   if( type != 0xFFFD ){
     _ea_free(&ea);
+    DEBUG1( fputs("(get_asciitype_ea) leave : case 2\n",stderr) );
     return NULL;
   }
+
+  DEBUG1( fputs("(get_asciitype_ea) tochu-\n",stderr) );
   
   int size = *ptr.word++; /* 実際のサイズ */
   StrBuffer sbuf;
@@ -179,10 +199,12 @@ char *get_asciitype_ea( const char *fname , const char *eatype , int *pLen=0 )
   if( pLen != 0 )
     *pLen = sbuf.getLength();
 
+  DEBUG1( fputs("(get_asciitype_ea) leave : case 3\n",stderr) );
   if( sbuf.getLength() <= 0 )
     return NULL;
   else
     return sbuf.finish();
+#endif
 }
 
 /* ポインタ配列と、その中のポインタの示すHeapを全て解放する。
@@ -202,6 +224,7 @@ void free_pointors(char **table)
  */
 char **get_ea_comments( const char *fname )
 {
+#ifndef S2NYAOS
   struct _ea ea;
   union MultiPtr ptr;
 
@@ -241,6 +264,7 @@ char **get_ea_comments( const char *fname )
 
  errpt:
   _ea_free( &ea );
+#endif
   return NULL;
 }
 
@@ -383,13 +407,6 @@ static void more( FILE *fout )
   ncolumns = 0;
 }
 
-static void smart_copy( SmartPtr &dp , const char *sp )
-{
-  while( *sp != '\0' )
-    *dp++ = *sp++;
-  *dp = '\0';
-}
-
 /* 「ls -l」形式で、一ファイルを表示する 
  *	flist … 対象ファイルの情報
  *	max_length … 最大ファイル名の流さ
@@ -401,62 +418,59 @@ void dir1(  const FileListT *flist , int max_length
 {
   int tailchar = ' ';
 
-  char headstr[ 128 ];
-  SmartPtr headstrp(headstr,sizeof(headstr));
+  StrBuffer headstr;
 
   enum{
     AS_DIR , AS_READ , AS_WRITE , AS_EXEC , AS_ARCHIVE ,
     AS_HIDDEN , AS_SYSTEM , AS_EA , NUM_AS ,
   };
   char attrstr[ NUM_AS+1 ];
-  try{
-    for(int i=0 ; i<NUM_AS ; i++ )
-      attrstr[ i ] = '-';
 
-    attrstr[ NUM_AS   ] = '\0';
-    attrstr[ AS_READ  ] = 'r';
-    attrstr[ AS_WRITE ] = 'w';
-    
-    const char *top=flist->name;
-    for(const char *p=flist->name ; *p != '\0' ; p++ ){
-      if( *p == '\\' || *p == '/' )
-	top = p+1 ;
-    }
-    
-    /* 隠しファイルは表示せず、終了 */
-    if( is_file_print(flist)==0 )
-      return;
-    
-    if( flist->attr & A_DIR ){
-      smart_copy( headstrp , ls_directory );
-      attrstr[ AS_DIR ] = 'd';
-      attrstr[ AS_EXEC ] = 'x';
-      tailchar = '/';
-    }else if( flist->attr & A_HIDDEN ){
-      if( ! ls_flag[ LS_ALL ] )
-	return;
-      for(const char *sp=ls_hidden_file ; *sp != '\0' ; sp++ )
-	*headstrp++ = *sp;
-      smart_copy( headstrp , ls_hidden_file );
-      attrstr[ AS_HIDDEN ] = 'h';
-    }else if( flist->attr & A_SYSTEM ){
-      smart_copy( headstrp , ls_system_file );
-      attrstr[ AS_SYSTEM ] = 's';
-    }else if( flist->attr & A_LABEL ){
-      smart_copy( headstrp , ls_system_file );
-      attrstr[ AS_SYSTEM ] = 'L' ;
-    }else if( which_suffix(flist->name,"EXE","COM","CMD","BAT",NULL) != 0 ){
-      smart_copy( headstrp , ls_executable_file );
-      tailchar = '*';
-      attrstr[ AS_EXEC ] = 'x';
-    }else if( flist->attr & A_RONLY ){
-      smart_copy( headstrp , ls_read_only_file );
-    }else{
-      smart_copy( headstrp , ls_normal_file );
-    }
-  }catch( SmartPtr::BorderOut ){
-    headstrp.terminate();
+  for(int i=0 ; i<NUM_AS ; i++ )
+    attrstr[ i ] = '-';
+  
+  attrstr[ NUM_AS   ] = '\0';
+  attrstr[ AS_READ  ] = 'r';
+  attrstr[ AS_WRITE ] = 'w';
+  
+  const char *top=flist->name;
+  for(const char *p=flist->name ; *p != '\0' ; p++ ){
+    if( *p == '\\' || *p == '/' )
+      top = p+1 ;
   }
+  
+  /* 隠しファイルは表示せず、終了 */
+  if( is_file_print(flist)==0 )
+    return;
+  
+  if( flist->attr & A_DIR ){
+    headstr << ls_directory ;
+    attrstr[ AS_DIR ] = 'd';
+    attrstr[ AS_EXEC ] = 'x';
+    tailchar = '/';
+  }else if( flist->attr & A_HIDDEN ){
+    if( ! ls_flag[ LS_ALL ] )
+      return;
+    for(const char *sp=ls_hidden_file ; *sp != '\0' ; sp++ )
+      headstr << *sp;
+    headstr << ls_hidden_file;
+    attrstr[ AS_HIDDEN ] = 'h';
+  }else if( flist->attr & A_SYSTEM ){
+    headstr << ls_system_file;
+    attrstr[ AS_SYSTEM ] = 's';
+  }else if( flist->attr & A_LABEL ){
+    headstr << ls_system_file ;
+    attrstr[ AS_SYSTEM ] = 'L' ;
+  }else if( which_suffix(flist->name,"EXE","COM","CMD","BAT",NULL) != 0 ){
+    headstr << ls_executable_file;
+    tailchar = '*';
+    attrstr[ AS_EXEC ] = 'x';
+  }else if( flist->attr & A_RONLY ){
+    headstr << ls_read_only_file;
+  }else{
+    headstr << ls_normal_file;
+  }
+  
   if( flist->attr & A_RONLY )
     attrstr[ AS_WRITE ] = '-';
   
@@ -474,7 +488,7 @@ void dir1(  const FileListT *flist , int max_length
   /* ls モードの時は、このブロックだけで return する */
   if( ! ls_flag[ LS_LONG] ){
     if( ! ls_flag[ LS_NOCOLOR] )
-      fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
+      fprintf(fout,"%s%s%s",ls_left_code,(const char*)headstr,ls_right_code);
     
     dbcs_fputs(flist->name,fout);
     if( ! ls_flag[ LS_NOCOLOR ] )
@@ -568,7 +582,7 @@ void dir1(  const FileListT *flist , int max_length
   }
   
   if( ! ls_flag[ LS_NOCOLOR ] )
-    fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
+    fprintf(fout,"%s%s%s",ls_left_code,(const char*)headstr,ls_right_code);
   
   ncolumns += dbcs_fputs(flist->name,fout);
 
@@ -1076,14 +1090,17 @@ int eadir( int argc, char **argv,FILE *fout,Parse &parser)
       /* dotfile や Hidden属性があっても、直接コマンドラインで指定しているの
        * だから、表示させる 
        */
+      files.sort( ls_flag[ LS_SORT ] );
       
       int flagsave=ls_flag[ LS_ALL ];
       ls_flag[ LS_ALL ] = 1;
       print_filelist( files , fout );
       ls_flag[ LS_ALL ] = flagsave;
 
-      if( dirs.get_num() > 0 )
+      if( dirs.get_num() > 0 ){
+	dirs.sort( ls_flag[ LS_SORT ] );
 	more(fout);
+      }
     }
 
     FileListT *p=dirs.get_top();
