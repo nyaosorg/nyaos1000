@@ -22,13 +22,14 @@
 
 #include <sys/video.h>
 
+#define INCL_DOSNLS
 #include "nyaos.h"
 #include "complete.h"
 #include "finds.h"
 
-/* #define INCL_VIO
-   #include <os2.h>
-*/
+// #define INCL_VIO
+//   #include <os2.h>
+
 extern volatile int ctrl_c;
 extern int screen_width;
 extern int screen_height;
@@ -169,6 +170,32 @@ extern "C" {
 			      unsigned short hvio );
 }
 
+static int dbcs_fputs(const char *s,FILE *fout)
+{
+  int i=0;
+
+  ULONG CpList[8];
+  ULONG CpSize;
+
+  if( DosQueryCp(sizeof(CpList),CpList,&CpSize)==0 && CpList[0] == 932 ){
+    while( *s != '\0' ){
+      putc( *s++ , fout );
+      i++;
+    }
+  }else{
+    while( *s != '\0' ){
+      if( *s & ~127 ){
+	putc( '?' , fout);
+      }else{
+	putc( *s , fout );
+      }
+      ++s;
+      i++;
+    }
+  }
+  return i;
+}
+
 void more(int flag,FILE *fout)
 {
   if( (flag & HALF_MODE)!=0 && (fout==stdout || fout==stderr) ){
@@ -252,7 +279,8 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
     if( flag & COLOR_MODE )
       fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
     
-    fputs(flist->name , fout );
+    dbcs_fputs(flist->name,fout);
+    /* fputs(flist->name , fout ); */
     if( flag & COLOR_MODE )
       fputs(ls_end_code,fout);
     putc(tailchar,fout);
@@ -282,7 +310,8 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
   if( flag & COLOR_MODE ){
     fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
   }
-  ncolumns += fprintf(fout,"%s",flist->name);
+  ncolumns += dbcs_fputs(flist->name,fout);
+  /* ncolumns += fprintf(fout,"%s",flist->name); */
   if( flag & COLOR_MODE )
     fputs(ls_end_code,fout);
   
@@ -338,9 +367,16 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 	while( nspaces-- > 0 )
 	  putc( ' ' , fout );
 	
-	if( flag & COLOR_MODE )
-	  fprintf(fout,"%s%s%s%s%s",
-		  ls_left_code,ls_longname,ls_right_code,s,ls_end_code);
+	if( flag & COLOR_MODE ){
+	  fputs( ls_left_code , fout );
+	  dbcs_fputs( ls_longname , fout );
+	  fputs( ls_right_code , fout );
+	  fputs( ls_end_code , fout );
+	  /* 
+	   * fprintf(fout,"%s%s%s%s%s",
+	   * ls_left_code,ls_longname,ls_right_code,s,ls_end_code);
+	   */
+	}
 	else
 	  while( *s != '\0' )
 	    putc( *s++ , fout );
@@ -365,8 +401,9 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 	  if( (flag & PRINT_MASK)== INDEX_MODE &&  ncolumns < 8 )
 	    putc('\t',fout);
 	  putc('\t',fout);
-	  if( flag & COLOR_MODE )
+	  if( flag & COLOR_MODE ){
 	    fprintf(fout,"%s%s%s",ls_left_code,ls_comment,ls_right_code);
+	  }
 	  while( size-- > 0 ){
 	    putc( *ptr.byte++ , fout );
 	  }
@@ -526,8 +563,13 @@ int the_dir(const char *dirname,int flag , FILE *fout )
 
     if( flag & COLOR_MODE )
       fprintf( fout, "\n%s%s:\n",ls_end_code , fullpath );
-    else
-      fprintf( fout, "\n%s:\n", fullpath );
+    else{
+      putc('\n',fout);
+      dbcs_fputs(fullpath,fout);
+      putc(':',fout);
+      putc('\n',fout);
+      /* fprintf( fout, "\n%s:\n", fullpath ); */
+    }
 
     the_dir( fullpath , flag , fout );
     
@@ -591,7 +633,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     
     /* オプション文字列 */
     if( argv[i][0] == '-' ){
-      for( const char *p=&argv[i][1] ;  *p != '\0' ; p++ ){
+      for( const char *p=argv[i]+1 ; *p != '\0' ; p++ ){
 	switch( *p ){
 	  /* ------- 互換オプション ------ */
 	case 'a':
@@ -766,10 +808,14 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     if( p != NULL ){
       for(;;){
 	if( dircount+filecount > 1 ){
-	  if( flag & COLOR_MODE )
-	    fprintf(fout,"%s%s : \n",ls_end_code,p->name);
-	  else
-	    fprintf(fout,"%s : \n",p->name);
+	  if( flag & COLOR_MODE ){
+	    fputs( ls_end_code , fout);
+	    dbcs_fputs(p->name,fout);
+	    fputs( " : \n",fout);
+	  }else{
+	    dbcs_fputs(p->name,fout);
+	    fputs(" : \n",fout);
+	  }
 	}
 	
 	the_dir( p->name , flag , fout );

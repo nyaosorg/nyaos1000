@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include <time.h>
 
-#define VERSION "1.32"
+#define VERSION "1.33"
 
 // #define INCL_WINWINDOWMGR
 #define INCL_DOSFILEMGR
@@ -30,6 +30,7 @@ int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 
 extern int nhistories;
 
+int prompt_myself=1;
 int screen_width=80;
 int screen_height=25;
 int option_vio_cursor_control=1;
@@ -86,6 +87,45 @@ static char **env2argv(const char *envname)
 }
 #endif
 
+char *getcwd_case(char *dst)
+{
+  char cwd[ FILENAME_MAX ];
+
+  *dst++ = _getdrive();
+  *dst++ = ':';
+  char *dp=dst;
+
+  if( _getcwd( cwd , sizeof(cwd) ) == NULL )
+    return dp;
+  
+  /* 「x:\」までをコピーする。*/
+  char *token=strtok(cwd+1,"\\/");
+  if( token != NULL ){
+    do{
+      *dp++ = '\\';
+      char *p=dp;
+      while( *token != '\0' )
+	*p++ = *token++;
+      *p = '\0';
+
+      Dir dir;
+      if( dir._findfirst(dst) == 0 ){
+	const char *q=dir.get_name();
+	while( *q != '\0' )
+	  *dp++ = *q++;
+	*dp = '\0';
+      }else{
+	dp = p;
+      }
+    }while((token=strtok(NULL,"\\/"))!=NULL );
+  }else{
+    /* ルートディレクトリー only */
+    *dp++ = '\\';
+  }
+  *dp = '\0';
+  return dp;
+}
+
 void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 {
   const char *sp;
@@ -100,8 +140,15 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
     if( *promptenv == '$' ){
       switch( promptenv++ , to_upper(*promptenv) ){
 	
-      case '!':
+      case '!': /* ヒストリ番号 */
 	dp += sprintf(dp,"%d",nhistories );
+	break;
+      case '@': /* ボリュームラベル */
+	sp = _getvol(0);
+	if( sp != NULL ){
+	  while( *sp != '\0' )
+	    *dp++ = *sp++;
+	}
 	break;
 
       case '$': *dp++ = '$';	  break;
@@ -198,6 +245,7 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	break;
 	
       case 'P':/* カレントディレクトリ */
+#if 0
 	*dp++ = _getdrive();
 	*dp++ = ':';
 	/* unsigned */ char cwd[256];
@@ -211,6 +259,8 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	  while( *sp != '\0' )
 	    *dp++ = *sp++;
 	}
+#endif
+	dp = getcwd_case(dp);
 	break;
 	
       case 'Q': *dp++ = '=';	  break;
@@ -281,6 +331,13 @@ int main(int argc, char **argv)
       fprintf(stderr,"NYAOS: can not find cmd.exe.");
       return -1;
     }
+    /* 念の為、forward-slash を back-slash に変えておく。*/
+    for(char *p=cmdexe_path ; *p != '\0' ; p++ ){
+      if( *p == '/' )
+	*p == '\\';
+      else if( is_kanji(*p) )
+	++p;
+    }
     sprintf(comspec,"COMSPEC=%s",cmdexe_path);
     putenv(comspec);
   }
@@ -336,29 +393,47 @@ int main(int argc, char **argv)
     }
   }
 
+  /* 
+   */
+     
   if( isatty(fileno(stdin)) && !quite_mode ){
-    printf("\x1b[2J\x1b[1m"
-	   "\n"
-	   "  oo  oo oo  oo  oooo   oooo   oooo      Free Software     \n"
-	   "  ooo oo oo  oo oo  oo oo  oo oo   o  Nihongo Yet Another  \n"
-	   "  oooooo  oooo  oooooo oo  oo   oo     Os/2 Shell "VERSION"\n"
-	   "  oo ooo   oo   oo  oo oo  oo o   oo         (C)           \n"
-	   "  oo  oo   oo   oo  oo  oooo   oooo   1996,97 HAYAMA,Kaoru \n"
-	   "\n"
-	   "    This version is compiled on " __DATE__ " " __TIME__"   \n"
-	   "    Comments, suggestions, and bug reports are welcome.    \n"
-	   "    Please mail to kaoru@cheme.kyoto-u.ac.jp\n"
-	   );
+    extern int get_current_cp(void);
+    const char *term;
+
+    printf("\x1b[2J\x1b[1m");
+    if( get_current_cp() == 932 ){
+      printf("\n  ┏┓┳┳  ┳┏━┓┏━┓┏━┓  " 
+	     "\n  ┃┃┃┗━┫┣━┫┃  ┃┗━┓  "
+	     "\n  ┻┗┛┗━┛┻  ┻┗━┛┗━┛  "
+	     );
 #if 0
-    fputs( "          YAOS\r",stdout);
-    for(int i=0 ; i<9 ; i++ ){
-      fputc( (i & 1) ? 'Z' : 'N' , stdout);
-      fflush(stdout);
-      _sleep2( 50 );
-      fputs("\b ",stdout);
-    }
-    printf( "NYAOS "VERSION"\x1b[0m\n" );
+    }else if( (term=getenv("TERM"))==NULL || strcmp(term,"xterm")!=0 ){
+      /*      N                   Y                   A
+       *      O               S    */
+      printf("\n   "
+	     "\xC9\xCD\xBB\x20\xCB\xCB\xCD\x20\xCD\xCB\xC9\xCD\xCD\xCD\xBB"
+	     "\xC9\xCD\xCD\xCD\xBB\xC9\xCD\xCD\xCD\xBB"
+	     "\n   "
+	     "\xBA\x20\xBA\x20\xBA\xC8\xCD\xCD\xCD\xB9\xCC\xCD\xCD\xCD\xB9"
+	     "\xBA\x20\x20\x20\xBA\xC8\xCD\xCD\xCD\xBB"
+	     "\n   "
+	     "\xCA\x20\xC8\xCD\xBC\xC8\xCD\xCD\xCD\xBC\xCA\xCD\x20\xCD\xCA"
+	     "\xC8\xCD\xCD\xCD\xBC\xC8\xCD\xCD\xCD\xBC"
+	     );
 #endif
+    }else{
+      printf("\n   // /// //  //  ////   ////   /////"
+	     "\n  /// // ////// //  // //  // ///   "
+	     "\n // ///     // ////// //  //    /// "
+	     "\n/// //  ///// //  //  ////  /////   ");
+    }
+    
+    printf("\n          Free Software           "
+	   "\n- Nihongo Yet Another Os/2 Shell -"
+	   "\n     1996,97 (c) HAYAMA,Kaoru     "
+	   "\n Ver."VERSION" compiled on "__DATE__
+	   "\n\n"
+	   );
   }
 
  end_argv:
@@ -433,7 +508,6 @@ int main(int argc, char **argv)
 	fputs( promptstr , stdout );
 	fflush(stdout);
       }
-
       if( fgets_chop(cmdlin,sizeof(cmdlin),stdin) == NULL 
 	 || execute(stdin,cmdlin) == RC_QUIT )
 	return 0;
@@ -457,7 +531,7 @@ int main(int argc, char **argv)
     const char *promptenv=getenv("NYAOSPROMPT");
     if( promptenv==NULL && (promptenv=getenv("PROMPT")) == NULL )
       promptenv = "$p$g";
-
+    
     setprompt(promptenv , promptstr , &edlin );
     
     // ------------------------------------------------------------------

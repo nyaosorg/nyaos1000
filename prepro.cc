@@ -189,15 +189,25 @@ char *replace_envvar(const char *sp, char *_dp )
       
     case '~':
       if( option_tilda_is_home  &&  !quote  &&  is_space(prevchar) ){
-	/* is_space で _nls_is_dbcs_lead も兼ねている。*/
-	dp = insert_env("HOME",dp);
-	if( *++sp != '/' && *sp != '\\' && *sp != '\0' && !is_space(*sp) ){
-	  *dp++ = Edlin::complete_tail_char;
-	  *dp++ = '.';
-	  *dp++ = '.';
-	  prevchar = *dp++ = Edlin::complete_tail_char;;
-	}else{
-	  prevchar = '~';
+	if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
+	  ++sp;
+	  const char *system_ini = getenv("SYSTEM_INI");
+	  if( system_ini == NULL ){
+	    *dp++ = '?';
+	  }else{
+	    *dp++ = *system_ini;
+	  }
+	}else{ /* 普通の UNIX 的チルダの変換 */
+	  /* is_space で _nls_is_dbcs_lead も兼ねている。*/
+	  dp = insert_env("HOME",dp);
+	  if( *++sp != '/' && *sp != '\\' && *sp != '\0' && !is_space(*sp) ){
+	    *dp++ = Edlin::complete_tail_char;
+	    *dp++ = '.';
+	    *dp++ = '.';
+	    prevchar = *dp++ = Edlin::complete_tail_char;;
+	  }else{
+	    prevchar = '~';
+	  }
 	}
 	if( option_replace_slash_to_backslash_after_tilda ){
 	  /* チルダの後の「/」を全て「\」に変換する。 */

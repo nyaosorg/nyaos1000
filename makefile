@@ -11,14 +11,14 @@ CC = gcc -O2
 NYAOS=	nyaos.o edlin.o edlin2.o complete.o eadir.o shell.o \
 	foreach.o script.o alias.o parse.o execute.o chdirs.o \
 	commands.o prepro.o bindkey.o open.o source.o search.o \
-	cache.o
+	finds.o
 
 nyaos.exe : $(NYAOS)
 	$(CC) $(NYAOS) -o nyaos.out -lvideo -lwrap -Zcrtdll
 	emxbind nyaos.out
 	del nyaos.out
 
-cache.o : cache.cc
+finds.o : finds.cc
 chdirs.o : chdirs.cc
 bindkey.o : bindkey.cc
 nyaos.o : nyaos.cc edlin.h

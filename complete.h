@@ -53,6 +53,7 @@ class Complete {
   int common_length;
   int nlists;
   int max_length;
+  int typed_split_char ; /* “ü—Í‚³‚ê‚½ƒpƒX•ª—£•¶Žš ( 0 , / or \ ) */
 
   struct filelist *list , *findptr ;
   static const char *errmsg[];
@@ -67,8 +68,8 @@ public:
     ERROR
   } status;
 
-  Complete() : common_length(0) , nlists(0)
-     , list((struct filelist*)0) , status(NOT_COMPLETED){  }
+  Complete() : common_length(0) , nlists(0) , typed_split_char(0)
+     , list((struct filelist*)0) , status(NOT_COMPLETED) {  }
   ~Complete(){ cleanup(); }
 
   int makelist          (const char *path);
@@ -87,6 +88,8 @@ public:
   static int directory_split_char;
   static int complete_tail_tilda;
   static int complete_hidden_file;
+
+  int get_split_char(void){ return typed_split_char; }
 };
 
 #endif

@@ -65,6 +65,10 @@ extern int scriptflag,option_sos;
 void alias_replace(const char *sp,char *dp);
 int replace_script( const char *source , char *destinate );
 
+#if 0
+extern int prompt_myself;
+extern int option_fastmode;
+#endif
 extern int option_tilda_is_home;
 extern int option_replace_slash_to_backslash_after_tilda;
 int replace_envvar( const char *source , char *destinate );

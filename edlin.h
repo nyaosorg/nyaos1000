@@ -97,6 +97,8 @@ public:
   static int complete_tail_char;
   
   int simple_line_input();
+  static void raw_mode();
+  static void lineedit_mode();
 };
 
 /* OS/2 特化版 Edlin (エスケープシーケンス使用) */

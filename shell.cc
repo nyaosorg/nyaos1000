@@ -141,7 +141,8 @@ int ShellEdlin::simple_input(const char *prompt,int window)
 #endif
 void ShellEdlin::cls()
 {
-  fprintf( fp , (using_i_mark ? "\x1B[2J\n%s" : "\x1B[2J%s") , prompt );
+  fprintf( fp , (using_i_mark ? "\x1B[2J\x1B[H\n%s" : "\x1B[2J\x1B[H%s")
+	  , prompt );
   int i=0;
   while( i<windowsize && top+i < len )
     putchr( strbuf[top+i++] );

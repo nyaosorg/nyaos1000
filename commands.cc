@@ -3,7 +3,7 @@
 #include <sys/ea.h>
 #include <sys/nls.h>
 #include <sys/video.h>
-
+#include <ctype.h>
 #include <io.h>
 #include <process.h>
 
@@ -22,10 +22,33 @@ extern int option_tcshlike_history;
 
 int echoflag=0;
 
-int cmd_mode( FILE *source , Parse &params )
+int cmd_mode( FILE *source , Parse &args )
 {
+  if( to_upper(args[1].ptr[0])=='C' && to_upper(args[1].ptr[1])=='O' ){
+    char *p;
+    screen_width  = strtol(args[1].ptr+2,&p,0);
+    if( screen_width < 10 && screen_width > 300 ){
+      screen_width = 80;
+    }else{
+      static char buffer[20];
+      sprintf( buffer , "COLUMNS=%d" , screen_width );
+      putenv( buffer );
+      puts( buffer );
+    }
+    if( p != NULL  &&  *p == ',' && isdigit(*++p & 255 ) ){
+      screen_height = atoi(p);
+      if( screen_height < 10 & screen_height > 300 ){
+	screen_height = 25;
+      }else{
+	static char buffer[20];
+	sprintf( buffer , "LINES=%d" , screen_height );
+	putenv( buffer );
+	puts( buffer );
+      }
+    }
+  }
   char buffer[ 1024 ];
-  params.copyall(0,buffer);
+  args.copyall(0,buffer);
   system( buffer );
   if( option_vio_cursor_control ){
     v_getctype( &cursor_start , &cursor_end );
@@ -155,6 +178,9 @@ struct{
   { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
   { "cmdlike_crlf"         , &option_cmdlike_crlf              , 1  , 0 },
+#if 0
+  { "fast"                 , &option_fastmode                  , 1  , 0 },
+#endif
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
   { "prompt_even_piped"    , &option_prompt_even_piped         , 1  , 0 },
   { "script"               , &scriptflag                       , 1  , 0 },

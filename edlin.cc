@@ -1,10 +1,18 @@
+#include <assert.h>
 #include <stdlib.h>      /*** for _osmode             ***/
 #include <ctype.h>       /*** for isspace             ***/
 #include <dos.h>         /*** for _int86              ***/
-#include <sys/kbdscan.h> /*** for _read_kbd()         ***/
+/* #include <sys/kbdscan.h> /*** for _read_kbd()         ***/
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+
+#include <io.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <termios.h>
+#include <termio.h>
 
 #include "Edlin.h"
 #include "complete.h"
@@ -243,7 +251,7 @@ void Edlin::complete_core(int fntop,int basesize)
 
   if( nfiles == 1 ){
     if( com.findfirst()->attr & A_DIR ){
-      insert( complete_tail_char );
+      insert( com.get_split_char() ?: complete_tail_char );
     }else{
       if( quoted ){
 	insert('"');
@@ -529,15 +537,80 @@ void Edlin::clean_up()
   atrbuf[ 0 ] = SBC;
 }
 
+static int tty=-255;
+static struct termios orig,s;
+
+void Edlin::raw_mode()
+{
+  if( tty == -255 ){
+#if 0
+    tty = open("/dev/tty",O_RDONLY | O_BINARY );
+    if( tty < 0 )
+#endif
+      tty = 2;
+#if 1
+    ioctl(tty,TCGETA,&s);
+#else
+    tcgetattr(tty,&s);
+#endif
+    orig = s;
+  }
+  /* 端末の 行編集 / エコー / CRLFのエコー を off にする。*/
+  s.c_lflag &= ~( ICANON | ECHO | ECHOK | ECHONL );
+  /* 以下の二行は謎 */
+  s.c_oflag |=  ( TAB3 | OPOST | ONLCR );
+  s.c_oflag &= ~( OCRNL | ONOCR | ONLRET );
+
+  /* 一文字単位で、0秒で反応させる */
+  s.c_cc[VMIN] = 1;
+  s.c_cc[VTIME] = 0;
+  
+#if 1
+  tcsetattr(tty,TCSADRAIN,&s);
+#else
+  ioctl(tty,TCSETAW,&s);
+#endif
+}
+
+void Edlin::lineedit_mode()
+{
+#if 1
+  tcsetattr(tty,TCSADRAIN,&orig);
+#else
+  ioctl(tty,TCSETAW,&orig);
+#endif
+}
+
 int get86key(int wait)
 {
-  /* DOSでは_read_kbdで、漢字の第二バイト目が取得できない。*/
   if( _osmode == DOS_MODE ){
+    /* DOSでは_read_kbdで、漢字の第二バイト目が取得できない。*/
     union REGS regs;
     regs.h.ah = 0x7;
     return _int86( 0x21, &regs , &regs ) & 0xFF ;
+  }else{
+    unsigned char key;
+    int rc;
+
+    enum{ READ_INTR = -2 };
+    assert( tty != -255 );
+
+    do{
+      if( isatty( tty ) ){
+	fd_set readfds;
+	FD_ZERO( &readfds );
+	FD_SET(tty,&readfds );
+	if( select(tty+1,&readfds,NULL,NULL,NULL) == -1 )
+	  return 0;
+      }
+
+      rc= read( tty , &key , sizeof(char) );
+      if( rc < 0 )
+	return 0;
+    }while( rc != 1 );
+    return key & 0xFF;
   }
-  return _read_kbd(0,wait,0);
+  /* return _read_kbd(0,wait,0); */
 }
 
 int Edlin::getkey(int wait)

@@ -5,6 +5,56 @@
 #include "macros.h"
 #include "parse.h"
 
+#if 0
+const char *operator >> (const char *sp,Substr &me)
+{
+  if( sp==NULL )
+    return NULL;
+
+  /* 空白のスキップ */
+  while( is_space(*sp ) )
+    ++sp;
+
+  me.ptr = sp;
+  while( *sp != '\0' && !isspace(*sp) ){
+    if( *sp == '"' ){
+      ++sp;
+      while( *sp != '\0' && *sp++ != '"' )
+	;
+    }else{
+      if( is_kanji(*sp) )
+	++sp;
+      ++sp;
+    }
+  }
+  me.len = sp - me.ptr;
+  
+  return sp;
+}
+#endif
+
+char *Substr::quote(char *dp) const
+{
+  const char *tail=ptr+len;
+  const char *sp=ptr;
+  
+  while( sp < tail ){
+    /* 単一の「"」は無視するが、連続する「""」は「"」に変換する */
+    if( *sp == '"' ){
+      if( *++sp == '"' ){
+	*dp++ = '"';
+	sp++;
+      }
+    }else{
+      if( is_kanji(*sp) )
+	*dp++ = *sp++;
+      *dp++ = *sp++;
+    }
+  }
+  *dp = '\0';
+  return dp;
+}
+
 void Pipe::open(const char *cmdl,const char *modestr)
 {
   mode = modestr;
@@ -58,17 +108,29 @@ Parse::~Parse()
   }
   /* 引数の後始末 */
   if( args != argbase  &&  args != NULL )
-    free(args);
+    delete args;
 }
 
 int Parse::check_redirect()
 {
-  int mark=*sp;
-  if( is_kanji(*sp) )
+  int ionum;
+  if( *sp == '<' ){
+    ionum = 0;
     ++sp;
-
-  /*  >> , >& , >>& を許容 */
-  if( *++sp == '>' ){
+  }else if( *sp == '>' ){
+    if( *++sp == '>' ){
+      ionum = 2;
+      ++sp;
+    }else{
+      ionum = 1;
+    }
+  }else{
+    fprintf(stderr,"nyaos internal error occurs ( redirect ? )\n");
+    return 1;
+  }
+  
+  /* >& , >>& を許容 */
+  if( *sp == '>' ){
     isappend = true;
     ++sp;
   }
@@ -78,7 +140,7 @@ int Parse::check_redirect()
   while( isspace(*sp & 255) )
     ++sp;
 
-  const char *top=sp;
+  redirect[ ionum ].ptr = sp;
 
   if( tailcheck() )
     return err=-1;
@@ -98,17 +160,9 @@ int Parse::check_redirect()
       sp++;
     }
   }while( *sp != '\0'  &&  !isspace(*sp & 255) );
+
  exit:
-  switch( mark ){
-  case '>':
-    output_redirect = top;
-    output_redirect_length = sp-top;
-    break;
-  case '<':
-    input_redirect = top;
-    input_redirect_length = sp-top;
-    break;
-  }
+  redirect[ ionum ].len = sp - redirect[ ionum ].ptr ;
   return 0;
 }
 
@@ -118,7 +172,7 @@ int Parse::check_redirect()
  *
  * terminal は 「&」「|」「\0」が設定される。
  */
-int Parse::tailcheck()
+int Parse::tailcheck ()
 {
   if( *sp=='&' ){
     tail = sp++;
@@ -147,44 +201,59 @@ int Parse::tailcheck()
   return 0;
 }
 
-int Parse::check()
+int Parse::check ()
 {
   argc = 0;
-  output_redirect = NULL;
-  input_redirect = NULL;
+
+  redirect[0].clean();
+  redirect[1].clean();
+  redirect[2].clean();
+
   isappend = false;
   terminal = -1;
 
   for(;;){
+    if( argc+1 >= limit ){
+      if( args == argbase ){
+	args = new Substr[limit+=30];
+	assert( args != NULL );
+	for(int i=0;i<limit;i++)
+	  args[i] = argbase[i];
+      }else{
+	Substr *tmp=new Substr[limit + 30];
+	for(int i=0;i<limit;i++)
+	  tmp[i] = args[i];
+	delete args;
+	args = tmp;
+	limit += 30;
+	assert( args != NULL );
+      }
+    }
+
     /* 空白を読み飛ばす */
     while( *sp != '\0' &&  is_space(*sp) )
       ++sp;
 
-    if( tailcheck() != 0 )
+    if( tailcheck() != 0 ){
+      args[ argc ].ptr = NULL;
+      args[ argc ].len = 0;
       return terminal;
+    }
 
     if( *sp == '<' || *sp == '>' ){
-      /* リダイレクトマークがあるのに、直後に「&」などがあると、
-       * エラーを返すべく終了する。
-       */
       if( check_redirect() != 0 )
 	return err=-1;
       continue;
     }
     
-    if( argc+1 >= limit ){
-      if( args != argbase ){
-	args = (Array*)malloc(sizeof(Array)*(limit += 30) );
-	assert( args != NULL );
-	memcpy( args , argbase , sizeof(argbase) );
-      }else{
-	args = (Array*)realloc( args , sizeof(Array)*(limit += 30) );
-	assert( args != NULL );
+    args[ argc ].ptr = sp;
+    while( !is_space(*sp) ){
+      if( tailcheck() ){
+	args[ argc ].len = tail - args[argc].ptr;
+	++argc;
+	return terminal;
       }
-    }
-    args[ argc ].pointor = sp;
 
-    while( !is_space(*sp) && tailcheck() == 0 ){
       if( *sp == '^' && *(sp+1) != '\0' ){
 	/* キャレットはヌル以外の次の機能文字を無効化する。*/
 	if( is_kanji(*++sp) ){
@@ -217,44 +286,46 @@ int Parse::check()
 	++sp;
       }
     }
-    args[ argc ].length = sp - args[argc].pointor;
+    args[ argc ].len = sp - args[argc].ptr;
     ++argc;
   }
  exit:
-  args[ argc ].length = sp - args[argc].pointor;
+  args[ argc ].len = sp - args[argc].ptr;
   ++argc;
   return terminal;
 }
 
 FILE *Parse::open_stdout()
 {
-  if( output_redirect != NULL ){
+  if( redirect[1] != NULL ){
     /* リダイレクト先が、ファイルに指定されている場合
      * 末尾が '|' では、おかしい
      */
-
-    if( terminal == '|' )
-      return NULL;
     
-    char *fname = (char*)alloca( output_redirect_length+1 ); /* ! */
-    memcpy(fname,output_redirect , output_redirect_length );
-    fname[ output_redirect_length ] = '\0';
+    if( terminal == '|' ){
+      fprintf(stderr,"to which redirects?\n");
+      return NULL;
+    }
+    
+    char *fname = (char*)alloca( redirect[1].len+1 ); /* ! */
+    redirect[1].quote(fname);
     pipemode = REDIRECT;
     return output_fp = fopen( fname , isappend ? "a" : "w" );
+
   }else if( terminal == '|' ){
+
     pipemode = PIPE;
     return output_fp = popen( nextcmds , "w" );
+
   }else
     return stdout;
 }
 
 FILE *Parse::open_stdin()
 {
-  if( input_redirect != NULL ){
-    char *fname = (char*)alloca( input_redirect_length+1 ); /* ! */
-    memcpy(fname,input_redirect, input_redirect_length );
-    fname[ input_redirect_length ] = '\0';
-    
+  if( redirect[0] != NULL ){
+    char *fname = (char*)alloca( redirect[0].len+1 ); /* ! */
+    redirect[0].quote(fname);
     return input_fp = fopen( fname , "r" );
   }else 
     return stdin;
@@ -262,13 +333,15 @@ FILE *Parse::open_stdin()
 
 int Parse::call_as_main(int (*routine)(int argc,char **argv) )
 {
+  /* 一般の引数 */
   int i;
   char **argv=(char**)alloca(sizeof(char*)*(argc+3));
   for(i=0;i<argc;i++){
-    argv[i]=(char *)alloca(args[i].length+5);
+    argv[i]=(char *)alloca(args[i].len+5);
     copy(i,argv[i]);
   }
   argv[i] = NULL;
+  
   return (*routine)(argc,argv);
 }
 
@@ -277,10 +350,9 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
   int i;
   char **argv=(char**)alloca(sizeof(char*)*(argc+5));
   for(i=0;i<argc;i++){
-    argv[i]=(char *)alloca(args[i].length+5);
+    argv[i]=(char *)alloca(args[i].len+5);
     copy(i,argv[i]);
   }
-
   argv[i] = NULL;
   if( _osmode != OS2_MODE )
     return (*routine)(argc,argv,stdout);
@@ -290,15 +362,14 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
     fputs("nyaos : cannot make file or pipe.\n",stderr);
     return -1;
   }
-  
   return (*routine)(argc,argv,fout);
 }
 
 char *Parse::copy(int n, char *dp, int flag )
 {
   if( n < argc ){
-    const char *sp   = args[n].pointor ;
-    const char *tail = sp + args[n].length ;
+    const char *sp   = args[n].ptr ;
+    const char *tail = sp + args[n].len ;
 
     /* 基本的に引用符とキャレットはコピ－しない。
      * 二重キャレット「^^」は「^」としてコピ－する。
@@ -371,7 +442,7 @@ char *Parse::copy(int n, char *dp, int flag )
 }
 char *Parse::betacopy(char *dp,int n=0)
 {
-  const char *ssp=args[n].pointor;
+  const char *ssp=args[n].ptr;
 
   while( ssp < tail ){
     *dp++ = *ssp++;
@@ -389,7 +460,7 @@ char *Parse::copyall(int n, char *dp, int flag)
      * キャレット自身はコピーしない(「^^」は別)
      */
     
-    const char *ssp=args[n].pointor;
+    const char *ssp=args[n].ptr;
     bool quote=false;
 
     /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理

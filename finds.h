@@ -29,6 +29,7 @@ class Dir{
   FILEFINDBUF3	buffer;
   ULONG		count;
   int		rc;
+  int           codepage;
 public:
   enum{ 
     ARCHIVED		= 0x20,
@@ -99,13 +100,9 @@ public:
     unsigned short get_last_write_time_by_short() const{
       return *(unsigned short *)&buffer.ftimeLastWrite; 
     }
-
-  Dir() : handle(0xFFFFFFFF) , count(1) 
-    { }
-  Dir(const char *path,int attr=ALL) : handle(0xFFFFFFFF),count(1)
-    { this->findfirst(path,attr); }
-  ~Dir()
-    { DosFindClose(handle); }
+  Dir();
+  Dir(const char *path,int attr=ALL);
+  ~Dir();
 };
 
 char **fnexplode2(const char *path);

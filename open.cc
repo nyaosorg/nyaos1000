@@ -263,8 +263,10 @@ int cmd_chcp( FILE *source , Parse &params )
     params.copy(1,cp_str);
     int cp=atoi(cp_str);
     if( cp != 0  &&  spawnlp(P_WAIT,"cmd.exe",
-			     "cmd","/C","chcp",cp_str,NULL)==0  )
+			     "cmd","/C","chcp",cp_str,NULL)==0  ){
       DosSetProcessCp( cp );
+      dbcs_table_init();
+    }
   }else{
     spawnlp(P_WAIT,"cmd.exe","cmd","/C","chcp",NULL);
   }

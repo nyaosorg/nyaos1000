@@ -49,6 +49,7 @@ static struct bind_t{
   { CTRL('Z') , Shell::bye ,"CTRL_Z","bye  (default)"},
   { '\t'      , Shell::tcshlike_complete,"TAB","complete  (default)" },
   { '\r'      , Shell::input_terminate,"ENTER","newline  (default)" },
+  { CTRL('J') , Shell::input_terminate,"ENTER","newline  (default)" },
   { CTRL('L') , Shell::repaint,"CTRL_L","clear_screen  (default)" },
   { KEY(HOME) , Shell::go_ahead,"HOME","beginning_of_line  (default)" },
   { CTRL('U') , Shell::cancel,"CTRL_U","kill_whole_line  (default)" },
@@ -314,6 +315,7 @@ Shell::Status Shell::backward_word()
 
 int Shell::line_input(const char *prompt,int window)
 {
+  Edlin::raw_mode();
   ed.setprompt(prompt,window);
   fputs(prompt,stdout);
   fflush(stdout);
@@ -324,6 +326,7 @@ int Shell::line_input(const char *prompt,int window)
       Status rc=(this->*bindmap[ch])();
       switch( rc ){
       case TERMINATE:
+	Edlin::lineedit_mode();
 	return ed.length();
 	
       case CONTINUE:
@@ -331,6 +334,7 @@ int Shell::line_input(const char *prompt,int window)
 	continue;
 
       default:
+	Edlin::lineedit_mode();
 	return rc;
       }
     }else{

@@ -420,7 +420,20 @@ int wrdcmp(const char *s1,const char *s2)
   return 0;
 }
 
-int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
+#if 0
+void new_system(const char *s);
+static int System(const char *s,int fastmode )
+{
+  if( fastmode ){
+    new_system( s );
+    return 0;
+  }else{
+    return system( s );
+  }
+}
+#endif
+
+int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 {
   ctrl_c = 0;
   signal(SIGINT,ctrl_c_signal);

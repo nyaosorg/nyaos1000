@@ -1,9 +1,46 @@
-#ifndef PARAMS_H
-#define PARAMS_H
+#ifndef PARSE_H
+#define PARSE_H
 
 #include <stdio.h>
 #include <string.h>
 
+/* 部分文字列参照用クラス */
+class Substr{
+ public:
+  int len;
+  const char *ptr;
+
+  /* 初期化 */
+  Substr(void) : ptr(NULL) , len(0) { }
+  Substr(const char *p,int l) : ptr(p) , len(l) { }
+  void clean()
+    { len = 0; ptr = NULL; }
+
+  /* テスト */
+  operator const void* () const
+    { return ptr; }
+  int operator ! () const
+    { return ptr == NULL; }
+
+  /* 単純コピー */
+  void operator >> (char *dp) const
+    { memcpy(dp,ptr,len); dp[len] = '\0'; }
+
+  /* 単一文字列の空白分離による切り出し 
+   *   const char *sp = ソース文字列 ;
+   *   Substr a,b,c,d;
+   *
+   *   const char *tail = (sp >> a >> b >> c >> d);
+   * なんてことが可能。だが、「&」とか「|」には対応していないので、
+   * Parse では使用していない。おいおい。
+   */
+  friend const char *operator >> (const char *sp,Substr &);
+
+  /* 引用コピー */
+  char *quote(char *dp) const;
+};
+
+/* 字句解析クラス */
 class Parse{
   const char *sp;
 
@@ -11,17 +48,11 @@ class Parse{
   int tailcheck();
 
   int terminal;
-  int argc;
+  int argc,limit;
 
-  struct Array{
-    const char *pointor;
-    int length;
-  } argbase[30] , *args;
-
-  int limit;
-
-  const char *output_redirect , *input_redirect;
-  int output_redirect_length , input_redirect_length;
+  Substr argbase[30],*args;
+  Substr redirect[3]; /* 0:stdin  1:stdout  2:stderr */
+  FILE *redirect_fp[3];
   bool isappend;
   FILE *output_fp , *input_fp;
   enum{ STD , PIPE , REDIRECT } pipemode;
@@ -32,17 +63,17 @@ class Parse{
 
 public:
   Parse(const char *source)
-    : args(argbase) , argc(0) , sp(source) , terminal(-1) , limit(30)
-      ,output_redirect(NULL) , output_redirect_length(0) , err(0)
-	,input_redirect(NULL) , input_redirect_length(0)
-	  , output_fp(stdout) , input_fp(stdin) , pipemode(STD)
-	    ,isappend(false)
-	      { check(); }
+    : args(argbase) , argc(0) , sp(source) , terminal(-1) , limit(30) ,err(0)
+      , output_fp(stdout) , input_fp(stdin) , pipemode(STD)
+	,isappend(false)
+	  { check(); }
 
   ~Parse();
   
   operator const void* () const { return err ? NULL : this; }
   int operator ! () const { return err; }
+  const Substr &operator [](int n){ return args[n]; }
+  const Substr *get_redirect(){ return redirect; }
 
   enum{
     QUOTE_NOT_COPY = 0,
@@ -55,8 +86,8 @@ public:
   const char *get_nextcmds(){ return nextcmds; }
 
   int get_argc(){ return argc; }
-  const char *get_argv(int n){ return n < argc ? args[n].pointor : NULL; }
-  int   get_length(int n){ return n < argc ? args[n].length : 0; }
+  const char *get_argv(int n){ return n < argc ? args[n].ptr : NULL; }
+  int   get_length(int n){ return n < argc ? args[n].len : 0; }
 
   char *copy   (int n, char *dp, int flag=0 );
   char *copyall(int n, char *dp, int flag=QUOTE_COPY);
@@ -64,9 +95,9 @@ public:
   /* 何も置換せずに、そのまま、ベタでコピーする。*/
   char *betacopy(char *dp,int n=0);
 
-  int get_length_later(int n){ return n < argc ? sp-args[n].pointor : 0; }
-  const char *get_parameter(){ return args[1].pointor; }
-  const char *get_source(){ return args[0].pointor; }
+  int get_length_later(int n){ return n < argc ? sp-args[n].ptr : 0; }
+  const char *get_parameter(){ return args[1].ptr; }
+  const char *get_source(){ return args[0].ptr; }
 
   int call_as_main(int (*routine)(int argc,char **argv));
   int call_as_main(int (*routine)(int argc,char **argv,FILE *fp));
@@ -80,7 +111,7 @@ class Pipe{
   const char *cmdline;
   const char *mode;
   char *tmpfname;
-public:
+ public:
   Pipe() : fp(NULL) , mode(NULL) , tmpfname(NULL) { }
 
   void open(const char *cmdline,const char *mode);
@@ -89,17 +120,5 @@ public:
 
   operator FILE * () { return fp; }
 };
-
-#define PARSE_SET_ARGS(params,argc,argv) \
-argc=params.get_argc();argv=(char**)alloca(sizeof(char*)*(argc+1)); \
-for(int i=0;i<argc;i++)\
-{\
-   arg[i]=(char*)alloca(alloca(params.get_length(i)+1));\
-   params.copy(i,argv[i]);\
-}\
-argv[argc-1] = NULL;
-
-  
-			 
 
 #endif

@@ -111,6 +111,28 @@ void alias_replace(const char *sp , char *destinate  )
 	  *dp++ = ' ';
 	  dp = params.copyall(1,dp);
 	}
+
+	/* リダイレクト文字列の再現 */
+	const Substr *redirect=params.get_redirect();
+	if( redirect[0] != NULL ){
+	  *dp++ = ' ';
+	  *dp++ = '<';
+	  redirect[0] >> dp;
+	  dp += redirect[0].len;
+	}
+	if( redirect[1] != NULL ){
+	  *dp++ = ' ';
+	  *dp++ = '>';
+	  redirect[1] >> dp;
+	  dp += redirect[1].len;
+	}
+	if( redirect[2] != NULL ){
+	  *dp++ = ' ';
+	  *dp++ = '2';
+	  *dp++ = '>';
+	  redirect[2] >> dp;
+	  dp += redirect[2].len;
+	}
 	break;
       }
 

@@ -3,11 +3,43 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+#define INCL_DOSNLS
 #include "macros.h"
 #include "finds.h"
 
 /* #define is_kanji(x) 0 */
 #define DEBUG(x) x
+
+int get_current_cp()
+{
+  ULONG CpList[8],CpSize;
+  if( DosQueryCp(sizeof(CpList),CpList,&CpSize) == 0 ){
+    return CpList[0];
+  }else{
+    return 0;
+  }
+}
+
+Dir::Dir(): handle(0xFFFFFFFF), count(1)
+{
+  codepage = get_current_cp();
+  DosSetProcessCp( 932 );
+}
+
+Dir::Dir(const char *path,int attr=ALL) : handle(0xFFFFFFFF),count(1)
+{
+  codepage = get_current_cp();
+  
+  DosSetProcessCp( 932 );
+  this->findfirst(path,attr); 
+}
+
+Dir::~Dir()
+{ 
+  DosFindClose(handle);
+  DosSetProcessCp( codepage );
+}
 
 // strcpy_tail 
 // : 帰り値がコピーした文字列の末尾である以外は、strcpy と同じ
@@ -34,8 +66,10 @@ int Dir::findfirst(const char *fname,int attr)
       lastchar = *p++ = '\\';
       continue;
     }
-    if( is_kanji(lastchar=*fname) )
+    if( is_kanji(lastchar=*fname) ){
       *p++ = *fname++;
+      assert( *p != '\0' );
+    }
     *p++ = *fname++;
   }
   if( lastchar != '\\'  &&  lastchar != ':' )
@@ -68,8 +102,10 @@ char **fnexplode2(const char *path)
     }else if( *p=='?' || *p=='*' ){
       have_wildcard = 1;
     }
-    if( is_kanji(*p) )
+    if( is_kanji(*p) ){
       ++p;
+      assert(*p != '\0');
+    }
   }
   
   if(   have_wildcard==0 || finalchar=='\\'
@@ -264,8 +300,10 @@ void PathCache::rehash(const char *envname)
       }
       break;
     }else{
-      if( is_kanji(*sp) )
+      if( is_kanji(*sp) ){
 	*dp++ = *sp++;
+	assert(*sp != '\0');
+      }
       *dp++ = *sp++;
     }
   }

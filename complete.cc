@@ -85,20 +85,34 @@ int pathsplit( const char *path, char *dir, char *fname )
       lastroot = p;
     }
   }
-
   const char *p=path;
 
   if( lastroot != NULL ){
     if( *p == '~' ){
-      const char *home=getenv("HOME");
-      while( *home != '\0' )
-	*dir++ = *home++;
+      if( *(p+1) == ':' ){
+	const char *system_ini=getenv("SYSTEM_INI");
+	if( system_ini != NULL ){
+	  *dir++ = *system_ini;
+	}else{
+	  *dir++ = '~';
+	}
+	++p;
+      }else{
+	const char *home=getenv("HOME");
+	if( home != NULL ){
+	  while( *home != '\0' )
+	    *dir++ = *home++;
 
-      if( *++p != '/' && *p != '\\' ){
-	*dir++ = '\\';
-	*dir++ = '.';
-	*dir++ = '.';
-	*dir++ = '\\';
+	  if( *++p != '/' && *p != '\\' ){
+	    *dir++ = '\\';
+	    *dir++ = '.';
+	    *dir++ = '.';
+	    *dir++ = '\\';
+	  }
+	}else{
+	  *dir++ = '~';
+	  ++p;
+	}
       }
     }
     while( p <= lastroot )
@@ -435,7 +449,10 @@ int Complete::makelist(const char *path)
   list = NULL;
   nlists = 0;
 
-  pathsplit( path , directory , fname );
+  typed_split_char = pathsplit( path , directory , fname );
+  if (typed_split_char == ':' )
+     typed_split_char = 0;
+
   return makelist_core(false,true);
 }
 
@@ -446,7 +463,10 @@ int Complete::makelist_with_path(const char *path)
   list = NULL;
   nlists = 0;
 
-  pathsplit( path , directory , fname );
+  typed_split_char = pathsplit( path , directory , fname );
+  if( typed_split_char == ':' )
+    typed_split_char = 0;
+
   int rc=makelist_core(true,true);
 
   const char *p=path;
