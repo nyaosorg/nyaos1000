@@ -5,6 +5,7 @@
 #define INCL_DOSMISC
 #include <os2.h>
 
+#include "remote.h"
 #include "hash.h"
 #include "parse.h"
 #include "nyaos.h"
@@ -88,8 +89,6 @@ void ctrl_c_signal(int sig)
   signal(sig,SIG_ACK);
 }
 
-
-extern int yanyaos( const char *s );
 
 /* 逆クォート処理をするパス */
 char *backquote_replace(const char *sp )
@@ -225,7 +224,6 @@ Command jumptable[]={
   {"rmdir",  cmd_rmdir   },
   {"set",    cmd_set     },
   {"source", cmd_source  },
-//  {"subject",cmd_subject },
   {"unalias",cmd_unalias },
   {"ver",    cmd_ver     },
   {"which"  ,cmd_which   },
@@ -239,6 +237,8 @@ Hash <Command> command_hash(512);
 int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
      throw( Noclobber )
 {
+  static RemoteNyaos nyaosPipe;
+  
   ctrl_c = 0;
   signal(SIGINT,ctrl_c_signal);
   int wh[2];
@@ -264,6 +264,15 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
       if( is_kanji(*cmdline ) )
 	++cmdline;
       ++cmdline;
+    }
+    /* 名前付きパイプの作成 */
+    int rc=nyaosPipe.create( "NYAOS" );
+    if( rc ){
+      printf("Could not create named pipe(%d).",rc);
+    }else{
+      static char setPipeName[256];
+      sprintf(setPipeName,"PIPE2NYAOS=%s",nyaosPipe.getName());
+      putenv( setPipeName );
     }
   }
 
@@ -382,25 +391,21 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
       puts( pass5 );
     
   spawn:
-#if defined(VMAX)  &&  !defined(S2NYAOS)
-    if( option_vmax ){
-      return yanyaos( pass5 );
+    int rc=0;
+    if( nyaosPipe.isConnected() ){
+      rc=spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",(char*)pass5,NULL);
     }else{
-#endif
-      return spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",(char*)pass5,NULL);
-#if defined(VMAX)  &&  !defined(S2NYAOS)
+      nyaosPipe.connect();
+      rc=spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",(char*)pass5,NULL);
+      StrBuffer str;
+      while( (nyaosPipe.readline(str)) >= 0 ){
+	if( execute( NULL , (const char *)str ) == RC_QUIT )
+	  return RC_QUIT;
+	str.drop();
+      }
+      nyaosPipe.disconnect();
     }
-#endif
-
-#if 0
-  }catch( SyntaxError e ){
-    fputs( e.getMsg() , stderr );
-    return e.getRc();
-  }catch( StrBuffer::MallocError ){
-    fputs("nyaos: memory allocation error. "
-	  "Nyaos didn't execute the command(s).",stderr);
-    return -1;
-#endif
+    return rc;
   }catch(Noclobber e){
     ErrMsg::say(ErrMsg::FileExists,0);
     return -1;

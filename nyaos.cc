@@ -23,10 +23,10 @@
 #include "prompt.h"
 #include "heapptr.h"
 #include "shared.h"
+#include "remote.h"
 
 HAB   hab, hmq;
 
-extern int option_vmax;
 int prompt_myself=1;
 int screen_width=80;
 int screen_height=25;
@@ -355,10 +355,6 @@ int main(int argc, char **argv)
       case 'q':
 	option_quite_mode = 1;
 	break;
-	
-      case 'v':
-	option_vmax = 1;
-	break;
 
       case '-':
 	{
@@ -418,7 +414,7 @@ int main(int argc, char **argv)
     
     fputs("\n     The Open Source Software     "
 	  "\n- Nihongo Yet Another Os/2 Shell -"
-	  "\n    1996-2000 (c) HAYAMA,Kaoru  "
+	  "\n    1996-2001 (c) HAYAMA,Kaoru  "
 #ifdef S2NYAOS
 	  "\n   Static linked version "VERSION
 	  "\n     compiled on "__DATE__
@@ -620,7 +616,7 @@ int main(int argc, char **argv)
 	
       default:
 	fputs("\nUnknown error occuerd.\n"
-	      "Please mail to iya-hayamatta@ijk.com\n"
+	      "Please mail to iyamatta.hayama@nifty.ne.jp\n"
 	      , stdout );
 	break;
       }

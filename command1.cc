@@ -10,7 +10,6 @@
 #include "nyaos.h"
 #include "errmsg.h"
 
-extern int option_vmax;
 extern int option_tilda_without_root;
 extern int option_direct_key;
 extern int option_complete_etc;
@@ -287,9 +286,6 @@ struct Option{
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
   { "tilda_without_root"   , &option_tilda_without_root        , 1  , 0 },
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
-#ifdef VMAX
-  { "vmax"		   , &option_vmax		       , 1  , 0 },
-#endif
   { NULL , NULL , 1 , 0 },
 };
 

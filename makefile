@@ -6,6 +6,7 @@
 #
 # If you don't have header file <canna/jrkanji.h>,
 # 	then add option `-DICANNA' to CFLAGS or D1CFLAGS.
+#
 
 CC=gcc
 CFLAGS=-Wall -DNDEBUG -O2
@@ -38,23 +39,24 @@ NYAOS_TBL=\
 NYAOS_HDR=\
 	complete.h edlin.h finds.h hash.h macros.h nyaos.h substr.h \
 	parse.h pathlist.h smartptr.h strtok.h keyname.h strbuffer.h \
-	quoteflag.h heapptr.h autofreeptr.h prompt.h errmsg.h shared.h
+	quoteflag.h heapptr.h autofreeptr.h prompt.h errmsg.h shared.h \
+	remote.h
 
 NYAOS_SRC=alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
 	command2.cc dbcs.cc eadir.cc edlin.cc canna.cc execute.cc \
 	finds.cc filelist.cc foreach.cc getkey.cc hash.cc nyaos.cc \
 	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script.cc \
 	search.cc shell.cc source.cc vzhistory.cc strtok.cc \
-	strbuffer.cc debugger.cc let.cc errmsg.cc yanyaos.cc shared.cc \
-	fnmatch.cc keynameseek.cc
+	strbuffer.cc debugger.cc let.cc errmsg.cc shared.cc \
+	fnmatch.cc keynameseek.cc remote.cc
 
 NYAOS_OBJ1=$(NYAOS_SRC:.cc=.o)
 NYAOS_OBJ2=$(NYAOS_SRC:.cc=.obj)
 
 # ------------- パッケージ作成 -----------------
 # 「make package」と呼び出せば、
-#	nyaos1XX.lzh	   (バイナリパッケージ)
-#	s2nya1xx.lzh       (スタティック版実行ファイルのみ)
+#	nyaos1XX.zip	   (バイナリパッケージ)
+#	s2nya1xx.zip       (スタティック版実行ファイルのみ)
 #	nyaos-1.XX.tar.gz  (ソースパッケージ)
 # が出来る。
 # ----------------------------------------------
@@ -62,38 +64,39 @@ NYAOS_OBJ2=$(NYAOS_SRC:.cc=.obj)
 READMES=$(wildcard readme.1??)
 VER=$(subst .1,,$(suffix $(word $(words $(READMES)),$(READMES))))
 
-LZH=nyaos1$(VER).lzh
-SLZH=s2nya1$(VER).lzh
+ZIP=nyaos1$(VER).zip
+SZIP=s2nya1$(VER).zip
 TBZ=nyaos-1.$(VER).tar.bz2
 
 checkver:
 	@echo version is 1.$(VER)
 
 upload : package
-	cp $(LZH) $(SLZH) $(TBZ) nyaosdoc.html $(HOME)/www/warp/.
-	mv $(LZH) $(SLZH) $(TBZ) $(HOME)/src/package/nyaos/.
+	cp $(ZIP) $(SZIP) $(TBZ) nyaosdoc.html $(HOME)/www/warp/.
+	mv $(ZIP) $(SZIP) $(TBZ) $(HOME)/src/package/nyaos/.
 
-package : $(LZH) $(SLZH) $(TBZ)
+package : $(ZIP) $(SZIP) $(TBZ)
 
-$(LZH) : nyaos.exe nyaos.doc nyaos.faq
+$(ZIP) : nyaos.exe nyaos.doc nyaos.faq
 	lxlite nyaos.exe
-	cd .. && lha a $(foreach A,\
-		$(LZH) readme.1$(VER) nyaos.doc nyaos.faq \
+	cd .. && zip -9 $(foreach A,\
+		$(ZIP) readme.1$(VER) nyaos.doc nyaos.faq nyaos.eng \
 		nyaos.exe nyaos.rc nyaos1.ico nyaos2.ico \
-		nyaos-fc.ico nyaos-fo.ico sample.err install.cmd \
+		nyaos-fc.ico nyaos-fo.ico sample.err writer.cc \
+		install.cmd \
 		,nyaos/$(A))
 
-$(SLZH) : s2nyaos.exe
+$(SZIP) : s2nyaos.exe
 	lxlite s2nyaos.exe
-	lha a $(SLZH) s2nyaos.exe
+	zip -9 $(SZIP) s2nyaos.exe
 
 $(TBZ) :
 	cd .. && tar cvf - $(foreach A,\
 	Makefile *.h $(NYAOS_SRC) mkbtable.cmd \
-	$(NYAOS_TBL) readme.1$(VER),nyaos/$(A)) | bzip2 > nyaos/$(TBZ)
+	$(NYAOS_TBL) readme.1$(VER),nyaos/$(A)) | bzip2 -9 > nyaos/$(TBZ)
 
 cleanpkg :
-	rm -rf $(LZH) $(SLZH) $(TBZ)
+	rm -rf $(ZIP) $(SZIP) $(TBZ)
 
 # ------------- 実行ファイル作成 ----------------
 
@@ -117,9 +120,6 @@ eadir.o : eadir.cc eadirop.cc
 eadir.obj : eadir.cc eadirop.cc
 eadirop.cc : eadirop.tbl mkbtable.cmd
 
-shared.o : shared.cc shared.h
-complete.o : complete.cc shared.h
-
 # ------------- ドキュメント作成 -----------------
 # NKF2 , w3m , XTR を使用する。
 # ------------------------------------------------
@@ -142,3 +142,4 @@ clean :
 
 install :
 	cp nyaos.exe s2nyaos.exe $(HOME)/bin/.
+

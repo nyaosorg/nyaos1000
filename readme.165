@@ -1,0 +1,20 @@
+本当に久しぶりに Nihongo Yet Another Os/2 Shell の新版を公開します。
+
+といっても、虫繕だけですが…。
+
+[虫繕]
+・「set 変数名」で環境変数の内容が表示されず、エラーになるのを修正。
+	だいぶと前からあったみたいですが…、今さらながら修正いたしました。
+	なお、本NYAOS他にも不具合をいろいろとかかえておりますが、
+	ほとんど、作者環境で再現できないために、放置状態になっています。
+	詳細については、NYAOS.DOC に「11.不具合」の節を参照ください。
+
+Nihongo Yet Another Os/2 Shell について、他に不具合等ありましたら、
+	iyamatta.hayama@nifty.com
+にまで御連絡ください。また、最新版については
+	http://hp.vector.co.jp/authors/VA009797/warp/nyaos.html
+にて提供しております。
+
+サ｜ サ ---- はやま かおる (HAYAMA,Kaoru) ---------
+世｜ 千 ★ mailto:iyamatta.hayama@nifty.com
+木山 黒 ♪ http://hp.vector.co.jp/authors/VA009797/

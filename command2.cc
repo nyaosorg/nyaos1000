@@ -157,8 +157,6 @@ static void setenv(const char *env,const char *value)
   }
 }
 
-
-
 int cmd_set( FILE *srcfil, Parse &params )
 {
   if( params.get_argc() < 2 )
@@ -200,7 +198,9 @@ int cmd_set( FILE *srcfil, Parse &params )
       break;
     }else if( is_space(*sp) ){
       // スペースがあった場合は、それを読み飛ばした上で、
-      // 「=」「+=」があるかチェック。無ければ、エラー。
+      // 「=」「+=」があるかチェック。
+      // 無ければ、変数内容の表示だけなので、
+      // オリジナル set に動作を任せる。
       do{
 	++sp;
       }while( is_space(*sp) );
@@ -217,9 +217,12 @@ int cmd_set( FILE *srcfil, Parse &params )
 	++sp;
 	break;
       }else{
+	// 代入演算子が無いので、変数の内容を表示させる.
 	*dp = '\0';
-	ErrMsg::say( ErrMsg::InvalidVarName , env_name , 0 );
-	return 2;
+	const char *env_value=getenv(env_name);
+	FILE *fp=params.open_stdout();
+	fprintf(fp,"%s=%s\n",env_name,(env_value ? env_value : "(null)" ) );
+	return 0;
       }
     }
     if( is_kanji(*sp) ){
