@@ -16,7 +16,7 @@ int ShellEdlin::complete_hook(Complete &com)
   int n=0;
   if( com.status == Complete::SIMPLE_COMMAND_COMPLETED ){
     /* build-in command */
-    struct commandtable_tag *p=jumptable;
+    const struct commandtable_tag *p=jumptable;
 
     while( p->name != NULL ){
       if( com.add_buildin_command(p->name) == 0 ){

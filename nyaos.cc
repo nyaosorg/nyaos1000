@@ -4,10 +4,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
-#include <sys/nls.h>
 
-#define INCL_DOSFILEMGR
 // #define INCL_WINWINDOWMGR
+#define INCL_DOSFILEMGR
+#define INCL_RXSUBCOM
 #include <os2.h>
 
 #include "edlin.h"
@@ -19,6 +19,8 @@
 #if USE_VIDEO_H
 #  include <sys/video.h>
 #endif
+
+int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 
 extern int nhistories;
 
@@ -69,8 +71,9 @@ int main(int argc, char **argv)
   // CMD.EXE に切り換えさせる。 
   // ----------------------------------------
   const char *shellname=getenv("COMSPEC");
-  if(   strstr(shellname,"nyaos") != NULL
-     || strstr(shellname,"NYAOS") != NULL ){
+  if(   shellname != NULL
+     && (   strstr(shellname,"nyaos") != NULL
+	 || strstr(shellname,"NYAOS") != NULL )){
 
     static char comspec[256];
     auto char cmdexe_path[100];
@@ -126,23 +129,74 @@ int main(int argc, char **argv)
       return -1;
     }
   }
+
+  if( isatty(fileno(stdin)) ){
+    printf("\x1b[2J\x1b[1m"
+	   "\n"
+	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
+	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
+	   "   Os/2 Shell 1.28     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
+	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
+	   "                                                          \n"
+	   "    This version is compiled on " __DATE__ " " __TIME__"  \n"
+	   "    Comments, suggestions, and bug reports are welcome.   \n"
+	   "    Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp     \n"
+	   "\x1b[0m\n"
+	   );
+  }
+
  end_argv:
   if( option_nyaos_rc ){
     char buffer[FILENAME_MAX];
-    FILE *fp;
+    char *path=NULL;
+    const char *home;
 
-    if(   (_searchenv(".nyaos","HOME",buffer),
-	   buffer[0] != '\0' && (fp=fopen(buffer,"r"))!=NULL )
-       || (_searchenv("nyaos.rc","HOME",buffer),
-	   buffer[0] != '\0' && (fp=fopen(buffer,"r"))!=NULL )     ){
-	 
-      while( fgets_chop(buffer,sizeof(buffer),fp) != NULL ){
-	if( execute(fp,buffer) == RC_QUIT )
-	  break;
+    if( access(".nyaos",0)==0 ){
+      path = ".nyaos";
+    }else if( access("nyaos.rc",0)==0 ){
+      path = "nyaos.rc";
+    }else if( (home=getenv("HOME"))!=NULL ){
+      char *dp = path = buffer;
+      int lastchar=0;
+      
+      while( *home != '\0' ){
+	if( is_kanji(lastchar=*home) )
+	  *dp++ = *home++;
+	*dp++ = *home++;
       }
-      fclose(fp);
+      if( lastchar != '\\' && lastchar != '/' && lastchar != ':' )
+	*dp++ = '\\';
+      
+      strcpy(dp,".nyaos");
+      if( access(buffer,0) != 0 ){
+	strcpy(dp,"nyaos.rc");
+	if( access(buffer,0) != 0 )
+	  path = NULL;
+      }
     }
+    FILE *fp;
+    if(  path != NULL  && (fp=fopen(path,"r")) != NULL ){
+      char buffer[256];
+      const char *rc=fgets_chop(buffer,sizeof(buffer),fp);
 
+      if( rc != NULL && buffer[0]=='/' && buffer[1]=='*' ){
+	// REXX モード
+	fclose(fp);
+	
+	RXSTRING rx_argv[1];
+	MAKERXSTRING(rx_argv[0],"-",1);
+	do_rexx( path , 1 , rx_argv );
+      }else{
+	// コマンドモード
+	while( rc != NULL ){
+	  if( execute(fp,buffer) == RC_QUIT )
+	    break;
+	  rc = fgets_chop(buffer,sizeof(buffer),fp);
+	}
+	fclose(fp);
+      }
+    }
   }
 
   if( option_vio_cursor_control )
@@ -160,20 +214,6 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  printf("\x1b[2J\x1b[1m"
-	 "\n"
-	 "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
-	 "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	 "   Os/2 Shell 1.27     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
-	 "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
-	 "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
-	 "                                                          \n"
-	 "    This version is compiled on " __DATE__ " " __TIME__"  \n"
-	 "    Comments, suggestions, and bug reports are welcome.   \n"
-	 "    Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp     \n"
-	 "\x1b[0m\n"
-	 );
-
   // -------- 入力オブジェクト edlin を用意する ---------------
   // ここで、用意するのは、ループの内部に置いて
   // 何回もコンストラクタ・デストラクタを呼ぶコストを省くため。
@@ -189,12 +229,13 @@ int main(int argc, char **argv)
 
     char promptstr[256],*dp=promptstr,*sp;
     const char *promptenv=getenv("PROMPT");
+    if( promptenv==NULL )
+      promptenv = "$p$g";
     
     time_t now;
     time( &now );
     struct tm *thetime = localtime( &now );
     edlin.using_i_mark=0;
-    
 
     while( *promptenv != '\0' ){
       if( *promptenv == '$' ){
@@ -229,7 +270,7 @@ int main(int argc, char **argv)
 	  
 	  dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
 			, screen_width ,
-			" Nihongo Yet Another Os/2 Shell 1.27 "
+			" Nihongo Yet Another Os/2 Shell 1.28 "
 			" (c) 1996,97 HAYAMA,Kaoru "
 			);
 	  edlin.using_i_mark = 1;
@@ -324,9 +365,20 @@ int main(int argc, char **argv)
 	return 0;
       }
     }else{
-      // ---- CTRL-Z などによる終了 ----
-      fputs("\nGood bye!\n",stdout);
-      return 0;
+      switch( rc ){
+      case Shell::QUIT:
+	// ---- CTRL-Z などによる終了 ----
+	fputs("\nGood bye!\n",stdout);
+	return 0;
+      case Shell::ABORT:
+	fputs("^C\n",stdout);
+	break;
+      defalt:
+	fputs("\nUnknown error occuerd.\n"
+	      "Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp\n"
+	      , stdout );
+	break;
+      }
     }
     // ---- カーソルを元に戻す ----
     if( option_vio_cursor_control )

@@ -1,25 +1,29 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/kbdscan.h>
+#include <stdlib.h> /* for _osmode */
+
 #include "macros.h"
 #include "Edlin.h"
 
-void EscEdlin::putchr(int c)
+#define INCL_DOSNLS
+#include <os2.h>
+
+void Edlin2::putchr(int c)
 {
   putc(c,fp);
 }
 
-void EscEdlin::putel()
+void Edlin2::putel()
 {
   fputs( "\x1B[K" , fp );
 }
 
-void EscEdlin::putbs(int n)
+void Edlin2::putbs(int n)
 {
   /* BackSpaceならば、前の行へも移動できる。*/
-  while( n-- > 0 ){
+  while( n-- > 0 )
     putc('\b',fp);
-  }
 }
 
 static int get_key(int wait)
@@ -34,7 +38,7 @@ static int get_key(int wait)
   return ch;
 }
 
-int EscEdlin::getkey(int wait)
+int Edlin2::getkey(int wait)
 {
   if( cursor_on == NULL ){
     fflush(fp);
@@ -66,4 +70,41 @@ int EscEdlin::getkey(int wait)
     fprintf(fp,"\x1b[%sm%c\b" , cursor_off , strbuf[pos] );
   }
   return ch;
+}
+
+char dbcstable[256];
+
+int dbcs_table_init()
+{
+  memset(dbcstable,0,256);
+
+  if( _osmode ==  OS2_MODE ){
+    // OS/2 の場合、API 関数を呼んで、設定する。
+
+    char buffer[12];    
+    ULONG length;
+    COUNTRYCODE country;
+    
+    country.country = 0;
+    country.codepage = 0;
+    
+    int rc=(int)DosQueryDBCSEnv((ULONG)numof(buffer)
+				,&country
+				,buffer);
+    char *p=buffer;
+    while( (p[0]!=0 || p[1] !=0) && p < buffer+sizeof(buffer) ){
+      /* printf("DBCS %02x--%02x\n",p[0] & 255 ,p[1] & 255); */
+      memset(dbcstable+(p[0] & 255), 1 , (p[1] & 255)-(p[0] & 255)+1 );
+      p += 2;
+    }
+    return rc;
+
+  }else{
+    // DOSの場合、プロテクトモードで、DBCS テーブルを参照する方法が
+    // 無いので、Shift-JIS にしてしまう。
+    
+    memset( dbcstable + 0x81 , 1 , 0x9F - 0x80 );
+    memset( dbcstable + 0xE1 , 1 , 0xfc - 0xE0 );
+    return 0;
+  }
 }

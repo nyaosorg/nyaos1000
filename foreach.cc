@@ -114,7 +114,7 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *line )
 int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
 {
   if( srcfil == NULL ){
-    fputs("foreach needs end commands!",stderr);
+    fputs("foreach is not available in REXX Script!\n",stderr);
     return 0;
   }
   
@@ -161,7 +161,8 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
     ShellEdlin edlin("? ",buffer,sizeof(buffer));
     Shell shell(edlin);
 
-    while(   shell.line_input("? ",32767) >= 0 
+    int rc;
+    while(   (rc=shell.line_input("? ",32767)) >= 0 
 	  && (   (buffer[0] != 'e' && buffer[0] != 'E' )
 	      || (buffer[1] != 'n' && buffer[1] != 'N' )
 	      || (buffer[2] != 'd' && buffer[2] != 'D' )
@@ -174,6 +175,16 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
 	  (struct Line*)alloca(sizeof(struct Line)+strlen(buffer));
 	strcpy( cur->buffer  , buffer );
       }
+    }
+    if( rc==Shell::ABORT ){
+      puts("^C");
+      return 0;
+    }
+    if( rc==Shell::FATAL ){
+      fputs("Unknown error occured.\n"
+	    "Please mail kaoru@ferrari6.cheme.kyoto-u.ac.jp!\n"
+	    ,stderr );
+      return 0;
     }
     putchar('\n');
   }else{

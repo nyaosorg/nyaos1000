@@ -1,5 +1,5 @@
 #define INCL_WINWORKPLACE
-#define INCL_DOSNLS
+
 #include <os2.h>
 
 /* for stat() */
@@ -205,31 +205,4 @@ int cmd_open( FILE *source , Parse &params )
     }
   }
   return 0;
-}
-
-char dbcstable[256]; 
-
-int dbcs_table_init()
-{
-  ULONG length;
-  COUNTRYCODE country;
-  char buffer[12];
-  
-  country.country = 0;
-  country.codepage = 0;
-
-  int rc=(int)DosQueryDBCSEnv((ULONG)numof(buffer)
-			      ,&country
-			      ,buffer);
-
-  memset(dbcstable,0,256);
-  
-  char *p=buffer;
-  while( (p[0]!=0 || p[1] !=0) && p < buffer+sizeof(buffer) ){
-    /* printf("DBCS %02x--%02x\n",p[0] & 255 ,p[1] & 255); */
-    memset(dbcstable+(p[0] & 255), 1 , (p[1] & 255)-(p[0] & 255)+1 );
-    p += 2;
-  }
-
-  return rc;
 }

@@ -5,7 +5,7 @@ extern char dbcstable[256];
 int dbcs_table_init();
 
 #define is_space(x) isspace((x)& 255)
-#define is_kanji(x) dbcstable[(x)& 255]
+
 #define is_digit(x) isdigit((x)& 255)
 #define is_alpha(x) isalpha((x)& 255)
 #define is_xdigit(x) isxdigit((x)& 255)
@@ -15,7 +15,19 @@ int dbcs_table_init();
 #define to_upper(x) toupper((x)& 255)
 #define to_lower(x) tolower((x)& 255)
 
+#define is_kanji(x) (dbcstable[(x)& 255] & 1)
+
 #undef numof
 #define numof(A) (sizeof(A)/sizeof((A)[0]))
+
+enum{
+  NO_FILE = 0,           /* ファイルは存在しない        */
+  EXE_FILE = 1,          /* バイナリ実行ファイル	*/
+  CMD_FILE = 2,          /* OS/2 コマンドファイル	*/
+  COM_FILE = 3,	         /* COM(SOS) ファイル		*/
+  FILE_EXISTS = 4,       /* その他のファイル		*/
+};
+
+int SearchEnv(const char *fname,const char *envname,char *path);
 
 #endif

@@ -4,11 +4,13 @@
 #include <sys/nls.h>
 #include <sys/video.h>
 
+#include <io.h>
+#include <process.h>
+
 #include "edlin.h"
 #include "parse.h"
 #include "complete.h"
 #include "nyaos.h"
-#include "edlin.h"
 
 static int option_dir_tail_is_forward_slash;
 
@@ -39,6 +41,29 @@ int cmd_pwd( FILE *source , Parse &params )
   FILE *fout=params.open_stdout();
   fputs(cwd,fout);
   putc('\n',fout);
+  return 0;
+}
+
+int cmd_exec( FILE *source , Parse &params )
+{
+  int argc=params.get_argc();
+  if( argc < 2 ){
+    FILE *fout=params.open_stdout();
+    fputs("exec: exec <command-name>\n",fout);
+    return 0;
+  }
+
+  char **argv = (char**)alloca( sizeof(char*)*argc-- );
+  
+  for(int i=0;i<argc;i++){
+    int len=params.get_length(i+1);
+    
+    argv[i] = (char*)alloca(len+1);
+    params.copy(i+1,argv[i]);
+  }
+  argv[argc] = NULL;
+  execvp(argv[0],argv);
+  printf( "%s: bad commandname.\n", argv[0] );
   return 0;
 }
 
@@ -83,13 +108,46 @@ int cmd_mkdir( FILE *source , Parse &params)
 
 int chdir_with_cdpath(const char *cwd)
 {
-  if( _chdir2( cwd ) != 0  &&  cwd[0] != '\0'  &&  cwd[1] !=':' ){
-    /* CDPATH */
-    char cdpath[FILENAME_MAX];
-    _searchenv(cwd,"CDPATH",cdpath);
-    if( cdpath[0] == '\0'  ||  _chdir2(cdpath) )
-      fprintf(stderr,"%s : no such directory.\n",cwd);
+  if( _chdir2( cwd ) == 0 )
+    return 0;
+  
+  for( const char *p=cwd ; *p != '\0' ; p++ ){
+    if( *p=='/' || *p=='\\' || *p==':' ){
+      fprintf(stderr,"%s: no such directory.\n",cwd);
+      return 0;
+    }
   }
+  
+  /* CDPATH */
+  const char *sp=getenv("CDPATH");
+  if( sp != NULL ){
+    char cdpath[FILENAME_MAX];
+    char *dp=cdpath;
+    int lastchar = 0;
+    
+    for(;;){
+      if( *sp != '\0' && *sp != ';' ){
+	if( is_kanji(lastchar=*sp) )
+	  *dp++ = *sp++;
+	*dp++ = *sp++;
+	continue;
+      }
+      if( lastchar != '\\' && lastchar != '/' && lastchar != ':' )
+	*dp++ = '\\';
+      strcpy( dp , cwd );
+      if( access(cdpath,0)==0  &&  _chdir2(cdpath)==0 )
+	return 0;
+      
+      if( *sp == '\0' )
+	break;
+      
+      ++sp; /* for semicolon */
+      dp = cdpath;
+    }
+  }
+ exit:
+  fprintf(stderr,"%s : no such directory.\n",cwd);
+  return 0;
 }
 
 int cmd_chdir( FILE *srcfil, Parse &params)

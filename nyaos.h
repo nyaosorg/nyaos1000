@@ -71,6 +71,7 @@ void buildin_command_to_complete_table(void);
 
 extern int option_vio_cursor_control;
 
+
 /**** bindkey.cc *****/
 
 #endif

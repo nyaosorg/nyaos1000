@@ -53,6 +53,7 @@ static struct bind_t{
   { KEY(HOME) , Shell::go_ahead,"HOME","beginning_of_line  (default)" },
   { CTRL('U') , Shell::cancel,"CTRL_U","kill_whole_line  (default)" },
   { '\x1B'    , Shell::cancel,"ESC","kill_whole_line  (default)" },
+  { CTRL('C') , Shell::abort, "CTRL_C","abort (default)", },
 }, tcsh_bind_table[]={
   { CTRL('P') , Shell::previous_history,"CTRL_P","previous_history  (tcsh)"},
   { CTRL('N') , Shell::next_history,"CTRL_N","next_history  (tcsh)" },
@@ -66,6 +67,7 @@ static struct bind_t{
   { CTRL('E') , Shell::go_tail,"CTRL_E","end_of_line  (tcsh)" },
   { CTRL('S') , Shell::i_search,"CTRL_S","i_search (tcsh)" },
   { CTRL('R') , Shell::rev_i_search,"CTRL_R","rev_i_search (tcsh)" },
+  { CTRL('T') , Shell::swapchars,"CTRL_T","swapchars (tcsh)" },
 }, wordstar_bind_table[]={
   { CTRL('E') , Shell::previous_history,"CTRL_E","previous_history  (ws)" },
   { CTRL('X') , Shell::next_history,"CTRL_X","next_history  (ws)" },
@@ -86,11 +88,13 @@ Shell::Shell(ShellEdlin &e)
 
 Shell::~Shell()
 {
+#if 0
   while( history != 0 ){
     History *prev=history->prev;
     free(history);
     history = prev;
   }
+#endif
 }
 
 void Shell::bindkey_base()
@@ -317,18 +321,17 @@ int Shell::line_input(const char *prompt,int window)
   for(;;){
     ch=ed.getkey();
     if( ch < numof(bindmap) ){
-      switch( (this->*bindmap[ch])() ){
+      Status rc=(this->*bindmap[ch])();
+      switch( rc ){
       case TERMINATE:
 	return ed.length();
-      case QUIT:
-	return -1;
-      case CANCEL:
-	return 0;
-      case FATAL:
-	return -1;
+	
       case CONTINUE:
 	prevchar = ch;
 	continue;
+
+      default:
+	return rc;
       }
     }else{
       self_insert();

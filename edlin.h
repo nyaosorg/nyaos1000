@@ -1,3 +1,4 @@
+/* -*- c++ -*- */
 #ifndef EDLIN_H
 #define EDLIN_H
 
@@ -61,16 +62,17 @@ public:
   void insert(int ch);                     /*    半角文字挿入       */
   void insert(int ch1,int ch2);            /*    全角文字挿入       */
   void insert_and_forward(const char *s);  /*    文字列挿入         */
-  void erase();                            /* ^D 一文字削除         */
-  int  forward();                          /* ^F カーソル右移動     */
-  int  backward();                         /* ^B カーソル左移動     */
-  void forward_word();                     /* @F カーソル右単語移動 */
-  void backward_word();                    /* @B カーソル左単語移動 */
-  void go_ahead();                         /* ^A 先頭へ             */
-  void go_tail();                          /* ^E 末尾へ             */
-  void clean_up();                         /* ^U 入力破棄           */
-  void eraseline();                        /* ^K カーソル以降を消す */
-  virtual void cls(){};                    /* ^L 画面クリア(何もしない) */
+  void erase();               /* ^D 一文字削除         */
+  int  forward();             /* ^F カーソル右移動     */
+  int  backward();            /* ^B カーソル左移動     */
+  void forward_word();        /* @F カーソル右単語移動 */
+  void backward_word();       /* @B カーソル左単語移動 */
+  void go_ahead();            /* ^A 先頭へ             */
+  void go_tail();             /* ^E 末尾へ             */
+  void clean_up();            /* ^U 入力破棄           */
+  void eraseline();           /* ^K カーソル以降を消す */
+  void swapchars();           /* ^T カーソル手前二文字を入れ換える */
+  virtual void cls(){};       /* ^L 画面クリア(何もしない) */
 
   /* これらは、導出クラスへ移項すべきもの */
   virtual void complete();                 /* ^I ファイル名補完     */
@@ -93,27 +95,32 @@ public:
   const char *getbuffer() const { return strbuf; }
 
   static int complete_tail_char;
+  
+  int simple_line_input();
 };
 
-/* エスケープシーケンスを使った入力クラス。(escedlin.cc) */
-class EscEdlin : public Edlin {
+/* OS/2 特化版 Edlin (エスケープシーケンス使用) */
+class Edlin2 : public Edlin {
  protected:
   FILE *fp;
   const char *cursor_on;
   const char *cursor_off;
-
+  
   void putchr(int c);
   void putel();
   void putbs(int i);
   void alert(){ putchr('\a'); }
  public:
-  EscEdlin(char *buffer, int max, int windowsize=32767, FILE *Fp=stdout )
+  Edlin2(char *buffer, int max, int windowsize=32767, FILE *Fp=stdout )
     : Edlin(buffer,max,windowsize),fp(Fp),cursor_on(""),cursor_off("")
       { /* no-operation */ }
   int getkey(int wait=1);
+
   void setcursor(char *on,char *off="\x1B[0m")
     { cursor_on = on ; cursor_off = off; }
 };
+extern char dbcstable[256];
+int dbcs_table_init();
 
 struct History{
   History *prev,*next;
@@ -121,7 +128,7 @@ struct History{
 };
 
 /* シェルに特化した Edlin クラス (shell.cc) */
-class ShellEdlin : public EscEdlin {
+class ShellEdlin : public Edlin2 {
   const char *prompt;
   int promptlen;
 public:
@@ -134,7 +141,7 @@ public:
 
   ShellEdlin(const char *pro,char *buffer,int max,
 	     int windowsize=32767,FILE *fp=stdout)
-    : EscEdlin(buffer,max,windowsize,fp),prompt(pro),using_i_mark(0)
+    : Edlin2(buffer,max,windowsize,fp),prompt(pro),using_i_mark(0)
       { }
 
   /* 帰り値 : 文字数 , キャンセル時(-1) 
@@ -150,7 +157,13 @@ public:
  */
 class Shell{
 public:
-  enum Status { CONTINUE, TERMINATE, QUIT, CANCEL , FATAL };
+  enum Status {
+    CONTINUE,	// 編集続行
+    TERMINATE,	// ^M ^J
+    QUIT  = -1,	// ^D
+    ABORT = -2,	// ^C
+    FATAL = -3, // 未知のトラブル
+  };
 private:
   static History *history; /* ヒストリはグロ－バルにした。*/
   static int nhistories;
@@ -177,7 +190,7 @@ public:
 
   Shell(ShellEdlin &e) ;
   ~Shell();
-  int line_input(const char *prompt,int window);
+  int line_input(const char *prompt,int window=32767);
 
   Status i_search();
   Status rev_i_search();
@@ -201,6 +214,8 @@ public:
   Status forward_word();
   Status backward_word();
   Status simple_delete();
+  Status abort(){ return ABORT; }
+  Status swapchars(){ ed.swapchars(); return CONTINUE; }
 };
 
 /* TERMCAP & エスケープシーケンス メモ

@@ -12,6 +12,53 @@
 
 int Edlin::complete_tail_char='\\';
 
+void Edlin::swapchars()  /* DOSƒ‚[ƒh–¢‘Î‰ƒƒ\ƒbƒh */
+{
+  if( pos < 2 ) return;
+  
+  if( atrbuf[pos-1]==SBC ){
+    if( atrbuf[pos-2] == SBC ){
+      /* ”¼Šp”¼Šp */
+      int tmp=strbuf[pos-2];
+      putbs( 2 );
+      putchr( strbuf[pos-2] = strbuf[pos-1] );
+      putchr( strbuf[pos-1] = tmp );
+    }else{
+      /* ‘SŠp”¼Šp -> ”¼Šp‘SŠp */
+      int tmp1=strbuf[pos-3];
+      int tmp2=strbuf[pos-2];
+      putbs( 3 );
+      putchr( strbuf[pos-3] = strbuf[pos-1] );
+      atrbuf[pos-3] = SBC;
+      putchr( strbuf[pos-2] = tmp1 );
+      atrbuf[pos-2] = DBC1ST;
+      putchr( strbuf[pos-1] = tmp2 );
+      atrbuf[pos-1] = DBC2ND;
+    }
+  }else if( pos >= 3 ){
+    if( atrbuf[pos-3] == SBC ){
+      /* ”¼Šp‘SŠp -> ‘SŠp”¼Šp */
+      int tmp=strbuf[pos-3];
+      putbs( 3 );
+      putchr( strbuf[pos-3] = strbuf[pos-2] );
+      atrbuf[pos-3] = DBC1ST;
+      putchr( strbuf[pos-2] = strbuf[pos-1] );
+      atrbuf[pos-2] = DBC2ND;
+      putchr( strbuf[pos-1] = tmp );
+      atrbuf[pos-1] = SBC;
+    }else{
+      /* ‘SŠp‘SŠp */
+      int tmp1=strbuf[pos-4];
+      int tmp2=strbuf[pos-3];
+      putbs(4);
+      putchr( strbuf[pos-4] = strbuf[pos-2] );
+      putchr( strbuf[pos-3] = strbuf[pos-1] );
+      putchr( strbuf[pos-2] = tmp1 );
+      putchr( strbuf[pos-1] = tmp2 );
+    }
+  }
+}
+
 void Edlin::right(int n)
 {
   /* ‰E‚Ö top ‚ªˆÚ“®‚·‚é --> ‘S‘Ì‚ª¶‚ÖˆÚ“®‚·‚éB*/

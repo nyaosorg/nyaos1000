@@ -17,6 +17,7 @@
 /* #define ECHODEBUG(x) (x) /* */
 
 extern int echoflag;
+int cmd_exec  (FILE *source , Parse &params );
 int cmd_mode  (FILE *source , Parse &params );
 int cmd_pwd   (FILE *source , Parse &params );
 int chdir_with_cdpath(const char *cwd);
@@ -293,45 +294,7 @@ static int cmd_set( FILE *srcfil, Parse &params )
   
   return 0;
 }
-
-static int cmd_source( FILE *srcfil, Parse &params )
-{
-  if( params.get_argc() < 2 )
-    return 0;
-
-  static int limitter=0;
-  if( limitter > 5 ){
-    fputs( "Too many source command nesting.\n" , stderr);
-    return 0;
-  }
-  limitter++;
-
-  char *fname=(char*)alloca(params.get_length(1)+1);
-  params.copy(1,fname);
-
-  char *cmdname=(char*)alloca(params.get_length(1)+5);
-  sprintf(cmdname,"%s.cmd",fname);
-
-  FILE *fp;
-  char buffer[1024];
-
-  if(   (fp=fopen(fname,"r"))   == NULL
-     && (fp=fopen(cmdname,"r")) == NULL 
-     && (_path(buffer,fname),  fp=fopen(buffer,"r"))==NULL
-     && (_path(buffer,cmdname),fp=fopen(buffer,"r"))==NULL ){
-
-    fprintf(stderr,"source: %s: no such file \n",fname);
-    limitter--;
-    return 0;
-  }
-  while( fgets_chop(buffer,sizeof(buffer),fp) != NULL ){
-    if( execute(fp,buffer) == RC_QUIT )
-      break;
-  }
-  fclose(fp);
-  limitter--;
-  return 0;
-}
+extern int cmd_source( FILE *srcfil, Parse &params );
 
 static int cmd_cursor( FILE *fp, Parse &params)
 {
@@ -456,6 +419,7 @@ const struct commandtable_tag jumptable[]={
   {"dirs",   cmd_dirs    },
   {"eadir",  cmd_eadir   },
   {"echo",   cmd_echo    },
+  {"exec",   cmd_exec    },
   {"exit",   cmd_exit    },
   {"foreach",foreach     },
   {"history",cmd_history },

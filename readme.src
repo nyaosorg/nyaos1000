@@ -12,9 +12,9 @@ complete.h	ファイル名補完クラス Complete
 complete.cc
 
 edlin.h		入力・編集クラス Edlin とその派生クラス
-edlin.cc	(Edlin)
-escedlin.cc	(EscEdlin)
-shell.cc	(ShellEdlin)
+edlin.cc	(Edlin) ........ 端末非依存型
+edlin2.cc	(Edlin2) ....... エスケープシーケンス版
+shell.cc	(ShellEdlin) ... シェル特化版
 bindkey.cc	(Shell)
 
 parse.h		構文解析クラス Parse
@@ -27,7 +27,9 @@ commands.cc	内蔵コマンド
 
 eadir.cc	内蔵コマンド「ls」「eadir」
 foreach.cc	内蔵コマンド「foreach」
-open.cc     open,which,DBCS関係
+open.cc		open,which,DBCS関係
+source.cc	source命令 , REXX
+search.cc	SCRIPTPATH などの検索ルーチンなど
 
 prepro.cc	チルダ・環境変数の置換ル－チン
 script.cc	スクリプト実行支援の置換ル－チン
