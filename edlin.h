@@ -192,10 +192,6 @@ private:
 extern char dbcstable[256];
 int dbcs_table_init();
 
-struct History{
-  History *prev,*next;
-  char buffer[1];
-};
 
 /* シェルに特化した Edlin クラス (shell.cc) */
 class ShellEdlin : public Edlin2 {
@@ -237,10 +233,8 @@ public:
     FATAL = -3, // 未知のトラブル
   };
 private:
-  static History *history; /* ヒストリはグロ－バルにした。*/
-  static int nhistories;
   ShellEdlin &ed;
-  History *cur;
+
   int ch;
   int changed;
   int prevchar;
@@ -253,8 +247,6 @@ private:
 
   Status search_engine(int isrev);
 public:
-  static int get_history_number() { return nhistories; }
-  static const char *get_nth_history(int n);
   static int ctrl_d_eof;
   static int ctrl_z_eof;
   static void bindkey_wordstar();
@@ -297,6 +289,23 @@ public:
   Status vz_next_history();
 private:
   int vz_history_core(struct WHist *);
+
+  /** ヒストリ関係 **/
+public:
+  struct History{
+    History *prev,*next;
+    char buffer[1];
+  };
+private:
+  static History *history;
+  static int nhistories;
+  History *cur;
+public:
+  static int get_history_number() { return nhistories; }
+  static const char *get_nth_history(int n);
+  
+  // 最新のヒストリ内容を引数の内容と置きかえる。
+  static int replace_last_history(const char *s);
 };
 
 /* TERMCAP & エスケープシーケンス メモ

@@ -16,9 +16,12 @@ enum{
   BIT_CD_SHORT_MID = 2,
   BIT_CD_SHORT_TOP = 4,
   BIT_CD_SHORT     = 6,
-  BIT_CD_LAST	   = 8
+  BIT_CD_LAST	   = 8,
 };
 
+/* ドライブが有効かどうか
+ * 
+ */
 static int changeDir(const char *s)
 {
   int rc=0;
@@ -146,7 +149,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
     }
   }
   
-  char*cwd=(modeflag&BIT_CD_LAST)?prevdir:argv[0];
+  char *cwd= ( modeflag & BIT_CD_LAST ) ? prevdir : argv[0] ;
   if( _chdir2( cwd )==0 ){
     strcpy(prevdir,wd);
     return 0;
@@ -222,6 +225,11 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
   return-1;
 }
 
+/* 内蔵コマンド「cd」
+ * in	srcfil コマンドが入っていた入力ストリーム
+ *	params パラメータオブジェクト(see "parse.h")
+ * return 常に 0
+ */
 int cmd_chdir( FILE *srcfil, Parse &params)
 {
   if( params.get_argc() > 1 ){
@@ -243,12 +251,17 @@ int cmd_chdir( FILE *srcfil, Parse &params)
   return 0;
 }
   
-
+/* ディレクトリスタック
+ */
 struct Dirstack{
   Dirstack *prev;
   char buffer[1];
 } *dirstack=NULL;
 
+/* params の定義する標準出力へ、ディレクトリスタックの内容を表示する。
+ * in	params パラメータオブジェクト。出力ストリームを得るのに用いるだけ。
+ * 	flag  bit0=1: 縦型表示をする(-v オプション用)
+ */
 int simple_dirs ( Parse &params , int flag=0 )
 {
   FILE *fout=params.open_stdout();
@@ -256,8 +269,6 @@ int simple_dirs ( Parse &params , int flag=0 )
     fputs("nyaos : cannot make a pipe or file\n",stderr);
     return 1;
   }
-
-
 
   char cwd[FILENAME_MAX];
   getcwd_case(cwd);
@@ -284,7 +295,10 @@ int simple_dirs ( Parse &params , int flag=0 )
   return 0;
 }
 
-
+/* 内蔵コマンド dirs
+ * in	srcfil コマンドの入っていたストリーム
+ *	params パラメータオブジェクト
+ */
 int cmd_dirs ( FILE *srcfil , Parse &params )
 {
   int flag=0;
@@ -308,7 +322,7 @@ int cmd_dirs ( FILE *srcfil , Parse &params )
 }
 
 /* スタックトップをスタック末尾に移動する。
- * ここでいうトップは、カレントディレクトリではない 
+ * ここでいうトップは、カレントディレクトリではなく、dirs の二番目。
  */
 static void move_stacktop_to_stacktail()
 {
@@ -328,7 +342,15 @@ static void move_stacktop_to_stacktail()
 }
 
 /* n 番目のディレクトリスタックへ移動する。
- * ただし、n==0 はカレントディレクトリ 
+ * なお、それまでのカレントディレクトリ名は prevdir に保存される。
+ * in	n  カレントディレクトリを0とした場合の番目。0 だと何もしない。
+ * out	error_dir  移動できなかった時に(-3)、そのディレクトリ名が入る。
+ *		   省略するか、NULL だと入らない。
+ * return
+ *	 0: 正常終了
+ *	-1: n が大きすぎる ,
+ *	-2: カレントディレクトリ名を取得できない。
+ *	-3: n番目のディレクトリへ移動できない。
  */
 static int chdir_to_nth_stack(int n,char *error_dir=NULL)
 {
@@ -340,9 +362,11 @@ static int chdir_to_nth_stack(int n,char *error_dir=NULL)
     return -2;
   
   Dirstack *cur=dirstack;
-  for(int i=1;i<n;i++){
+  for(int i=1;;i++){
     if( cur == NULL )
       return -1;
+    if( i >= n )
+      break;
     cur = cur->prev;
   }
   
@@ -356,11 +380,13 @@ static int chdir_to_nth_stack(int n,char *error_dir=NULL)
   return 0;
 }
 
-/* Dirstack のノードとして、カレントディレクトリを得る */
+/* Dirstack のノードを作成する。スタックには、まだ積まない。
+ * in	pwd ディレクトリ名。省略するとカレントディレクトリ名となる。
+ */
 static Dirstack *getcwd_as_dirstack_node(const char *pwd=NULL)
 {
+  char curdir[ FILENAME_MAX ];
   if( pwd == NULL ){
-    char curdir[ FILENAME_MAX ];
     if( getcwd_case( curdir ) == NULL )
       return NULL;
     pwd = curdir;
@@ -376,7 +402,9 @@ static Dirstack *getcwd_as_dirstack_node(const char *pwd=NULL)
   return tmp;
 }
 
-/* カレントディレクトリをスタック末尾に入れる */
+/* ディレクトリをスタック末尾に入れる 
+ * in	pwd ディレクトリ名。省略すると、カレントディレクトリ名となる。
+ */
 static void append_stack_tail(const char *pwd=NULL)
 {
   Dirstack *tmp=getcwd_as_dirstack_node(pwd);
@@ -393,15 +421,24 @@ static void append_stack_tail(const char *pwd=NULL)
   }
 }
 
-static void drop_stacktop()
+/* ディレクトリスタックのトップを捨てるだけ
+ * return 0:正常終了 -1:ディレクトリスタックは空
+ */
+static int drop_stacktop()
 {
   Dirstack *tmp=dirstack;
+  if( tmp == NULL )
+    return -1;
   dirstack = dirstack->prev;
   free(tmp);
+  return 0;
 }
 
-/* 画面にメッセージを出さない popd */
-static int simple_popd()
+/* 画面にメッセージを出さない popd 
+ * in	nth スタックn番目をpopd する。
+ * return 0:正常終了 , -1:スタックが空 , -2:ディレクトリがもはや存在しない
+ */
+static int simple_popd(int nth=0)
 {
   char wd[FILENAME_MAX];
   getcwd_case(wd);
@@ -409,49 +446,76 @@ static int simple_popd()
   if( dirstack == NULL )
     return -1;
   
-  if( _chdir2(dirstack->buffer) != 0 )
-    return -2;
-  
+  if( nth == 0 ){
+    if( _chdir2(dirstack->buffer) != 0 )
+      return -2;
+    drop_stacktop();
+  }else{
+    Dirstack *pre=dirstack , *cur;
+    for(int i=0;;){
+      if( (cur = pre->prev) == NULL )
+	return -1;
+      if( ++i >= nth-1 )
+	break;
+      pre = cur;
+    }
+    if( _chdir2(cur->buffer) != 0 )
+      return -2;
+    pre->prev = cur->prev;
+    free(cur);
+  }
   strcpy(prevdir,wd);
-  drop_stacktop();
-  
   return 0;
 }
 
 
+/* 内蔵コマンド pushd
+ * in	srcfil コマンドの入っていたストリーム
+ *	params パラメータ
+ */
 int cmd_pushd( FILE *srcfil , Parse &params)
 {
   char cwd[FILENAME_MAX];
   getcwd_case(cwd);
 
+  int smart_chdir_flag=0;
   int flag=0;
   int target=-1;
   for(int i=1; i < params.get_argc() ; i++ ){
     if( params[i][0] == '-' ){
-      for(int j=1; j<params[i].len ; j++ ){
-	switch( params[i][j] ){
-	case 'v':
-	  flag |= 1;
-	  break;
+      // オプションの長さが 1 の時：「-」のみの引数の時
+      if( params[i].len == 1 ){
+	smart_chdir_flag |= BIT_CD_LAST;
+	target = i;
+      }else{
+	for(int j=1; j<params[i].len ; j++ ){
+	  switch( params[i][j] ){
+	  case 'v':
+	    flag |= 1;
+	    break;
+	  }
 	}
       }
     }else{
       target = i;
     }
   }
-  
+
+  // 「pushd↓」：スタックトップとカレントディレクトリを入れ換える
   if( target == -1 ){
     if( dirstack == NULL ){
       fputs("pushd: No other directory.",stderr);
       return 0;
     }
-    // 「pushd↓」：スタックトップとカレントディレクトリを入れ換える
-    Dirstack *tmp=dirstack;
     
-    if( !_chdir2(dirstack->buffer)){
-      strcpy(prevdir,cwd);
-      dirstack = dirstack->prev;
+    if( _chdir2(dirstack->buffer) != 0){
+      fprintf(stderr,"%s: Specified directory in the stack is not found.\n"
+	      , dirstack->buffer );
+      return 0;
     }
+    Dirstack *tmp=dirstack;
+    strcpy(prevdir,cwd);
+    dirstack = dirstack->prev;
     free(tmp);
   }else if( params[target][0]=='+' ){
     /* 「pushd +2」
@@ -462,7 +526,7 @@ int cmd_pushd( FILE *srcfil , Parse &params)
     
     int n=atoi(params[target].ptr+1);
     if( n <= 0 ){
-      fprintf(stderr,"+%n: No such file or directory.\n",n);
+      fprintf(stderr,"+%s: No such file or directory.\n",n);
       return 0;
     }
 
@@ -473,7 +537,8 @@ int cmd_pushd( FILE *srcfil , Parse &params)
     char errdir[ FILENAME_MAX ];
     switch( chdir_to_nth_stack(n,errdir) ){
     case -3:
-      fprintf(stderr,"%s : Specified directory in the stack is not found.\n");
+      fprintf(stderr,"%s : Specified directory in the stack is not found.\n"
+	      , errdir );
       return 0;
     case -2:
       fputs("pushd: can not get current directory.\n",stderr);
@@ -493,7 +558,7 @@ int cmd_pushd( FILE *srcfil , Parse &params)
     return simple_dirs(params,flag);
 
   }else{
-    if( smart_chdir(srcfil,params) )
+    if( smart_chdir(srcfil,params,smart_chdir_flag) )
       return 0;
     strcpy(prevdir,cwd);
   }
@@ -506,8 +571,13 @@ int cmd_pushd( FILE *srcfil , Parse &params)
   return simple_dirs(params,flag);
 }
 
+/* 内蔵コマンド popd
+ * in	srcfil コマンドの入っていたストリーム
+ * 	param パラメータオブジェクト
+ */
 int cmd_popd( FILE *srcfil, Parse &params)
 {
+  int nth=0;
   int flag=0;
   for( int i=1 ; i<params.get_argc() ; i++ ){
     if( params[i][0] == '-' ){
@@ -518,13 +588,15 @@ int cmd_popd( FILE *srcfil, Parse &params)
 	  break;
 	}
       }
+    }else if( params[i][0] == '+' ){
+      nth = atoi( params[i].ptr+1 );
     }
   }
 
-  switch( simple_popd() ){
+  switch( simple_popd(nth) ){
   case -2:
-    fprintf(stderr,"%s : Specified directory in the stack is not found.\n",
-	    dirstack->buffer);
+    fprintf(stderr,"%s : Specified directory in the stack is not found.\n"
+	    , dirstack->buffer);
     break;
     
   case -1:

@@ -28,6 +28,7 @@ extern int option_backquote;
 extern int option_backquote_in_quote;
 extern int option_ignore_cases;
 extern int option_auto_close;
+extern int printexitvalue;
 
 int echoflag=0;
 
@@ -118,7 +119,7 @@ int cmd_rmdir( FILE *source, Parse &params )
   return 0;
 }
 
-int cmd_mkdir( FILE *source , Parse &params)
+int cmd_mkdir ( FILE *source , Parse &params)
 {
   int argc=params.get_argc();
   for(int i=1;i<argc;i++){
@@ -208,6 +209,7 @@ struct Option{
 #if 0
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
 #endif
+  { "printexitvalue"       , &printexitvalue                   , 1  , 0 },
   { "prompt_even_piped"    , &option_prompt_even_piped         , 1  , 0 },
   { "script"               , &scriptflag                       , 1  , 0 },
   { "script_cache"         , &option_script_cache              , 1  , 0 },

@@ -20,7 +20,7 @@ NYAOS_SRC= alias.cc bindkey.cc chdirs.cc complete.cc commands.cc \
 	command2.cc dbcs.cc eadir.cc edlin.cc edlin2.cc execute.cc \
 	finds.cc filelist.cc foreach.cc getkey.cc hash.cc nyaos.cc \
 	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script.cc \
-	search.cc shell.cc source.cc suffix.cc wordseek.cc
+	search.cc shell.cc source.cc suffix.cc wordseek.cc strtok.cc
 NYAOS_TBL=bindfunc.tbl keynames.tbl eadirop.tbl
 NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
 

@@ -35,6 +35,7 @@ public:
 
   int makelist          (const char *path);
   int makelist_with_path(const char *path);
+  int makelist_with_wildcard(const char *path);
   int add_buildin_command(const char *name); /* after makelist only */
   
   char *nextchar();

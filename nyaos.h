@@ -4,7 +4,7 @@
 
 #include "macros.h"
 
-#define VERSION "1.45"
+#define VERSION "1.46"
 
 /**** "callcmd.cc" ****/
 
@@ -49,7 +49,8 @@ extern int scriptflag,option_sos;
 extern int option_tilda_is_home;
 extern int option_replace_slash_to_backslash_after_tilda;
 void replace_alias( const char *source, char *destinate ,int max );
-void replace_envvar( const char *source , char *destinate ,int max );
+void replace_history( const char *source , char *destinate ,int max );
+void preprocess( const char *sp , char *destinate , int max );
 int replace_script( const char *source , char *destinate , int max );
 void buildin_command_to_complete_table(void);
 

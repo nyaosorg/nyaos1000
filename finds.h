@@ -36,8 +36,7 @@ public:
 
   int findfirst(const char *fname,int attr=ALL);
   
-  int findfirst_with_wildcard(const char *fname,int attr=ALL)
-    { return _findfirst(fname,attr); }
+  int findfirst_with_wildcard(const char *fname,int attr=ALL);
 
   int findnext()
     { return rc=DosFindNext(handle,&buffer,sizeof(buffer),&count );}

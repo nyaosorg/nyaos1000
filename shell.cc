@@ -62,6 +62,8 @@ int ShellEdlin::complete_hook(Complete &com)
   return n;
 }
 
+/* ^D や [TAB]^2 など、補完リストの表示を行うキーメソッド
+ */
 void ShellEdlin::complete_list()
 {
   Complete com;
@@ -69,6 +71,7 @@ void ShellEdlin::complete_list()
   int fntop=seek_word_top();
   int basesize=pos-fntop;
   int command_complete=(fntop <= 0) ;
+  int has_a_wildcard_letter = 0;
   char *buffer=(char*)alloca(basesize+6);
 
   if( strbuf[fntop] == '"' ){
@@ -76,8 +79,11 @@ void ShellEdlin::complete_list()
     basesize--;
   }
   char *bp=buffer;
-  while( fntop < pos )
+  while( fntop < pos ){
+    if( strbuf[fntop] == '?' || strbuf[fntop] == '*' )
+      has_a_wildcard_letter = 1;
     *bp++ = strbuf[fntop++];
+  }
   *bp = '\0';
   
   int nfiles=(  command_complete
@@ -86,10 +92,16 @@ void ShellEdlin::complete_list()
 	      );
   
   nfiles += complete_hook(com);
-
-  if( nfiles <= 0 )
-    return;
-
+  
+  if( nfiles <= 0 ){
+    /* もし、マッチするファイル名が無くて、かつワイルドカード文字が使われ
+     * ている場合は、そのワイルドカードにマッチするファイルを一覧する
+     */
+    if(    ! has_a_wildcard_letter 
+       || (nfiles+=com.makelist_with_wildcard( buffer )) <= 0 )
+      return;
+  }
+  
   struct filelist *cur=com.findfirst();
   putchr('\n');
   

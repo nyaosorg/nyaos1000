@@ -257,6 +257,8 @@ static int is_file_print(FileListT *f)
   for(const char *p=f->name ; *p != '\0' ; p++ ){
     if( *p=='/' || *p=='\\' )
       top=p+1;
+    if( is_kanji(*p) )
+      ++p;
   }
   if( ls_flag[LS_ALL]==0  &&  ( *top == '.' || (f->attr & Dir::HIDDEN) ))
     return 0;

@@ -9,6 +9,7 @@ int option_replace_slash_to_backslash_after_tilda=1;
 int option_tcshlike_history=0;
 int option_dots=1;
 int option_history_in_doublequote=0;
+int option_same_history=1;
 
 static struct PublicHistory {
   char *string;
@@ -19,6 +20,11 @@ int nhistories = 0;
 
 char drivealias[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+/* ヒストリを検索する。
+ *	str ... 検索文字列。だたし、先頭 len 分だけが有効
+ *	len ... 検索文字列の対象となる文字数
+ * return マッチしたヒストリ行。マッチしない時は NULL。
+ */
 static const char *seek_hist_top(const char *str,int len)
 {
   PublicHistory *cur=public_history;
@@ -29,6 +35,11 @@ static const char *seek_hist_top(const char *str,int len)
   }
   return NULL;
 }
+
+/* ヒストリを検索する。
+ *	str ... 検索文字列
+ * return マッチしたヒストリ行
+ */
 
 static const char *seek_hist_mid(const char *str)
 {
@@ -41,6 +52,11 @@ static const char *seek_hist_mid(const char *str)
   return NULL;
 }
 
+/* ヒストリの内容を、古い順の番号で得る。
+ *	n ... 番号
+ *
+ * return ヒストリ内容の文字列。無い時は NULL。
+ */
 static const char *get_hist_f(int n)
 {
   PublicHistory *cur=Oth.next;
@@ -55,6 +71,12 @@ static const char *get_hist_f(int n)
   return cur->string;
 }
 
+/* ドライブエイリアスのコマンド。プリプロセスでのドライブ文字変換を
+ * 設定するコマンド。
+ *	source コマンド文字列が入っていたストリーム
+ *	param パラメータ
+ * return 0:正常終了 !0:異常終了
+ */
 int cmd_drivealias( FILE *source , Parse &params )
 {
   for(int i=1; i<params.get_argc() ; i++ ){
@@ -96,6 +118,11 @@ static const char *get_hist_r(int n)
   return cur->string;
 }
 
+/* 環境変数の内容をコピーする
+ *	env ... 環境変数名(NULL可)
+ *	dp ... コピー先(スマートポインタ)
+ * return コピー先の末尾
+ */
 SmartPtr insert_env(const char *env,SmartPtr dp)
 {
   const char *sp=getenv(env);
@@ -106,6 +133,13 @@ SmartPtr insert_env(const char *env,SmartPtr dp)
   *dp = '\0';
   return dp;
 }
+
+/* 単語修飾子、すなわち「!」の後に続く「$」「^」などで、
+ * 行から単語を切り出す作業を行う。
+ *	sp ... 「:」の直後を差す。
+ *	histring ... 切り出されうる行
+ *	dp ... コピー先(スマートポインタ)
+ */
 
 static SmartPtr word_designator(const char *&sp , const char *histring ,
 				SmartPtr dp )
@@ -195,6 +229,11 @@ static SmartPtr word_designator(const char *&sp , const char *histring ,
   *dp = '\0';
 }
 
+/* 「!」で始まるヒストリ参照子を、対応するヒストリ内容に置換する。
+ *	sp ... 置換前の「!」を差すポインタ
+ *	dp ... 置換後の結果をコピーするスマートポインタ
+ * return コピーした末尾を差すスマートポインタ
+ */
 static SmartPtr history_copy(const char *&sp, SmartPtr dp )
 {
   /* 引数 sp は、「!」を指していると仮定 */
@@ -283,7 +322,12 @@ static SmartPtr history_copy(const char *&sp, SmartPtr dp )
   }
 }
 
-void replace_envvar(const char *sp, char *_dp , int max )
+/* ヒストリ変換を行うプリプロセッサ
+ *	sp ... 置換前文字列
+ *	_dp .. 置換結果を入れるバッファ
+ *	max .. バッファサイズ
+ */
+void replace_history(const char *sp, char *_dp , int max )
 {
   SmartPtr dp(_dp,max);
   
@@ -319,8 +363,6 @@ void replace_envvar(const char *sp, char *_dp , int max )
     *dp++ = *sp++; // 「.」「/」or「\」
   }
   
-  // ------------------- 本来のプリプロセス業務 ----------------
-
   while( *sp != '\0' ){
     switch( *sp ){
     case '\'':
@@ -333,6 +375,68 @@ void replace_envvar(const char *sp, char *_dp , int max )
 	quote ^= 1;
       break;
 
+    case '!':
+      if(  option_tcshlike_history
+	 && (   option_history_in_doublequote
+	     ?  (quote & 2)==0  :  quote == 0 ) ) {
+	/* history_in_doublequote が有効(not 0)ならば、
+	 *    "～!～"はヒストリ変換する。
+	 */
+
+	dp = history_copy(sp,dp);
+	/* is_history_refered = 1; */
+      }
+      break;
+    } // end of switch
+
+    prevchar = *dp++ = *sp++;    
+    if( is_kanji(prevchar) ){
+      *dp++ = *sp++;
+    }
+
+  } // end of while
+  *dp = '\0';
+
+  // ヒストリが参照されている場合は、変換後文字列を画面に表示する。
+  if( is_history_refered ){
+    puts( _dp );
+  }
+
+  PublicHistory *tmp=new PublicHistory;
+  if( tmp != NULL  &&  (tmp->string = strdup(_dp))!=NULL ){
+    tmp->prev = public_history ;
+    tmp->next = public_history->next ;
+    public_history = public_history->next = tmp ;
+    nhistories++;
+    if( option_same_history ){
+      Shell::replace_last_history( tmp->string );
+    }
+  }
+}
+
+/* プリプロセス：環境変数、チルダ、「...」などの展開を行う。
+ *	sp 変換前文字列
+ *	_dp コピー先バッファ
+ *	max バッファサイズ
+ */
+void preprocess(const char *sp, char *_dp , int max )
+{
+  SmartPtr dp(_dp,max);
+  int quote=0;
+  int prevchar=' ';
+
+  while( *sp != '\0' ){
+    switch( *sp ){
+    case '\'':
+      if( (quote & 1)==0 )
+	quote ^= 2;
+      break;
+      
+    case '"':
+      if( (quote & 2)==0 )
+	quote ^= 1;
+      break;
+      
     case ';': /* 空白＋「；」を「&;」に変換する */
       ++sp;
       if( Parse::option_semicolon_terminate && !quote && is_space(prevchar) ){
@@ -340,7 +444,7 @@ void replace_envvar(const char *sp, char *_dp , int max )
       }
       *dp++ = ';';
       continue;
-
+      
     case '.': /* 空白＋「...」を「..\..」に変換する */
       if(   option_dots 
 	 && !quote 
@@ -404,19 +508,6 @@ void replace_envvar(const char *sp, char *_dp , int max )
       }
       break;
 
-    case '!':
-      if(  option_tcshlike_history
-	 && (   option_history_in_doublequote
-	     ?  (quote & 2)==0  :  quote == 0 ) ) {
-	/* history_in_doublequote が有効(not 0)ならば、
-	 *    "～!～"はヒストリ変換する。
-	 */
-
-	dp = history_copy(sp,dp);
-	/* is_history_refered = 1; */
-      }
-      break;
-
     case '%':
       if( (quote & 2)==0  &&  isalpha(sp[1] & 255) ){
 	char envname[128];
@@ -459,25 +550,12 @@ void replace_envvar(const char *sp, char *_dp , int max )
   }
  exit:
   *dp = '\0';
-
-  /* ヒストリが参照されていない場合だけ、入力した文字列を
-   * 公式ヒストリに残す。
-   */
-
-  if( is_history_refered ){
-    puts( _dp );
-  }
-
-  PublicHistory *tmp=new PublicHistory;
-  if( tmp != NULL  &&  (tmp->string = strdup(_dp))!=NULL ){
-    tmp->prev = public_history ;
-    tmp->next = public_history->next ;
-    public_history = public_history->next = tmp ;
-    nhistories++;
-  }
 }
 
-/* コマンド「hisotory」
+
+/* コマンド「history」
+ *	source ... コマンド自身が入っていたストリーム
+ *	param .... パラメータリストオブジェクト
  */
 int cmd_history(FILE *source,Parse &param)
 {

@@ -8,11 +8,16 @@
 #include "edlin.h"
 #include "nyaos.h"
 #include "finds.h"
+#include "strtok.h"
 
 extern int nhistories;
 extern int execute_result;
 
-/* パスが、ホームディレクトリ名を含んでいれば、「～」に変換する。*/
+/* パスが、ホームディレクトリ名を含んでいれば、「～」に変換する。
+ *
+ * in/out p ファイル名。直接書き変えられる
+ * return 書き変え後のファイル名の末尾
+ */
 static char *to_tilda_name(char *p)
 {
   const char *home=getenv("HOME");
@@ -37,8 +42,12 @@ static char *to_tilda_name(char *p)
 }
 
 
-/* ---- 大文字・小文字を区別した正確なファイル名を得る。
-   ---- src は見事に破壊される。 ---- */
+
+/* 大文字・小文字を区別した正確なファイル名を得る。
+ * in	src オリジナルファイル名(破壊される)
+ * out	dst 大文字・小文字を正確にしたファイル名
+ * return dst の末尾へのポインタ
+ */
 char *get_true_name(char *src,char *dst)
 {
   /* 元の文字列は
@@ -46,7 +55,7 @@ char *get_true_name(char *src,char *dst)
    *    x:\
    * のどちらかのケース。
    */
-
+  
   char *dp=dst;
 
   /* ドライブ文字処理 */
@@ -60,14 +69,20 @@ char *get_true_name(char *src,char *dst)
     *dp++ = '\\';
   }
   /* サブディレクトリ名を切り出す。*/
-  char *token=strtok(src,"\\/");
+  Strtok tzer(src);
+  char *token=tzer.cut_with("\\/");
+  // char *token=strtok(src,"\\/");
   if( token != NULL ){
     for(;;){
+
+      // まず、素のファイル名をコピーしておく。
       char *p=dp;
       while( *token != '\0' )
 	*p++ = *token++;
       *p = '\0';
 
+      // 大文字・小文字の正確なファイル名が得られたら、
+      // そちらを先にコピーした上に上書きする。
       Dir dir;
       if( dir._findfirst(dst) == 0 ){
 	const char *q=dir.get_name();
@@ -77,8 +92,11 @@ char *get_true_name(char *src,char *dst)
       }else{
 	dp = p;
       }
-      if( (token=strtok(NULL,"\\/")) == NULL )
+
+      if( (token=tzer.cut_with("\\/")) == NULL )
 	break;
+      // if( (token=strtok(NULL,"\\/")) == NULL )
+      //   break;
       *dp++ = '\\';
     }
   }
@@ -92,7 +110,10 @@ void truepath( char *dst , const char *src , int size )
   get_true_name( tmp , dst );
 }
 
-/* ---- 現在のカレントディレクトリを大文字・小文字も正確に得る ---- */
+/* 現在のカレントディレクトリを大文字・小文字も正確に得る
+ * in/out - dst ファイル名(上書きされる)
+ * return ファイル名の末尾の文字
+ */
 char *getcwd_case(char *dst)
 {
   char cwd[ FILENAME_MAX ];
@@ -110,11 +131,13 @@ char *getcwd_case(char *dst)
   
   /* 最後にルートを「/」に戻す */
   while( *dst != '\0' ){
-    if( *dst == '\\' )
-      *dst = '/';
-    else if( is_kanji(*dst) )
+    if( *dst == '\\' ){
+      *dst++ = '/';
+    }else{
+      if( is_kanji(*dst) )
+	++dst;
       ++dst;
-    ++dst;
+    }
   }
   return dst;
 }
@@ -163,18 +186,23 @@ char *get_cwd_long_name(char *dp)
   if( _getcwd1( cwd+2 , toupper(cwd[0]) ) != 0 )
     return dp;
 
+  /* パス名の/を￥に変換する。*/
   for(char *p=cwd+2;*p != '\0';p++){
     if( *p=='/' )
       *p = '\\';
+    else if( is_kanji(*p) )
+      ++p;
   }
 
   /* A:\
      0123 */
   
+  /* ルートディレクトリの場合の例外処理 */
   if( (cwd[2] == '/' || cwd[2] == '\\' ) && cwd[3]=='\0' ){
     *dp++ = '/'; *dp = '\0';
     return dp;
   }
+
   int filesystem=query_filesystem(cwd[0]);
 
   for(char *sp=cwd+3; ;sp++ ){
@@ -222,6 +250,8 @@ char *get_cwd_long_name(char *dp)
       if( (*sp=org) == '\0' )
 	break;
     }
+    if( is_kanji(*sp) )
+      ++sp;
   }
   *dp = '\0';
   return dp;
@@ -405,6 +435,8 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
       }
       promptenv++;
     }else{
+      if( is_kanji(*promptenv) )
+	*dp++ = *promptenv++;
       *dp++ = *promptenv++;
     }
   }

@@ -76,6 +76,29 @@ int Dir::findfirst(const char *fname,int attr)
   return _findfirst(path,attr);
 }
 
+/* ワイルドカードファイル名を受け入れる findfirst。
+ * パス文字を変換するのみ
+ */
+int Dir::findfirst_with_wildcard(const char *fname,int attr)
+{
+  char *path=(char*)alloca(strlen(fname));
+  char *p=path;
+  
+  int lastchar = 0;
+  while( *fname != '\0' ){
+    if( *fname == '/' ){
+      fname++;
+      *p++ = '\\';
+      continue;
+    }
+    if( is_kanji(lastchar=*fname) )
+      *p++ = *fname++;
+    *p++ = *fname++;
+  }
+  *p = '\0';
+  return _findfirst(path,attr);
+}
+
 void fnexplode2_free(char **buffer)
 {
   if( buffer != NULL ){

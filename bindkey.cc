@@ -12,11 +12,14 @@
 #define CTRL(a) ((a) & 0x1F)
 #define KEY(a)  ((K_##a & 0xFF) | 0x100)
 
+extern int execute_result;
+int printexitvalue=1;
+
 /* 帰り値は、文字数。キャンセルの時は (-1)を返す。 */
 
 int overwrite=0;
 
-History *Shell::history=NULL;
+Shell::History *Shell::history=NULL;
 int Shell::nhistories=0;
 int Shell::ctrl_d_eof=0;
 int Shell::ctrl_z_eof=1;
@@ -287,56 +290,55 @@ Shell::Status Shell::tcshlike_complete()
 }
 Shell::Status Shell::input_terminate()
 {
-#if 0
-  if( changed ){ /* 変更があれば、履歴に放り込む */
-#endif
-    int len=ed.length();
-    if( len <= 0 )
-      return TERMINATE;
-    
-    History *tmp=(History*)malloc(sizeof(History)+len);
-    if( tmp == NULL )
-      return FATAL;
-
-    /* 古い方が prev , 新しい方が next側 */
-    memcpy(tmp->buffer , ed.getbuffer() , len );
-    tmp->buffer[len] = '\0';
-    tmp->prev = history;
-    tmp->next = NULL;
-    
-    if( history != NULL )
-      history->next = tmp;
-    history = tmp;
-    
-    /* curが NULL の時、次回のヒストリ参照で、
-     * 最初に現れる文字列がトップになる。 */
-
-    cur = NULL;
-
-    nhistories++;
-#if 0
-  }else if( history != NULL  &&  cur != NULL  &&  cur->next != NULL ){
-    /* 変更がされていない場合、参照した履歴を先頭に持ってくる。*/
-    /* -- cur を history から切り放す --*/
-    cur->next->prev = cur->prev;
-    if( cur->prev != NULL )
-      cur->prev->next = cur->next;
-
-    /* cur 自身のポインターを合わす */
-    cur->prev = history;
-    cur->next = NULL;
-
-    /* 先頭ポインタを合わす */
-    history->next = cur;
-    history = cur;
-    cur = NULL;
-  }
-#endif
-  /* Edlin2::canna_to_alnum(); */
+  int len=ed.length();
+  if( len <= 0 )
+    return TERMINATE;
+  
+  History *tmp=(History*)malloc(sizeof(History)+len);
+  if( tmp == NULL )
+    return FATAL;
+  
+  /* 古い方が prev , 新しい方が next側 */
+  memcpy(tmp->buffer , ed.getbuffer() , len );
+  tmp->buffer[len] = '\0';
+  tmp->prev = history;
+  tmp->next = NULL;
+  
+  if( history != NULL )
+    history->next = tmp;
+  history = tmp;
+  
+  /* curが NULL の時、次回のヒストリ参照で、
+   * 最初に現れる文字列がトップになる。 */
+  
+  cur = NULL;
+  
+  nhistories++;
   ed.go_tail();
 
   return TERMINATE;
 }
+
+int Shell::replace_last_history(const char *s)
+{
+  int len=strlen(s);
+  History *tmp=(History*)malloc(sizeof(History)+len);
+  if( tmp == NULL )
+    return -1;
+  
+  strcpy( tmp->buffer , s );
+  tmp->next = NULL;
+  if( history != NULL )
+    tmp->prev = history->prev;
+  else
+    tmp->prev = NULL;
+  
+  free( history );
+  history = tmp;
+
+  return 0;
+}
+
 Shell::Status Shell::repaint()
 {
   ed.cls();
@@ -394,6 +396,9 @@ int Shell::line_input(const char *prompt,int window)
 {
   raw_mode();
   ed.setprompt(prompt,window);
+  if(printexitvalue&&execute_result){
+    printf("Exit %i\n",execute_result);
+  }
   fputs(prompt,stdout);
   fflush(stdout);
   ed.init();
@@ -492,7 +497,7 @@ void Shell::bindlist(FILE *fout)
   }
 }
 
-static History *i_search_core( History *cur,const char *sekstr
+static Shell::History *i_search_core( Shell::History *cur,const char *sekstr
 			      ,int &findpos)
 {
   for(;;){
@@ -509,8 +514,9 @@ static History *i_search_core( History *cur,const char *sekstr
   }
 }
   
-static History *rev_i_search_core( History *cur,const char *sekstr
-				  ,int &findpos )
+static Shell::History *rev_i_search_core(  Shell::History *cur
+					 , const char *sekstr
+					 , int &findpos )
 {
   for(;;){
     char *findptr;

@@ -324,22 +324,29 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   
   if( option_debug_echo )
     printf("PASS-0:{%s}\n",cmdline);
-  
-  /* 環境変数の置換処理 */
+
+  /* ヒストリの置換処理 */
   char buffer[2][4096];
   int curbuf=0;
 
-  replace_envvar( cmdline , buffer[curbuf] , sizeof(buffer[0]) );
+  replace_history( cmdline , buffer[curbuf] , sizeof(buffer[0]) );
   
   if( option_debug_echo )
     printf("PASS-1:{%s}\n",buffer[curbuf] );
 
+  // 一般的プリプロセス(環境変数など) 
+  
+  preprocess( buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
+  curbuf ^= 1;
+  if( option_debug_echo )
+    printf("PASS-2:{%s}\n",buffer[curbuf] );
+  
   /* エイリアスの置換処理 */
   replace_alias( buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
   curbuf ^= 1;
 
   if( option_debug_echo )
-    printf( "PASS-2:{%s}\n" , buffer[curbuf] );
+    printf( "PASS-3:{%s}\n" , buffer[curbuf] );
 
   /* 逆クォートの置換処理 */
   if( option_backquote ){
@@ -347,7 +354,7 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
     curbuf ^= 1;
   }
   if( option_debug_echo )
-    printf( "PASS-3:{%s}\n" , buffer[curbuf] );
+    printf( "PASS-4:{%s}\n" , buffer[curbuf] );
   
   for(const char *pointer=buffer[curbuf];;){
     Parse params(pointer);
@@ -402,7 +409,7 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   curbuf ^= 1;
   
   if( option_debug_echo )
-    printf("PASS-4:{%s}\n", buffer[curbuf] );
+    printf("PASS-5:{%s}\n", buffer[curbuf] );
   
   if( echoflag )
     puts( buffer[curbuf] );

@@ -31,6 +31,11 @@ const char *Complete::get_real_name1() const
   return p->name;
 }
 
+/* 与えられたファイル名が、続く拡張子のいずれかにマッチするかを判定する関数
+ *	path	対象のファイル名
+ *	"..."	拡張子リスト(可変長引数)。末尾を NULL にする。
+ * return マッチした拡張子の番目。マッチしていなければ 0 。
+ */
 int which_suffix(const char *path,...)
 {
   /* まず、拡張子のドットを検索する。*/
@@ -70,8 +75,12 @@ int which_suffix(const char *path,...)
   return 0;
 }
 
-/* パスを (ドライブ＋ディレクトリ) と (ファイル名) に分ける */
-
+/* パスを〈ドライブ＋ディレクトリ〉 と 〈ファイル名〉 に分ける。
+ * in	path	オリジナルのパス
+ *	dir	ドライブ＋ディレクトリ
+ * out	fname	ファイル名
+ * return 最後のパス区切文字('/','\\',or'\0')
+ */
 int pathsplit( const char *path, char *dir, char *fname )
 {
   const char *lastroot=NULL;
@@ -146,37 +155,24 @@ const char *Complete::errmsg[]={
   "malloc()/new operator error",
 };
 
-static int instrcmp(const char *s1,const char *s2,int n)
-{
-  while( n-- > 0 ){
-    if( is_kanji( *s1 ) ){
-      if( *s1 != *s2 )
-	return *s1-*s2;
-      if( *++s1 != *++s2 )
-	return *s1-*s2;
-      n--;
-    }else if( to_upper(*s1) != to_upper(*s2) ){
-       return *s1-*s2;
-    }
-    s1++;
-    s2++;
-  }
-  return 0;
-}
-
+/* 絶対パスやカレントディレクトリのファイル名をインスタンスに読み込むメソッド。
+ * in	command_complete !0ならば、実行可能ファイル名のみ読み込む
+ *	is_with_dir !0ならば、ディレクトリ名も読み込む
+ * return 読み込んだファイル名の数
+ */
 int Complete::makelist_core(int command_complete, int is_with_dir)
 {
   common_length = strlen(fname);
-
+  
   for(Dir dir(directory) ; dir != NULL ; ++dir ){
-
+    
     /* 「.」と「..」を除く */
     if( dir[0]=='.' && ( dir[1]=='.' || dir[1]=='\0' ) )
       continue;
     
     if( common_length == 0
        || ( dir.get_name_length() >= common_length
-	   && instrcmp( fname , dir.get_name() , common_length ) == 0 
+	   && strnicmp( fname , dir.get_name() , common_length ) == 0 
 	   ) ){
       
       /* コマンド名補完の場合、拡張子が、EXE,CMD,BAT,COM以外は除く。
@@ -209,6 +205,10 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
   return get_num();
 }
 
+/* ファイル名補完を行うの為の、ファイル名リストを作成するメソッド。
+ * in	path 不完全なファイル名
+ * return 候補となるファイルの数
+ */
 int Complete::makelist(const char *path)
 {
   status = FILENAME_COMPLETED;
@@ -224,10 +224,14 @@ int Complete::makelist(const char *path)
 
 Files path_cache;
 
+/* コマンド名補完の為に、PATH,SCRIPTPATH 上のコマンド名を
+ * グローバル変数 path_cache に設定する。
+ */
 void make_command_cache()
 {
   path_cache.clear();
 
+  // 環境変数 PATH 上のコマンドの登録
   const char *envpath=getenv("PATH");
   if( envpath != NULL ){
     char *env=(char*)alloca(strlen(envpath)+1);
@@ -246,6 +250,7 @@ void make_command_cache()
       }
     }
   }
+  // 環境変数 SCRIPTPATH 上のコマンドの登録
   envpath=getenv("SCRIPTPATH");
   if( envpath != NULL ){
     char *env=(char*)alloca(strlen(envpath)+1);
@@ -255,7 +260,9 @@ void make_command_cache()
 	; dirname != NULL
 	; dirname = strtok(NULL,";") ){
       
-      for(Dir dir(dirname); dir ; dir++ ){
+      for( Dir dir(dirname); dir ; dir++ ){
+	// 末尾がチルダのファイル、隠しファイル以外のファイルは
+	// 全て登録する。
 	if(   dir[dir.get_name_length()-1] != '~'
 	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
 	
@@ -265,6 +272,29 @@ void make_command_cache()
   }
 }
 
+/* ワイルドカードを含んだパス名のマッチリストを作成するメソッド
+ * in	path ワイルドカードを含んだパス名
+ * return 候補となるファイル名の数
+ */
+int Complete::makelist_with_wildcard(const char *path)
+{
+  int nfiles=0;
+  
+  Dir dir;
+  for(dir.findfirst_with_wildcard(path) ; dir ; ++dir ){
+    this->insert( new_filelist(dir) );
+    if( dir.get_name_length() > max_length )
+      max_length = dir.get_name_length();
+    nfiles++;
+  }
+  return nfiles;
+}
+
+
+/* コマンド名補完を行う為の、コマンド名リストを作成するメソッド
+ * in	path 不完全なコマンド名
+ * return 候補となるコマンドの数
+ */
 int Complete::makelist_with_path(const char *path)
 {
   status = COMMAND_COMPLETED;
@@ -287,6 +317,7 @@ int Complete::makelist_with_path(const char *path)
     }
     p++;
   }
+
   
   /* ASSERT : path には、ディレクトリ名が含まれていない。*/
   strcpy( fname , path );
@@ -298,7 +329,7 @@ int Complete::makelist_with_path(const char *path)
   
   for(FileListT *cur=path_cache.get_top() ; cur != NULL ; cur=cur->next ){
     if(   cur->length > common_length
-       && instrcmp(fname,cur->name,common_length ) == 0 ){
+       && strnicmp(fname,cur->name,common_length ) == 0 ){
       
       insert( dup_filelist(cur) );
       if( cur->length > max_length )
@@ -307,7 +338,7 @@ int Complete::makelist_with_path(const char *path)
   }
   for(Dir dir(".") ; dir != NULL ; ++dir ){
     if(   dir.get_name_length() >= common_length
-       && instrcmp( fname , dir.get_name() ,common_length )==0
+       && strnicmp( fname , dir.get_name() ,common_length )==0
        && which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0
        && dir[dir.get_name_length()-1] != '~'
        && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  ){
@@ -326,7 +357,7 @@ int Complete::add_buildin_command(const char *name)
   int length=strlen(name);
 
   if(   length >= common_length
-     && instrcmp( fname , name ,common_length )==0 ){
+     && strnicmp( fname , name ,common_length )==0 ){
     
     struct filelist *tmp=
       (struct filelist *)malloc(sizeof(struct filelist)+length);
@@ -346,6 +377,9 @@ int Complete::add_buildin_command(const char *name)
   return -1;
 }
 
+/* 補完すべき残りの文字列を得るメソッド。
+ * return 文字列（固定staticバッファ）
+ */
 char *Complete::nextchar()
 {
   static char buffer[FILENAME_MAX];
