@@ -44,6 +44,48 @@ int Shell::vz_history_core(WHist *tmp)
   }
 }
 
+/* 空白を読み飛ばす。
+ * return
+ *	 0 単語の頭まで、ポインタを移動した
+ *	-1 '\0' が現れた。
+ */
+static int skipSpace(const char *&sp)
+{
+  for(;;){
+    if( *sp=='\0' )
+      return -1;
+    if( !isspace(*sp & 255) )
+      return 0;
+    if( is_kanji(*sp) )
+      ++sp;
+    ++sp;
+  }
+}
+
+/* 単語を読み飛ばす。
+ * return
+ *	 0 単語の末尾まで、ポインタを移動した。
+ *	-1 '\0'が現れた。
+ */
+static int skipWord(const char *&sp)
+{
+  int quote=0;
+  for(;;){
+    if( *sp=='\0' )
+      return -1;
+    if( isspace(*sp & 255 ) && quote == 0 )
+      return 0;
+    if( *sp == '"'  &&  (quote & 2) == 0 )
+      quote ^= 1;
+    if( *sp == '\'' &&  (quote & 1) == 0  &&  option_single_quote )
+      quote ^= 2;
+    
+    if( is_kanji(*sp) )
+      ++sp;
+    ++sp;
+  }
+}
+
 Shell::Status Shell::vz_prev_history()
 {
   /* 検索文字列を編集行から取得する */
@@ -51,7 +93,8 @@ Shell::Status Shell::vz_prev_history()
   int wordlen=0;
 
   for(int i=0;;){
-    for(;;){ /* 空白スキップ */
+    /* 空白スキップ */
+    for(;;){
       if( i >= ed.position() ){
 	wordtop = i;
 	wordlen = 0;
@@ -61,6 +104,7 @@ Shell::Status Shell::vz_prev_history()
 	break;
       i++;
     }
+    /* 文字列部分の取得 */
     wordtop = i;
     wordlen = 0;
     for(int quote=0;;){
@@ -73,8 +117,10 @@ Shell::Status Shell::vz_prev_history()
       if( ed[i] == '\'' && (quote & 1)==0  &&  option_single_quote )
 	quote ^= 2;
 
-      i++;
-      wordlen++;
+      if( is_kanji(ed[i]) ){
+	i++; wordlen++;
+      }
+      i++; wordlen++;
     }
   }
  Break:
@@ -107,9 +153,8 @@ Shell::Status Shell::vz_prev_history()
 
 	  if( vz_history_core( whist )==0 )
 	    return CONTINUE;
-
 	  else
-	  break;
+	    break;
 	}
 	if( *sp == '\0' || *sp++ != ed[i] )
 	  goto nextline;
@@ -119,30 +164,13 @@ Shell::Status Shell::vz_prev_history()
       /******** 単語単位での検索 **********/
 
       /* 最初の単語、すなわち、コマンド名を無視する */
-      for(;;){
-	if( *sp=='\0' ) goto nextline;
-	if( !isspace(*sp & 255) ) break;
-	++sp;
-      }
-      for(int quote=0;;){
-	if( *sp=='\0' )
-	  goto nextline;
-	if( isspace(*sp & 255 ) && quote == 0 )
-	  break;
-	if( *sp == '"'  &&  (quote & 2) == 0 )
-	  quote ^= 1;
-	if( *sp == '\'' &&  (quote & 1) == 0  &&  option_single_quote )
-	  quote ^= 2;
-	++sp;
-      }
+      if( skipSpace(sp) != 0  ||  skipWord(sp) != 0 )
+	goto nextline;
 
       for(;;){ /* 一行の単語レベルのループ */
 
 	/* 空白スキップ */
-	while( *sp != '\0' && isspace(*sp & 255))
-	  ++sp;
-	
-	if( *sp == '\0' )
+	if( skipSpace(sp) != 0 )
 	  goto nextline;
 	
 	for(int i=0 ;; i++,sp++){
@@ -157,6 +185,9 @@ Shell::Status Shell::vz_prev_history()
 		quote ^= 1;
 	      if( sp[left] == '\'' &&  (quote & 1)==0  && option_single_quote )
 		quote ^= 2;
+	      
+	      if( is_kanji(sp[left]) )
+		++left;
 	      ++left;
 	    }
 	    

@@ -28,6 +28,7 @@ extern int option_backquote;
 extern int option_backquote_in_quote;
 extern int option_ignore_cases;
 extern int option_auto_close;
+extern int option_honest;
 extern int printexitvalue;
 
 int echoflag=0;
@@ -177,48 +178,49 @@ int cmd_comment(FILE *source, Parse &params)
   return rc;
 }
 
+/* オプション一覧：
+ *	option 文で使用するオプションを増す時は、option結果を代入する変数
+ *	を宣言して、ここで登録しさえすればよい。
+ */
 struct Option{
-  const char *name;
-  int *pointor;
-  int true_value;
-  int false_value;
+  const char *name;	/* オプションの名前 */
+  int *pointor;		/* オプションの結果を入れる変数を差す */
+  int true_value;	/* option +XXX の時に変数に代入する値 */
+  int false_value;	/* option -XXX の時に変数に代入する値 */
 } optlist[]={
-  { "amp_start"            , &option_amp_start                 , 1  , 0 },
   { "amp_detach"	   , &option_amp_detach		       , 1  , 0 },
+  { "amp_start"            , &option_amp_start                 , 1  , 0 },
   { "anywhere_history"     , &option_tcshlike_history          , 1  , 0 },
   { "auto_close"	   , &option_auto_close                , 1  , 0 },
   { "backquote"            , &option_backquote                 , 1  , 0 },
   { "backquote_in_quote"   , &option_backquote_in_quote        , 1  , 0 },
   { "beep"                 , &ShellEdlin::beep_ok              , 1  , 0 },
+  { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
+  { "cmdlike_crlf"         , &option_cmdlike_crlf              , 1  , 0 },
+  { "complete_etc"         , &option_complete_etc              , 1  , 0 },
   { "complete_hidden"      , &Complete::complete_hidden_file   , 1  , 0 },
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
   { "complete_tilda"       , &Complete::complete_tail_tilda    , 1  , 0 },
-  { "complete_etc"         , &option_complete_etc              , 1  , 0 },
-// { "conv_complete"        , &Edlin::option_conversion_complete, 1  , 0 },
   { "ctrl_d_eof"           , &Shell::ctrl_d_eof                , 1  , 0 },
   { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
-  { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
-  { "cmdlike_crlf"         , &option_cmdlike_crlf              , 1  , 0 },
   { "debug"                , &option_debug_echo                , 1  , 0 },
   { "direct_key"           , &option_direct_key		       , 1  , 0 },
   { "dots"                 , &option_dots                      , 1  , 0 },
   { "echo"                 , &echoflag                         , 1  , 0 },
   { "esc_key_sequences"	   , &option_esc_key_sequences	       , 1  , 0 },
   { "history_in_doublequote" , &option_history_in_doublequote  , 1  , 0 },
+  { "honest"               , &option_honest                    , 1  , 0 },
   { "ignore_cases"         , &option_ignore_cases              , 1  , 0 },
-#if 0
-  { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
-#endif
   { "printexitvalue"       , &printexitvalue                   , 1  , 0 },
   { "prompt_even_piped"    , &option_prompt_even_piped         , 1  , 0 },
   { "script"               , &scriptflag                       , 1  , 0 },
   { "script_cache"         , &option_script_cache              , 1  , 0 },
   { "semicolon"            , &Parse::option_semicolon_terminate, 1  , 0 },
   { "single_quote"         , &option_single_quote              , 1  , 0 },
-  { "sos"                  , &option_sos                       , 1  , 0 },
-  { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
   { "slash_to_backslash_after_tilda"
       , &option_replace_slash_to_backslash_after_tilda , 1 , 0 },
+  { "sos"                  , &option_sos                       , 1  , 0 },
+  { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
   { NULL , NULL , 1 , 0 }
 };

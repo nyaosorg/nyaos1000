@@ -35,6 +35,7 @@ enum{
   LS_IGNORE_UNDERBAR ,
   LS_IGNORE_BACKUP ,
   LS_LAST_COLUMN ,
+  LS_MARK, /* !0: どんな時でも * , / を実行ファイル・ディレクトリにつける*/
   LS_COMMENT ,	/* 0:表示しない  1:inline  2:multi-line */
   LS_LONGNAME ,	/* 0:表示しない  1:左よせ  2:右よせ */
   LS_SORT ,
@@ -245,7 +246,7 @@ static void set_ls_color_table(const char *s)
   }/* : で区切られたル－プ */
 }
 
-int column=0;
+// int column=0;
 
 int nprintlines=0;
 
@@ -341,9 +342,14 @@ static void smart_copy( SmartPtr &dp , const char *sp )
 }
 
 
-/* 「ls -l」形式で、一ファイルを表示する */
-
-void dir1(FileListT *flist , int max_length , FILE *fout)
+/* 「ls -l」形式で、一ファイルを表示する 
+ *	flist … 対象ファイルの情報
+ *	max_length … 最大ファイル名の流さ
+ *	curdir … 基準ディレクトリ
+ *	fout … 出力先
+ */
+void dir1(  FileListT *flist , int max_length 
+	  , const char *curdir , FILE *fout)
 {
   int tailchar = ' ';
 
@@ -423,16 +429,24 @@ void dir1(FileListT *flist , int max_length , FILE *fout)
     dbcs_fputs(flist->name,fout);
     if( ! ls_flag[ LS_NOCOLOR ] )
       fputs(ls_end_code,fout);
-    putc(tailchar,fout);
 
     int i=strlen(flist->name);
+
+    /* 実行ファイルに「＊」ディレクトリに「/」を付ける。 
+     * ただし、パイプ、ファイル出力の際は付けない。
+     */
+    if( tailchar != ' '  &&  (isatty(fileno(fout)) || ls_flag[LS_MARK] )){
+      putc(tailchar,fout);
+      ++i;
+    }
+
     if( ! ls_flag[ LS_LAST_COLUMN ] ){
-      while( i < max_length+1 ){
+      while( i < max_length+2 ){
 	++i;
 	putc(' ',fout);
       }
     }
-    column += i;
+    /* column += i; */
     return;
   }
 
@@ -456,20 +470,31 @@ void dir1(FileListT *flist , int max_length , FILE *fout)
     datetime = &flist->write;
     break;
   }
-  
-  ncolumns += fprintf(fout,"%s %8ld %3s %2d "
-		      , attrstr
-		      , flist->size
-		      , month[ datetime->d.month-1 ]
-		      , datetime->d.day
-		      );
-  
-  if( flist->write.d.year+1980 != thisyear ){
-    ncolumns += fprintf(fout," %4d " ,datetime->d.year+1980 );
+
+  if( datetime->d.month > 12  || datetime->d.month < 1   ){
+    /* FAT では、最終アクセス時刻を取得することができない。
+     * この場合、時刻は 1989/0/0 になってしまう。
+     */
+    ncolumns += fprintf(fout,"%s %8ld ??? ??  ???? "
+			, attrstr
+			, flist->size
+			);
   }else{
-    ncolumns += fprintf( fout
-			,"%02d:%02d " 
-			, datetime->t.hour ,datetime->t.minute );
+    ncolumns += fprintf(fout,"%s %8ld %3s %2d "
+			, attrstr
+			, flist->size
+			, month[ datetime->d.month-1 ]
+			, datetime->d.day
+			);
+
+  
+    if( flist->write.d.year+1980 != thisyear ){
+      ncolumns += fprintf(fout," %4d " ,datetime->d.year+1980 );
+    }else{
+      ncolumns += fprintf( fout
+			  ,"%02d:%02d " 
+			  , datetime->t.hour ,datetime->t.minute );
+    }
   }
   
   if( ! ls_flag[ LS_NOCOLOR ] )
@@ -482,12 +507,19 @@ void dir1(FileListT *flist , int max_length , FILE *fout)
   
   putc(tailchar,fout);
   ncolumns++;
+
+  char _fullpath[ FILENAME_MAX ] , *fullpath=_fullpath;
+  if( curdir == NULL || curdir[0] == '\0' ){
+    fullpath = flist->name;
+  }else{
+    sprintf(_fullpath,"%s/%s",curdir,flist->name);
+  }
   
   /* ---- EA のロングネームを表示する ---- */
   char *longname;
   if(    ls_flag[ LS_LONGNAME ] 
      &&  flist->easize > 4
-     &&  (longname=get_ea_longname(flist->name))!=NULL ){
+     &&  (longname=get_ea_longname(fullpath) )!=NULL ){
     
     if( strcmp( flist->name , longname ) != 0 ){
       int longname_length = strlen(longname);
@@ -522,7 +554,7 @@ void dir1(FileListT *flist , int max_length , FILE *fout)
   char **comments;
   if(   flist->easize > 4
      && ls_flag[LS_COMMENT]
-     && (comments=get_ea_comments(flist->name)) != NULL ){
+     && (comments=get_ea_comments(fullpath) ) != NULL ){
       
     if( ls_flag[LS_COMMENT] == 1 ){
       /* ---- インラインコメント ----- */
@@ -553,8 +585,12 @@ void dir1(FileListT *flist , int max_length , FILE *fout)
 
 
 /* 複数のファイル名を表示する。
-   ファイル名はリスト構造で与える */
-
+ *	files ... ファイル名のリスト
+ *	fout ... 出力先
+ * return
+ *	0 ... 成功
+ *	1 ... 失敗
+ */
 int print_filelist(Files &files , FILE *fout)
 {
   FileListT *cur=files.get_top();
@@ -569,7 +605,7 @@ int print_filelist(Files &files , FILE *fout)
     if( is_file_print(p) ){
       nlists++;
       if( p->length > max_length )
-	  max_length = p->length;
+	max_length = p->length;
     }
   }
 
@@ -595,7 +631,7 @@ int print_filelist(Files &files , FILE *fout)
       row[i] = NULL;
     
     assert( row != NULL );
-    
+
     while( cur != NULL && !is_file_print(cur) )
       cur=cur->next;
     
@@ -620,7 +656,7 @@ int print_filelist(Files &files , FILE *fout)
 	else
 	  ls_flag[ LS_LAST_COLUMN ] = 0;
 	
-	dir1(row[i] , max_length , fout );
+	dir1(row[i] , max_length , files.getDirName() , fout );
 	ls_flag[ LS_LAST_COLUMN ] = saveflag;
 
 	row[i] = row[i]->next;
@@ -629,12 +665,12 @@ int print_filelist(Files &files , FILE *fout)
 	  row[i] = row[i]->next;
       }
       more(fout);
-      column=0;
+      /* column=0; */
     }
   }else{
     /* -l モード */
     while( cur != NULL ){
-      dir1(cur , max_length , fout );
+      dir1( cur , max_length , files.getDirName() , fout );
       cur=cur->next;
       if( ctrl_c )
 	return 1;
@@ -649,6 +685,9 @@ int the_dir(const char *dirname, FILE *fout )
 {
   Files files , dirs;
   int max_length=0;
+
+  files.setDirName(dirname);
+  dirs.setDirName(dirname);
   
   for(Dir dir(dirname) ; dir != NULL ; ++dir ){
     FileListT *tmp=new_filelist(dir);
@@ -662,14 +701,13 @@ int the_dir(const char *dirname, FILE *fout )
 	 && (tmp->attr & A_DIR )!= 0 
 	 && tmp->name[0] != '.' ){
 
-
 	dirs.insert( dup_filelist(tmp) , ls_flag[LS_SORT] );
       }
       files.insert( tmp , ls_flag[LS_SORT] );
     }
   }
 
-  column=0;
+  /* column=0; */
   if( files.get_num() == 0 )
     goto next;
 
@@ -692,7 +730,7 @@ int the_dir(const char *dirname, FILE *fout )
   }
 #endif
 
-  column=0;
+  /* column=0; */
 
  next:
   for(  FileListT *dirlist=dirs.get_top()
@@ -778,8 +816,6 @@ static void on_sort_reverse()
  
 int eadir( int argc, char **argv,FILE *fout=stdout)
 {
-  /* ------ ファイルスコープのグローバル変数を初期化する ---- */
-  column=0;
   /* --- フラグを全て初期化する --- */
   memset( ls_flag , 0 , sizeof(ls_flag) );
 
@@ -876,7 +912,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  break;
 
 	case 'F':
-	  break;
+	  ls_flag[ LS_MARK ] = 1; break;
 
 	default:
 	  call_original_ls( argv , fout );

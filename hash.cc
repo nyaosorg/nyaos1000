@@ -95,6 +95,22 @@ void *HashB::lookup_tolower(const Substr &key)
   return NULL;
 }
 
+void *HashB::lookup_tolower(const char *key)
+{
+  if( table==NULL  ) return NULL;
+  int index=get_index_without_cases(key);
+
+  int firstletter=tolower(*key & 255 );
+  for(Bullet *cur=table[index] ; cur != NULL ; cur=cur->next ){
+    if(   cur->key[0]==firstletter  && stricmp(cur->key,key) == 0  ){
+      return cur->rep;
+    }
+  }
+  return NULL;
+}
+
+
+
 int HashB::remove(const char *key, int destruct_flag)
 {
   if( table == NULL ) return 1;

@@ -274,6 +274,14 @@ void Files::insert( FileListT *newone , int sort )
   top = fsort_and_insert( top , newone , &n , sort );
 }
 
+void Files::setDirName( const char *name )
+{
+  if( dirname != NULL )
+    free(dirname);
+
+  dirname = strdup(name);
+}
+
 void Files::clear()
 {
   while( top != NULL ){
@@ -282,4 +290,6 @@ void Files::clear()
     top=tmp;
     --n;
   }
+  if( dirname != NULL )
+    free(dirname);
 }

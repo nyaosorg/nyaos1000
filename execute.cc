@@ -63,6 +63,7 @@ int cmd_source( FILE *srcfil, Parse &params );
 /* "command2.cc" */
 int cmd_bind(FILE *source, Parse &param );
 int cmd_bindkey(FILE *source,Parse &param);
+/* int cmd_bindcomplete(FILE *source,Parse &param); */
 int cmd_set( FILE *srcfil, Parse &params );
 int cmd_cursor( FILE *fp, Parse &params);
 int cmd_lecho(FILE *source, Parse &params );
@@ -224,12 +225,13 @@ Command jumptable[]={
   {"cache",  cmd_cache   },
   {"chcp",   cmd_chcp    },
   {"bind",   cmd_bind    },
+  /*  {"bindcomplete",cmd_bindcomplete} , */
   {"bindkey",cmd_bindkey },
   {"cd",     cmd_chdir   },
   {"cds",    cmd_chdir   },
   {"chdir",  cmd_chdir   },
   {"comment",cmd_comment },
-//  {"cursor", cmd_cursor  },
+  //  {"cursor", cmd_cursor  },
   {"dirs",   cmd_dirs    },
   {"drvalias",cmd_drivealias },
 //  {"eadir",  cmd_eadir   },
@@ -355,10 +357,18 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   }
   if( option_debug_echo )
     printf( "PASS-4:{%s}\n" , buffer[curbuf] );
+
+  replace_script(  buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
+  curbuf ^= 1;
   
+  /* スクリプト置換 */
+  if( option_debug_echo )
+    printf("PASS-5:{%s}\n", buffer[curbuf] );
+  
+  /* 内臓コマンド実行 */
   for(const char *pointer=buffer[curbuf];;){
     Parse params(pointer);
-
+    
     /* ヒストリ変換などで文字列が０になることもあるので、
      * ここでチェックする。 */
     if( params.get_argc() <= 0 ){
@@ -369,24 +379,23 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 	continue;
     }
 
-    Command *cmd;
-    
-    if( option_ignore_cases )
-      cmd = command_hash.lookup_tolower( params[0] );
-    else
-      cmd = command_hash[ params[0] ];
+    Command *cmd = (  option_ignore_cases
+		    ? command_hash.lookup_tolower( params[0] )
+		    : command_hash[ params[0] ]
+		    );
 
     if( cmd == NULL )
-      goto script;
+      break;
 
     if( params==NULL ){
       fputs("Too near terminate charactor.\n",stderr);
       return 1;
     }
     int rc=(*cmd->func)(srcfil,params);
+
     switch( rc ){
     case RC_HOOK:
-      goto script;
+      goto spawn;
 
     case RC_ABORT: /* Ctrl-C で終了していたら、続くコマンドは実行しない */   
       return RC_ABORT;
@@ -394,6 +403,7 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
     default:
       Parse::Terminal term=params.get_terminal();
       if(   term==Parse::SEMI_TERMINAL 
+	 || term==Parse::AMP_TERMINAL
 	 || term==(rc ? Parse::OR_TERMINAL: Parse::AND_TERMINAL) )
 	{
 	  pointer = params.get_nextcmds();
@@ -403,16 +413,10 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 	return rc;
     }
   }
- script:
-  
-  replace_script(  buffer[curbuf] , buffer[curbuf^1] , sizeof(buffer[0]) );
-  curbuf ^= 1;
-  
-  if( option_debug_echo )
-    printf("PASS-5:{%s}\n", buffer[curbuf] );
   
   if( echoflag )
     puts( buffer[curbuf] );
-  
+
+ spawn:
   return spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",buffer[curbuf],NULL);
 }

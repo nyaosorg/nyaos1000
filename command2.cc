@@ -47,7 +47,7 @@ int cmd_bind(FILE *source, Parse &param )
 int cmd_bindkey(FILE *source,Parse &param)
 {
   if( param.get_argc() < 3 ){
-    Shell::bindlist(param.open_stdout());
+    Shell::bindlist( param.open_stdout() );
     return 0;
   }
 
@@ -55,16 +55,22 @@ int cmd_bindkey(FILE *source,Parse &param)
   param.copy(1,key);
   char *func = (char*)alloca(param.get_length(2)+1);
   param.copy(2,func);
-
+  
   switch( Shell::bindkey(key,func) ){
   case 1:
     fprintf(stderr,"bindkey: %s: invalid key name.\n",key);
     return 1;
 
   case 2:
-    fprintf(stderr,"bindkey: %s: invalid function name.\n",func);
-    return 2;
-
+    /* 機能名が無い → complete モードの bindmap に bind */
+    switch( Edlin::bindCompleteKey(key,func) ){
+    case 1:
+      fprintf(stderr,"bindkey: %s: invalid key name.\n",key);
+      return 1;
+    case 2:
+      fprintf(stderr,"bindkey: %s: invalid function name.\n",func);
+      return 2;
+    }
   }
   return 0;
 }

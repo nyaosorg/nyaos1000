@@ -108,9 +108,9 @@ typedef struct filelist{
     union{
       unsigned short date;
       struct{
-	unsigned day:5;
-	unsigned month:4;
-	unsigned year:7;
+	unsigned day:5;     // 0Å`31
+	unsigned month:4;   // 0Å`15
+	unsigned year:7;    // 0Å`127
       }d;
     };
   } create , access , write ;
@@ -139,15 +139,19 @@ FileListT *dup_filelist(struct filelist *);
 
 class Files{
   FileListT *top;
+  char *dirname;
   int n;
 public:
   void insert( FileListT *newone , int sort=0 );
+
+  void setDirName(const char *name);
+  const char *getDirName() const { return dirname; }
   
   int get_num() const { return n; }
   FileListT *get_top() const { return top; }
   void clear();
   
-  Files() : top(0) , n(0) { }
+  Files() : top(0) , n(0) , dirname(0) { }
   ~Files(){ clear(); }
 };
 

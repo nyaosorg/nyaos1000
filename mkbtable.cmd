@@ -6,6 +6,7 @@
 
 n=0
 DO WHILE LINES() > 0
+    /* ƒ^ƒu‚ğ‹ó”’‚É•ÏŠ·‚µ‚Â‚Â“Ç‚İ‚Ş */
     line = TRANSLATE(linein(),' ','09'x)
     IF LEFT(line,1) = "#" | WORDS(line) < 2 THEN
 	iterate

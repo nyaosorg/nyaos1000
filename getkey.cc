@@ -117,6 +117,11 @@ int getkey(void)
 #else
 
   switch(ch){
+  default: 
+    if( is_kanji(ch) )
+      ch = ((ch << 8)|(get86key() & 0xFF)) & 0xFFFF;
+    break;
+
   case 0:  
     ch = (get86key()|0x100);
     break;
@@ -197,10 +202,7 @@ int getkey(void)
       break;
     }
     break;
-  default: 
-    if( is_kanji(ch) )
-      ch = ((ch << 8)|(get86key() & 0xFF));
   }
 #endif
-  return ch;
+  return ch & 0xFFFF;
 }

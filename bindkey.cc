@@ -13,7 +13,7 @@
 #define KEY(a)  ((K_##a & 0xFF) | 0x100)
 
 extern int execute_result;
-int printexitvalue=1;
+int printexitvalue=0;
 
 /* 帰り値は、文字数。キャンセルの時は (-1)を返す。 */
 
@@ -64,6 +64,7 @@ static struct bind_t{
   { CTRL('C') , Shell::abort, "CTRL_C","abort (default)" },
   { KEY(F1)   , Shell::complete_to_fullpath , "F1","complete_to_fullpath" },
   { KEY(F2)   , Shell::complete_to_url , "F2","complete_to_url" },
+  { CTRL('V') , Shell::quoted_insert , "CTRL_V" , "quoted_insert" },
 }, nyaos_bind_table[]={
   { CTRL('P') , Shell::vz_prev_history,"CTRL_P","vz_prev_history  (nyaos)"},
   { CTRL('N') , Shell::vz_next_history,"CTRL_N","vz_next_history  (nyaos)" },
@@ -189,6 +190,12 @@ Shell::Status Shell::self_insert()
   return CONTINUE;
 }
 
+Shell::Status Shell::quoted_insert()
+{
+  ed.quoted_insert( ed.getkey() );
+  return CONTINUE;
+}
+
 static const char *stristr(const char *p,const char *q)
 {
   int firstchar = tolower( *q & 255 );
@@ -278,14 +285,14 @@ Shell::Status Shell::tcshlike_complete()
     if( ed.length() != 0 )
       ed.complete_list();
   }else{
-    prev_complete_num = ed.complete1();
+    prev_complete_num = ed.complete();
     changed = 1;
   }
   return CONTINUE;
 }
 Shell::Status Shell::yaoslike_complete()
 {
-  prev_complete_num = ed.complete2();
+  prev_complete_num = ed.completeFirst();
   return CONTINUE;
 }
 
@@ -331,6 +338,26 @@ Shell::Status Shell::input_terminate()
   ed.go_tail();
 
   return TERMINATE;
+}
+
+/* シェルのヒストリに追加する。
+ *	s ヒストリ文字列
+ * return 0:成功 , -1:失敗
+ */
+int Shell::append_history(const char *s)
+{
+  int len=strlen(s);
+  History *tmp=(History*)malloc(sizeof(History)+len);
+  if( tmp == NULL )
+    return -1;
+
+  strcpy( tmp->buffer , s );
+  if( history != NULL )
+    history->next = tmp;
+  tmp->prev = history;
+  tmp->next = NULL;
+  history = tmp;
+  return 0;
 }
 
 int Shell::replace_last_history(const char *s)
@@ -415,9 +442,11 @@ int Shell::line_input(const char *prompt,int window)
 {
   raw_mode();
   ed.setprompt(prompt,window);
+#if 0 /* move to nyaos.cc */
   if(printexitvalue&&execute_result){
     printf("Exit %i\n",execute_result);
   }
+#endif
   fputs(prompt,stdout);
   fflush(stdout);
   ed.init();
@@ -428,6 +457,7 @@ int Shell::line_input(const char *prompt,int window)
       switch( rc ){
       case TERMINATE:
 	cocked_mode();
+	ed.pack();
 	return ed.length();
 	
       case CONTINUE:
@@ -436,6 +466,7 @@ int Shell::line_input(const char *prompt,int window)
 
       default:
 	cocked_mode();
+	ed.pack();
 	return rc;
       }
     }else{
@@ -478,18 +509,26 @@ int compare_with_top(const void *key,const void *el)
   }
 }
 
-int Shell::bindkey(const char *keyname, const char *funcname )
+int Shell::keyNameToCode( const char *name )
 {
-  struct keytable_tg  *key;
-  struct functable_tg *func;
-  
-  key=(struct keytable_tg *)bsearch(  keyname
+  struct keytable_tg *key
+    = (struct keytable_tg *)bsearch(  name
 				    , keytable 
 				    , numof(keytable)
 				    , sizeof(keytable[0])
 				    , compare_with_top );
   if( key == NULL )
+    return -1;
+  return key->code;
+}
+
+int Shell::bindkey(const char *keyname, const char *funcname )
+{
+  int code = keyNameToCode( keyname );
+  if( code < 0 )
     return 1;
+
+  struct functable_tg *func;
   
   func = (struct functable_tg *)bsearch(  funcname
 					, functable
@@ -499,9 +538,9 @@ int Shell::bindkey(const char *keyname, const char *funcname )
   if( func == NULL )
     return 2;
   
-  bindmap[ key->code ] = func->method;
-  bindmap_usage_key[ key->code ] = key->name;
-  bindmap_usage_func[ key->code ] = func->name;
+  bindmap[ code ] = func->method;
+  bindmap_usage_key[ code ] = keyname;
+  bindmap_usage_func[ code ] = func->name;
 
   return 0;
 }

@@ -10,6 +10,7 @@
 #include "finds.h"
 #include "hash.h"
 #include "Parse.h"
+#include "nyaos.h" /* for Command class */
 
 int scriptflag=1;
 int option_amp_start=1;
@@ -144,11 +145,14 @@ static void skipargs(  const char *&sp )
 }
 
 
-// SOS 処理
-//   sp は スクリプト名の後、パラメーターの前
-//   dp は スクリプト名を書く直前
-//   path は スクリプトの絶対パス
-
+/* SOSスクリプトのチェックを行う。
+ *	sp パラメータへポインタ
+ *	dp バッファでスクリプト名を書く直前を差す
+ *	path スクリプト名の絶対パス
+ * return
+ *	1  SOS スクリプトではなかったので、何もしなかった。
+ *	0  SOS スクリプトだったので、コマンドラインを置換した。
+ */
 static int sos(const char *&sp , SmartPtr &dp ,  const char *path )
 {
   FILE *fp=fopen(path,"r");
@@ -278,10 +282,33 @@ static void insert_close_option(SmartPtr &dp)
   *dp++ = ' ';
 }
 
+/* 内臓コマンドか、どうかをチェックする。
+ *	fname コマンド名
+ * return
+ *	0  内臓コマンドではなかった
+ *	!0 内臓コマンドだった。
+ */
+
+static int is_inner_command( const char *name )
+{
+  extern Hash <Command> command_hash;
+  extern int option_ignore_cases;
+  
+  Command *buildinCommand;
+  if( option_ignore_cases ){
+    buildinCommand = command_hash.lookup_tolower( name );
+  }else{
+    buildinCommand = command_hash[ name ];
+  }
+  return buildinCommand != NULL;
+}
+
+
 int replace_script( const char *sp , char *dst, int max  )
 {
   SmartPtr dp(dst,max);
-  for(;;){
+
+  for(;;){  /* コマンド毎のループ */
     while( is_space(*sp) )
       *dp++ = *sp++;
     
@@ -345,27 +372,38 @@ int replace_script( const char *sp , char *dst, int max  )
       
       char fname[FILENAME_MAX];
       char path[FILENAME_MAX];
+      ScriptCache *sc;
+      int type;
       
-      // 「$0」→ fname
+      // とりあえず、コマンド名を別のバッファに保存しておいて、 
+      // ポインタを進める。(「$0」→ fname) 
       copy_filename(sp,SmartPtr(fname,sizeof(fname)),&sp,NULL);
       
-      ScriptCache *sc;
-      int type=SearchEnv(fname,"SCRIPTPATH",path);
-      
-      if( option_script_cache  &&  (sc=script_hash[fname]) != NULL ){
-	/* ---- スクリプト(キャッシュヒット) ---- */
+      /* ------ 内臓コマンド ------*/
+      if( is_inner_command(fname)) {
+	copy_filename( fname , dp , NULL, &dp , BACKSLASH_DEMILITOR );
+	copyargs(sp,dp,&sp,&dp);
+      }
+
+      /* ------ スクリプト(キャッシュヒット) ------- */
+      else if( option_script_cache  &&  (sc=script_hash[fname]) != NULL ){
 	if( option_debug_echo ){
 	  fputs( "Script cache hit\n",stderr);
 	  fflush(stderr);
 	}
+	type = SearchEnv(fname,"SCRIPTPATH",path);
 	if( option_auto_close  &&  start_inserted )
 	  insert_close_option(dp);
 	dp = strcpy_tail(dp,sc->interpreter);
 	*dp++ = ' ';
 	copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
-      }else if( type==FILE_EXISTS ){
-	// --- おそらく、スクリプト ---
+	
+      }
+
+      /* ------- おそらく、スクリプト -------- */
+      else if( (type=SearchEnv(fname,"SCRIPTPATH",path))==FILE_EXISTS ){
+	
 	if( option_auto_close  &&  start_inserted )
 	  insert_close_option(dp);
 	
@@ -379,8 +417,11 @@ int replace_script( const char *sp , char *dst, int max  )
 	}
 	copyargs(sp,dp,&sp,&dp);
 	
-      }else if(  type != COM_FILE || sos(sp,dp,path) != 0 ){
-	// --- OS/2 の実行ファイル ---
+      }
+
+      /* -------- OS/2 の実行ファイル ---------- */
+      else if(  type != COM_FILE || sos(sp,dp,path) != 0 ){
+
 	if(    option_auto_close  &&  start_inserted 
 	   &&  ! is_pm_application(fname)  ){
 	  insert_close_option(dp);
@@ -388,10 +429,10 @@ int replace_script( const char *sp , char *dst, int max  )
 	copy_filename(fname,dp,NULL,&dp, BACKSLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
       }
-    }else{
-      // ---------------------
-      // option -script の場合
-      // ---------------------
+
+    }
+    /* ================= option -script の場合 =============== */
+    else{
 
       char fname[FILENAME_MAX];
       copy_filename(sp,SmartPtr(fname,sizeof(fname)),&sp,NULL);
@@ -409,6 +450,9 @@ int replace_script( const char *sp , char *dst, int max  )
       }
       copyargs(sp,dp,&sp,&dp);
     }
+
+    /* ================= 終結文字の処理 (\0, | , & など) =============*/
+
     if( *sp == '\0' )
       break;
     

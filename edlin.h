@@ -13,6 +13,8 @@ class Complete;
 /* 最も基本的な行入力クラス。純粋仮想クラスなので、そのままでは使えない。
  * 実際の入出力部分は純粋仮想関数として切り放しているので環境非依存
  * (edlin.cc)
+ *
+ * のはずだったが、その理念は破綻している(笑)
  */
 class Edlin{
 protected:
@@ -24,31 +26,44 @@ protected:
   int len;         /* 全体の byte数                    */
   int max;         /* strbufのmax                      */
   int windowsize;  /* 表示領域のサイズ(スクロール機能) */
-
+  
   int msgsize;     /* 入力文字列以外のメッセージが表示されている場合、
 		    * その文字列の長さが入る。*/
   int bottom_msgsize;
+  
+  int makeRoom(int at,int bytes);
+  void writeSBChar(int c){
+    putchr(strbuf[pos]=c); atrbuf[pos++] = SBC;
+  }
+  void writeDBChar(int c1,int c2){
+    putchr(strbuf[pos]=c1); atrbuf[pos++] = DBC1ST;
+    putchr(strbuf[pos]=c2); atrbuf[pos++] = DBC2ND;
+  }
+
 public:
   void after_repaint(int termclear=-1);   /* カーソル位置移行を repaint */
   void repaint(int termclear=-1);         /* 全行 repaint               */
   void _repaint(int termclear);           /* カーソルを戻さない repaint */
+  
+#if 0
   void right(int n=1);                    /* 右へスクロール             */
   void left(int n=1);                     /* 左へスクロール             */
+#endif
   int  seek_word_top();
 
   virtual void putchr(int c)=0; /* 一文字出力               */
   virtual void putel()=0;       /* カーソル位置以降をクリア */
   virtual void putbs(int i)=0;  /* カーソルをｎ桁戻す       */
   virtual void alert()=0;       /* 警告(普通はbeep音)       */
-
+  
   /**** 継承用コンストラクタ ****/
   Edlin(int top_ , int pos_ , int len_,
 	char *buffer, int max_, int windowsize_)
     : strbuf(buffer),atrbuf(new char[max_])
       ,top(top_),pos(pos_),len(len_),max(max_),windowsize(windowsize_)
 	,msgsize(0) , bottom_msgsize(0)
-        { /* no-operation */ }
-
+	  { /* no-operation */ }
+  
 public:
   Edlin(char *buffer , int max_ , int windowsize_)
     : strbuf(buffer),atrbuf(new char[max_])
@@ -64,6 +79,9 @@ public:
   void insert(int ch);                     /*    半角文字挿入       */
   void insert(int ch1,int ch2);            /*    全角文字挿入       */
   void insert_and_forward(const char *s);  /*    文字列挿入         */
+  void quoted_insert(int ch);              /*    制御文字挿入       */
+  void pack(); /* 入力した制御文字を1byte形式へ置換する。 */
+
   void erase();               /* ^D 一文字削除         */
   int  forward();             /* ^F カーソル右移動     */
   int  backward();            /* ^B カーソル左移動     */
@@ -78,8 +96,8 @@ public:
   virtual void cls(){};       /* ^L 画面クリア(何もしない) */
 
   /* これらは、導出クラスへ移項すべきもの */
-  virtual int complete1();	/* TCSH型の補完 */
-  virtual int complete2();	/* 変換型の補完 */
+  virtual int complete();	/* TCSH型の補完 */
+  virtual int completeFirst();	/* 変換型の補完 */
   virtual int complete_to_fullpath(const char *header=0);
   /* フルパスへの補完 */
 
@@ -99,7 +117,7 @@ public:
 
   void locate(int x);
 
-  /* リポート関数 */
+  // -------- リポート関数 --------
   int length() const { return len; }    /* 現在入力されている文字列のbytes */
   int position() const { return pos; }  /* カーソルの位置(bytes) */
   
@@ -111,6 +129,21 @@ public:
   static int complete_tail_char;
   
   int simple_line_input();
+
+  // -------- 変換型ファイル名補完 --------
+public:
+  enum CompleteFunc {
+    COMPLETE_CANCEL,
+    COMPLETE_PREV,
+    COMPLETE_NEXT,
+    COMPLETE_FIX,
+    COMPLETE_FIX_PLUS,
+  };
+private:
+  static CompleteFunc completeBindmap[ 0x200 ];
+public:
+  static void initComplete();
+  static int  bindCompleteKey(const char *key,const char *func);
 };
 
 /* ANSI エスケープシーケンス/かんな 版 Edlin */
@@ -147,7 +180,6 @@ private:
 extern char dbcstable[256];
 int dbcs_table_init();
 
-
 /* シェルに特化した Edlin クラス (shell.cc) */
 class ShellEdlin : public Edlin2 {
   const char *prompt;
@@ -174,7 +206,7 @@ public:
 };
 
 /* 実際にキ－入力などをうけて、ShellEdlinのメソッドを呼び出すクラス
- *  ShellEdin と統合すべきかもしれない。(bindkey.cc)
+ * ShellEdin と統合すべきかもしれない。(bindkey.cc)
  */
 struct WHist;
 
@@ -208,6 +240,7 @@ public:
   static void bindkey_tcshlike();
   static void bindkey_nyaos();
   static int bindkey(const char *key,const char *funcname);
+  static int keyNameToCode( const char *name );
   static void bindlist(FILE *fp);
 
   Shell(ShellEdlin &e) ;
@@ -245,6 +278,7 @@ public:
   Status swapchars(){ ed.swapchars(); return CONTINUE; }
   Status vz_prev_history();
   Status vz_next_history();
+  Status quoted_insert();
 private:
   int vz_history_core(struct WHist *);
 
@@ -264,6 +298,8 @@ public:
   
   // 最新のヒストリ内容を引数の内容と置きかえる。
   static int replace_last_history(const char *s);
+  // ヒストリに文字列を加える。
+  static int append_history(const char *s);
 };
 
 /* TERMCAP & エスケープシーケンス メモ

@@ -10,6 +10,7 @@ beginning_of_line         Shell::go_ahead
 bye                       Shell::bye
 clear_screen              Shell::repaint
 complete                  Shell::tcshlike_complete
+complete_first            Shell::yaoslike_complete
 complete2                 Shell::yaoslike_complete
 complete_to_fullpath	  Shell::complete_to_fullpath
 complete_to_url           Shell::complete_to_url
@@ -27,6 +28,7 @@ kill_whole_line           Shell::cancel
 newline                   Shell::input_terminate
 next_history              Shell::next_history
 previous_history          Shell::previous_history
+quoted_insert             Shell::quoted_insert
 rev_i_search              Shell::rev_i_search
 self_insert               Shell::self_insert
 up_history                Shell::previous_history

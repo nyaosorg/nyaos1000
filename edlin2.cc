@@ -16,6 +16,8 @@
 #define TOP_CLEAN_STR "\x1b[s\x1b[H\x1b[K\x1b[u"
 #define KEY(x) (0x100 | K_##x )
 
+int option_honest = 0;
+
 /* ~/.canna が存在すれば 0 さもなければ 1 */
 static int access_home_canna()
 {
@@ -72,33 +74,6 @@ static void euc2sjis(const char *sp , char *dp )
   *dp = '\0';
 }
 
-#if 0
-static void euc2jms(int c1,int c2,SmartPtr &dp)
-{
-  if( (c1 & 255) == 0x8E ){ /* 半角かな処理 */
-    *dp++ = c2;
-    return;
-  }
-
-l  c1 &= 0x7F; c2 &= 0x7F;
-
-  if( c1 & 1 ){
-    c1 = (c1 >> 1 ) + 0x71;
-    c2 += 0x1f;
-    if( c2 >= 0x7f )
-      c2++;
-  }else{
-    c1 = (c1 >> 1 ) + 0x70;
-    c2 += 0x7e;
-  }
-  if( c1 > 0x9F )
-    c1 += 0x40;
-
-  *dp++ = c1;
-  *dp++ = c2;
-}
-#endif
-
 /* -------- CANNA Dynamic Load ------- */
 
 static int (*DLL_jrKanjiString )(int,int,char*,int,jrKanjiStatus *) = 0;
@@ -109,7 +84,7 @@ static void release_canna()
 {
   char **warning;
   (*DLL_jrKanjiControl)(0,KC_FINALIZE,(char*)&warning);
-  if( warning ){
+  if( warning  &&  option_honest ){
     while( *warning != NULL ){
       char buffer[256];
       euc2sjis( *warning++ , buffer );
@@ -179,20 +154,6 @@ int canna_init()
       euc2sjis(*warning , buffer );
       fputs(buffer,stderr);
       putc('\n',stderr);
-#if 0
-      SmartPtr dp(buffer,sizeof(buffer));
-      for(const char *sp=*warning ; *sp != '\0' ; sp++ ){
-	if( *sp & 0x80 ){
-	  euc2jms( sp[0] , sp[1] , dp );
-	  ++sp;
-	}else{
-	  *dp++ = *sp;
-	}
-      }
-      *dp++ = '\n';
-      *dp   = '\0';
-      fputs(buffer,stderr);
-#endif
     }
     return 1;
   }
@@ -260,7 +221,6 @@ int Edlin2::getkey_with_cursor()
 #endif
 }
 
-
 enum{ PREFIX = -1 };
 #define CAN2NYA(c,n)  case CANNA_KEY_##c: *dp++=PREFIX;*dp++ = K_##n;break
 #define NYA2CAN(n,c)  case KEY(n): key= CANNA_KEY_##c ; break
@@ -312,7 +272,6 @@ static void copy_message( const char *message , int mark , SmartPtr &dp )
 int Edlin2::print_henkan_koho( jrKanjiStatus &status , const char *mode_string )
 {
   /* 何らかの表示を行ったら 文字数、さもなければ 0 を表示する。 */
-
   if(  (status.info & KanjiGLineInfo)==0
      || status.gline.length <= 0 || status.gline.line == NULL )
     return 0;
@@ -407,16 +366,22 @@ int Edlin2::getkey()
 
     /* IME からの入力があった場合などは、即確定させて、
      * その文字列を確定バッファに放り込む */
-    if( orgkey > 0x200 ){
+    if( orgkey >= 0x200 ){
       jrKanjiStatusWithValue ksv;
       ksv.ks = &status;
       ksv.buffer = (unsigned char *)kakbuf;
       ksv.bytes_buffer = sizeof(kakbuf);
-      (*DLL_jrKanjiControl)( 0 , KC_KAKUTEI , (char*)&ksv );
-      
-      kakbuf[ ksv.val   ] = orgkey >> 8;
-      kakbuf[ ksv.val+1 ] = orgkey & 255;
-      kakbuf[ ksv.val+2 ] = 0;
+
+      if( (*DLL_jrKanjiControl)( 0 , KC_KAKUTEI , (char*)&ksv ) != -1 ){
+	/* ksvの値は正常終了の時のみ、あてになるとする */
+	kakbuf[ ksv.val   ] = orgkey >> 8;
+	kakbuf[ ksv.val+1 ] = orgkey & 255;
+	kakbuf[ ksv.val+2 ] = 0;
+      }else{
+	kakbuf[ 0 ] = orgkey >> 8;
+	kakbuf[ 1 ] = orgkey & 255;
+	kakbuf[ 2 ] = 0;
+      }
       
       cleanmsg();
       if( is_kanji(kakbuf[kakpos=0] & 0xFF ) ){
@@ -434,10 +399,12 @@ int Edlin2::getkey()
     /* ローカルバッファが空で、特殊キーが入力されたら、
      * そのキーコードをそのまま返す。*/
     if( localbuf[0] == '\0' && orgkey > 0xFF ){
-      if( mode_string != NULL )
-	bottom_message( "%s",mode_string );
-      else
+      if( mode_string != NULL ){
+	if( !are_spaces(mode_string) )
+	  bottom_message( "%s",mode_string );
+      }else{
 	clean_bottom();
+      }
       return orgkey;
     }
 
@@ -471,21 +438,13 @@ int Edlin2::getkey()
     /* 「かんな」にお任せ */
     char eucbuf[256];
     int kakutei=(*DLL_jrKanjiString)(0 ,key ,eucbuf ,sizeof(eucbuf),&status );
+
+    /* 何らかのエラーが発生した時は、元のキーをそのまま返す。*/
+    if( kakutei == -1 )
+      return orgkey;
     
     /* モードが変更されているならば、それを表示する */
-    if(  status.info & KanjiModeInfo  ){
-#if 0
-      SmartPtr dp(mode_buf,sizeof(mode_buf));
-      for(const unsigned char *sp=status.mode ; *sp != '\0' ; sp++ ){
-	if( *sp & 0x80 ){
-	  euc2jms(sp[0],sp[1],dp);
-	  ++sp;
-	}else{
-	  *dp++ = *sp;
-	}
-      }
-      *dp = '\0';
-#endif
+    if( status.info & KanjiModeInfo ){
       euc2sjis( (const char *)status.mode ,mode_buf);
       bottom_message( "%s", mode_string = (unsigned char*)mode_buf );
     }
@@ -532,9 +491,6 @@ int Edlin2::getkey()
 	      if( tinybuf[1] != '\0' )
 		*dp++ = tinybuf[1];
 	    }
-#if 0
-	    euc2jms(eucbuf[i],eucbuf[i+1],dp);
-#endif
 	    i++;
 	    break;
 	  }
@@ -595,10 +551,11 @@ int Edlin2::getkey()
     
     /* 画面最下段に、変換候補などを表示する */
     if( print_henkan_koho(status,(char*)mode_string) <= 0  &&  use_bottom ){
-      if( mode_string != NULL )
+      if( mode_string != NULL  ){
 	bottom_message("%s" , mode_string);
-      else
+      }else{
 	clean_bottom();
+      }
       use_bottom=0;
     }else{
       use_bottom=1;

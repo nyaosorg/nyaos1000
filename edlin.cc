@@ -14,7 +14,82 @@
 #define KEY(x)	(0x100 | K_##x )
 #define CTRL(x)	((x) & 0x1F )
 
+/* at の位置に bytes 分だけのスペースを確保する。
+ * 空白文字を入れるわけではなく、空間を作るという意味。
+ * 戻り値を必ずしないと、オーバーフロー/アンダーフローが検知できない。
+ *	at	スペースを作成する位置
+ *	bytes	スペースのサイズ(バイト)。負の値でもよい。
+ * return 0:成功  -1:失敗(オーバーフロー/アンダーフロー)
+ */
+int Edlin::makeRoom(int at,int bytes)
+{
+  if( bytes > 0 ){
+    if( len+bytes >= max ){
+      /* もし、自動的にバッファを増やすコードが必要なら、
+       * ここに入れる。*/
+      return -1;
+    }
+    strbuf[ len+bytes ] = '\0';
+    atrbuf[ len+bytes ] = SBC;
+    for(int i=len-1 ; i >= at ; i-- ){
+      strbuf[ i+bytes ] = strbuf[ i ];
+      atrbuf[ i+bytes ] = atrbuf[ i ];
+    }
+  }else if( bytes < 0 ){
+    if( at+(-bytes) > len )
+      return -1;
+    
+    for(int i=at ; i<len+bytes ; i++ ){
+      strbuf[ i ] = strbuf[ i+(-bytes) ];
+      atrbuf[ i ] = atrbuf[ i+(-bytes) ];
+    }
+    strbuf[ len+bytes ] = '\0';
+    atrbuf[ len+bytes ] = SBC;
+  }
+  len += bytes;
+  return 0;
+}
+#if 0
+int Edlin::getCurrentWordPos(int at,int &top,int &bytes)
+{
+  int wordTop=0;
+  int i=0;
+  for(;;){
+    /* 空白を読み飛ばす */
+    for(;;){
+      if( i >= len )
+	return -1;
+      if( ! isspace(strbuf[i] & 255) )
+	break;
+      ++i;
+    }
+    wordTop = i;
+    int quote=0;
+
+    for(;;){
+      if( i >= len )
+	break;
+      if( strbuf[i] == '"' )
+	quote ^= 1;
+#if 0
+      if( strbuf[i] == '\'' )
+	quote ^= 2;
+#endif
+      if( atrbuf[i] != SBC )
+	i++;
+      i++;
+    }
+    if( i >= at )
+
+  }
+
+}
+#endif
 int Edlin::complete_tail_char='\\';
+
+/* tcsh の C-t に相当する処理を行う。
+ * カーソル直前の二文字を入れ変える。
+ */
 void Edlin::swapchars()  /* DOSモード未対応メソッド */
 {
   if( pos < len ){
@@ -65,6 +140,13 @@ void Edlin::swapchars()  /* DOSモード未対応メソッド */
   }
 }
 
+#if 0
+/* right , left は本来はウインドウ処理の関数だった。
+ * つまり、80文字以上入力した際に、そのうちの80字だけを覗き穴的に
+ * 表示させるための関数の一つだった。
+ * 元々は、DOS の BSコードで、前の行へカーソルを移動させられない為に
+ * 作成したのだが、DOS のサポートを放棄したため、意味がなくなった。
+ */
 void Edlin::right(int n)
 {
   /* 右へ top が移動する --> 全体が左へ移動する。*/
@@ -111,6 +193,7 @@ void Edlin::left(int n)
   putel();
   putbs( i-(pos-top) );
 }
+#endif
 
 void Edlin::insert(int ch)
 {
@@ -119,51 +202,118 @@ void Edlin::insert(int ch)
     return;
   }
 
-  if( len >= max )
+  if( makeRoom(pos,1) != 0 )
     return;
-  
-  int i;
-  for(i=len ; i>pos ; i-- ){
-    strbuf[ i ] = strbuf[i-1];
-    atrbuf[ i ] = atrbuf[i-1];
-  }
-  strbuf[ i ] = ch;
-  atrbuf[ i ] = SBC;
-  strbuf[++len] = '\0';
-  atrbuf[  len] = SBC;
+
+  strbuf[pos] = ch;
+  atrbuf[pos] = SBC;
   
   after_repaint(0);  /* 挿入したときは、右へ動くので末端のクリアはいらない */
 }
 
+/* 制御文字を 2bytes 扱いする strlen。
+ * コピーする際に「^H」という形にする為、本関数が必要。
+ *	s 文字列
+ * return 文字列長
+ */
+static int strlen2(const char *s)
+{
+  int len=0;
+  while( *s ){
+    if( 0 < *s  &&  *s < ' ' )
+      len++;
+    len++;
+    s++;
+  }
+  return len;
+}
+
+/* 文字列をカーソル位置へ挿入し、表示も更新する。
+ * カーソルは移動しない。
+ */
 void Edlin::insert_and_forward(const char *s)
 {
-  int shift=strlen(s);
-  for(int i=len ; i >= pos ; i-- ){
-    strbuf[ i+shift ] = strbuf[ i ];
-    atrbuf[ i+shift ] = atrbuf[ i ];
-  }
-  len += shift;
+  if( makeRoom(pos,strlen2(s)) != 0 )
+    return;
   
   while( *s != '\0' ){
     if( is_kanji(*s) ){
-      putchr( strbuf[ pos ] = *s++ );
-      atrbuf[ pos++ ] = DBC1ST;
-      putchr( strbuf[ pos ] = *s++ );
-      atrbuf[ pos++ ] = DBC2ND;
+      writeDBChar( *s , *(s+1) );
+      s+=2;
+    }else if( 0 < *s && *s < ' ' ){
+      writeDBChar( '^' , *s++ + '@' );
     }else{
-      putchr( strbuf[ pos ] = *s++ );
-      atrbuf[ pos++ ] = SBC;
+      writeSBChar( *s++ );
     }
   }
   after_repaint(0);  /* 挿入したときは、右へ動くので末端のクリアはいらない */
 }
 
+/* コントロールキャラクタを入力する為のメソッド
+ *	ch … キャラクターコード
+ */
+void Edlin::quoted_insert(int key)
+{
+  if( key >= 0x200 ){		/* 倍角文字 */
+    if( makeRoom(pos,2) != 0 )
+      return;
+    writeDBChar( (key>>8)& 0xFF , key & 0xFF );
+    
+  }else if( key >= 0x100 ){	/* 制御文字でもキャラコードを持たないもの */
+    return;
+  }else if( key >= 0x20 ){	/* 半角文字 */
+    if( makeRoom(pos,1) != 0 )
+      return;
+    writeSBChar( key );
+  }else if( key >= 0 ){		/* 制御文字 */
+    if( makeRoom(pos,2) != 0 )
+      return;
+    writeDBChar( '^' , key + '@' );
+  }else{
+    return;
+  }
+  after_repaint(0);
+}
+
+/* C-v によって入力された制御文字を本来の1byte形式に変換する。
+ * 内部的には
+ *	strbuf ... '^',('@'+key)
+ *	atrbuf ... DBC1ST,DBC2ND
+ * と倍角文字扱いになっている。
+ * このメソッドは編集終了時にのみ呼ぶ。
+ * これ以後の編集は正しく動作しない。
+ */
+void Edlin::pack()
+{
+  int si=0,di=0;
+  int oldLength=len;
+
+  while( si < oldLength ){
+    if( strbuf[si] == '^'  &&  atrbuf[si]==DBC1ST  ){
+      strbuf[di] = strbuf[++si] & 0x1F;
+      atrbuf[di] = SBC;
+      --len;
+    }else{
+      strbuf[di] = strbuf[si];
+      atrbuf[di] = atrbuf[si];
+    }
+    ++si;  ++di;
+  }
+  strbuf[di] = '\0';
+}
+
+/* カーソル位置の名前の先頭位置を求める。
+ * ただし、名前は、補完時のファイル名を前提としているので、
+ * 「<」や「;」の直後も単語先頭とみなす。
+ *	return 先頭位置
+ */
 int Edlin::seek_word_top()
 {
   int wrdtop=0;
   int p=0;
-  
+
   for(;;){
+    // 空白を読みとばす。
     while( isspace(strbuf[p] & 255) ){
       if( p >= pos ){
 	return wrdtop;
@@ -172,14 +322,17 @@ int Edlin::seek_word_top()
 	p++;
       p++;
     }
+    // 単語境界を設定する。 
     if( strbuf[p]=='<' || strbuf[p]=='>' || strbuf[p]=='+' || strbuf[p]=='-' )
       ++p;
     wrdtop = p;
-      
+    
+    // 空白以外を読みとばす。 
     while( !isspace(strbuf[p] & 255) ){
       if( p >= pos )
 	return wrdtop;
 
+      // 「+」や「;」の直後も単語境界とみなせるので、wrdtop を更新する。 
       if(   (strbuf[p]=='+' || strbuf[p]==';' || strbuf[p]=='=')
 	 && strbuf[p+1] != '\0' ){
 	wrdtop = ++p;
@@ -202,13 +355,90 @@ int Edlin::seek_word_top()
   }
 }
 
-// int Edlin::option_conversion_complete=0;
+Edlin::CompleteFunc Edlin::completeBindmap[ 0x200 ];
+
+void Edlin::initComplete()
+{
+  static int firstcalled=1;
+  if( ! firstcalled  )
+    return;
+
+  firstcalled = 0;
+
+  for(int i=0;i<numof(completeBindmap);i++)
+    completeBindmap[ i ] = COMPLETE_FIX_PLUS;
+  
+  struct{
+    int key;
+    CompleteFunc func;
+  } defaultBindmap[] = {
+    { CTRL('G')			, COMPLETE_CANCEL },
+    { CTRL('[')			, COMPLETE_CANCEL },
+    { KEY(LEFT)			, COMPLETE_CANCEL },
+
+    { KEY(UP)			, COMPLETE_PREV },
+    { KEY(ALT_BACKSPACE)	, COMPLETE_PREV },
+    
+    { KEY(DOWN)			, COMPLETE_NEXT },
+    { KEY(CTRL_TAB)		, COMPLETE_NEXT },
+    { KEY(ALT_RETURN)		, COMPLETE_NEXT },
+    { '\t'			, COMPLETE_NEXT },
+
+    { KEY(RIGHT)		, COMPLETE_FIX },
+    { '\r'			, COMPLETE_FIX },
+    { '\n'			, COMPLETE_FIX },
+  };
+  
+  for(int i=0;i<numof(defaultBindmap);i++){
+    completeBindmap[ defaultBindmap[i].key ] = defaultBindmap[i].func;
+  }
+}
+
+static struct CompleteFuncName {
+  const char *name;
+  Edlin::CompleteFunc func;
+} completeFuncName[] = {
+  { "complete_cancel"	, Edlin::COMPLETE_CANCEL },
+  { "complete_fix"	, Edlin::COMPLETE_FIX },
+  { "complete_next"	, Edlin::COMPLETE_NEXT },
+  { "complete_prev"	, Edlin::COMPLETE_PREV },
+  { "complete_default"	, Edlin::COMPLETE_FIX_PLUS },
+};
+
+extern int compare_with_top(const void *key,const void *e1);
+
+/* 補完モード時のキーバインドを設定する(静的メンバ関数)
+ *	key	キー名称文字列
+ *	func	機能名称文字列
+ * return  0:正常終了 1:キー名称不適 2:機能名称不適
+ */
+int Edlin::bindCompleteKey(const char *key,const char *func )
+{
+  initComplete();
+  int code = Shell::keyNameToCode(key);
+  if( code < 0 )
+    return 1;
+  
+  CompleteFuncName *funcPtr
+    = (CompleteFuncName*)bsearch(  func
+				 , completeFuncName
+				 , numof(completeFuncName)
+				 , sizeof(completeFuncName[0])
+				 , compare_with_top );
+  if( funcPtr == NULL )
+    return 2;
+
+  completeBindmap[ code ] = funcPtr->func;
+  return 0;
+}
 
 /* 変換型の補完
  * return 0:補完しなかった 1:補完した
  */
-int Edlin::complete2()
+int Edlin::completeFirst()
 {
+  initComplete();
+
   int fntop=seek_word_top();
   int basesize=pos-fntop;
 
@@ -250,24 +480,27 @@ int Edlin::complete2()
       }else{
 	message("%s",cur->name+com.get_fname_common_length() );
       }
-      int key;
+      CompleteFunc completeFunc;
+      int key=::getkey();
+      if( key >= numof(completeBindmap) )
+	completeFunc = COMPLETE_FIX_PLUS;
+      else
+	completeFunc = completeBindmap[ key ];
       
-      switch( key=::getkey() ){
-      case '\007':
-      case '\033':
-      case KEY(LEFT):
+      switch( completeFunc ){
+      case COMPLETE_CANCEL:
+	/*  case '\007':  case '\033':   case KEY(LEFT):*/
 	cleanmsg();
 	return 0;
 
-      case KEY(UP):
-      case KEY(ALT_BACKSPACE):
+      case COMPLETE_PREV:
+	/* case KEY(UP):   case KEY(ALT_BACKSPACE): */
 	cur = com.findprev();
 	break;
 
-      case KEY(DOWN):
-      case KEY(CTRL_TAB):
-      case KEY(ALT_RETURN):
-      case '\t':
+      case COMPLETE_NEXT:
+	/* case KEY(DOWN): case KEY(CTRL_TAB): case KEY(ALT_RETURN):
+	 * case '\t': */
 	cur = com.findnext();
 	break;
 	
@@ -275,9 +508,9 @@ int Edlin::complete2()
 	::ungetkey(key);
 	/* continue to next case */
 	
-      case KEY(RIGHT):
-      case '\r':
-      case '\n':
+      case COMPLETE_FIX:
+	/* case KEY(RIGHT): case '\r':  case '\n':*/
+
 	cleanmsg();
 	for(int i=0;i<basesize;)
 	  i += backward();
@@ -313,7 +546,7 @@ int Edlin::complete2()
   }/* end-for */
 }
 
-int Edlin::complete1()
+int Edlin::complete()
 {
   int fntop=seek_word_top();
   int basesize=pos-fntop;
@@ -423,27 +656,13 @@ int Edlin::complete_to_fullpath(const char *header)
     return 0;
   }
   
-  // 変換後に、全体長が伸びる場合
-  if( delta > 0 ){
-    for(int i=len ; i>=pos ; i-- ){
-      strbuf[ i+delta ] = strbuf[ i ];
-      atrbuf[ i+delta ] = atrbuf[ i ];
-    }
-    len += delta ;
-  }
-  
   // カーソルを単語先頭へ移動
   for(int i=0 ; i<basesize ; )
     i += backward();
 
-  // 変換後に、全体長が縮む場合
-  if( delta < 0 ){
-    for(int i=pos ; i<len+delta ; i++ ){
-      strbuf[ i ] = strbuf[ i - delta ];
-      atrbuf[ i ] = atrbuf[ i - delta ];
-    }
-    len += delta;
-  }
+  // 全体長さを調整
+  if( makeRoom(pos,delta) != 0 )
+    return 0;
   
   // 単語先頭に「”」が無いけれども「”」で囲まなくてはいけない文字がある
   // 場合、ここで「”」を加える。
@@ -461,17 +680,10 @@ int Edlin::complete_to_fullpath(const char *header)
   // 新しいパスを書き書き
   for(int i=0 ; i<len_fullpath ; i++ ){
     if( is_kanji(fullpath[ i ] ) ){
-      putchr(strbuf[pos  ] = fullpath[ i ]);
-      atrbuf[pos++] = DBC1ST;
-      putchr(strbuf[pos  ] = fullpath[ i ]);
-      atrbuf[pos++] = DBC2ND;
-      i++;
+      writeDBChar( fullpath[i] , fullpath[i+1] );
+      ++i;
     }else{
-      if( fullpath[i] == ':' && header != NULL )
-	putchar(strbuf[pos ] = '|' );
-      else
-	putchr(strbuf[pos  ] = fullpath[ i ]);
-      atrbuf[pos++] = SBC;
+      writeSBChar( fullpath[i] );
     }
   }
 
@@ -491,20 +703,14 @@ int Edlin::complete_to_fullpath(const char *header)
 
 void Edlin::insert(int ch1,int ch2)
 {
-  if( len-1 > max )
+  if( makeRoom(pos,2) != 0 )
     return;
 
-  for(int i=len+1 ; i>=pos+2 ; i-- ){
-    strbuf[ i ] = strbuf[i-2];
-    atrbuf[ i ] = atrbuf[i-2];
-  }
   strbuf[ pos   ] = ch1;
   atrbuf[ pos   ] = DBC1ST;
   strbuf[ pos+1 ] = ch2;
   atrbuf[ pos+1 ] = DBC2ND;
-  strbuf[ len+=2] = '\0';
-  atrbuf[ len   ] = SBC;
-
+  
   after_repaint(0);
 }
 
@@ -516,13 +722,8 @@ void Edlin::erase()
 
   int ndels=(atrbuf[pos]==SBC ? 1 : 2);
   
-  len -= ndels;
-  for(int i=pos ; i<len ; i++ ){
-    strbuf[ i ] = strbuf[i+ndels];
-    atrbuf[ i ] = atrbuf[i+ndels];
-  }
-  strbuf[ len ] = '\0';
-  atrbuf[ len ] = SBC;
+  if( makeRoom(pos,-ndels) != 0 )
+    return;
 
   after_repaint(ndels);
 }
@@ -591,10 +792,16 @@ void Edlin::erasebol()
   if(!pos)
     return;
 
+  if( makeRoom(0,-pos) != 0 )
+    return;
+
+  len -= pos;
+#if 0
   for(i=0,len-=pos;i<=len;++i){
     strbuf[i]=strbuf[pos+i];
     atrbuf[i]=atrbuf[pos+i];
   }
+#endif
   putbs(i=pos);
   pos=0;
   after_repaint(i);
@@ -685,15 +892,19 @@ void Edlin::backward_word()
 int Edlin::forward()
 {
   if( pos+1 <= len  &&  atrbuf[pos] == SBC ){
+#if 0
     if( pos+1 >= top+windowsize )
       right(1);
+#endif
     
     /* 同じ文字の二度打ちによる右移動 */
     putchr( strbuf[pos++] );
     return 1;
   }else if( pos+2 <= len ){
+#if 0
     if( pos+2 >= top+windowsize )
       right(2);
+#endif
 
     putchr( strbuf[pos++] );
     putchr( strbuf[pos++] );
@@ -705,14 +916,18 @@ int Edlin::forward()
 int Edlin::backward()
 {
   if( 0 < pos  &&  atrbuf[pos-1] == SBC ){
+#if 0
     if( pos-1 < top )
       left(1);
+#endif
     --pos;
     putbs(1);
     return 1;
   }else if( 2 <= pos ){
+#if 0
     if( pos-2 < top )
       left(2);
+#endif
     pos -= 2;
     putbs(2);
     return 2;
@@ -725,8 +940,6 @@ void Edlin::go_ahead()
   putbs( pos-top );
   if( top != 0 ){
     top = pos = 0;
-    /* 先頭に行く場合、表示文字列が長くなる場合はあっても、
-     * 短くなる場合はない */
     repaint(0);
   }else{
     pos = 0;
@@ -801,7 +1014,13 @@ int Edlin::message(const char *fmt,...) /* ウインドウモード未対応 */
     if( isalpha(*sp & 255) )
       escape = 0;
 
-    putchr(*sp);
+    if( 0 < *sp && *sp < ' '  &&  ! escape ){
+      putchr('^');
+      putchr('@'+*sp);
+      columns++;
+    }else{
+      putchr(*sp);
+    }
   }
 
   /* 過去のメッセージの末尾を削除 */

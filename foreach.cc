@@ -93,15 +93,16 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *line )
     if( option & OPTION_N ){
       puts(buffer);
     }else{
+      extern int execute_result; /* Å© nyaos.cc */
       if( option & OPTION_V ){
 	fputs(buffer,stderr);
 	if( isatty(fileno(srcfil)) )
 	  fputc('\n',stderr);
       }
-      int err=execute(srcfil,buffer,1);
+      execute_result = execute(srcfil,buffer,1);
       
-      if( err != 0  &&  (option & OPTION_I)==0 ){
-	fprintf(stderr,"foreach : error level %d",err);
+      if( execute_result != 0  &&  (option & OPTION_I)==0 ){
+	fprintf(stderr,"foreach : error level %d",execute_result );
 	return -1;
       }
     }

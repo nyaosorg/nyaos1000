@@ -15,7 +15,7 @@ static void translate_copy( const Substr &arg , SmartPtr &dp )
     *dp++ = '/';
   else
     *dp++ = arg[0];
-
+  
   int quote=(arg[0] == '"' ? 1 : 0);
   for(int i=1;i<arg.len;i++){
     if( arg[i] == '"' )

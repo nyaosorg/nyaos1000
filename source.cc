@@ -79,10 +79,14 @@ int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv )
   return rc;
 }
 
+extern int source_history( const char *fname );
+
 int cmd_source( FILE *srcfil, Parse &params )
 {
-  if( params.get_argc() < 2 )
-    return 0;
+  if( params.get_argc() < 2 ){
+    fprintf(stderr,"source: Too few arguments.\n");
+    return 1;
+  }
 
   static int limitter=0;
   if( limitter > 5 ){
@@ -94,6 +98,22 @@ int cmd_source( FILE *srcfil, Parse &params )
   char *fname=(char*)alloca(params.get_length(1)+1);
   params.copy(1,fname);
 
+  if( fname[0] == '-' && fname[1] == 'h' ){
+    /* ヒストリを読み込むモード */
+    if( params.get_argc() < 3 ){
+      fprintf(stderr,"source -h: No operand for -h flag.\n");
+      return 1;
+    }
+    
+    fname=(char*)alloca(params.get_length(2)+1);
+    params.copy(2,fname);
+    
+    if( source_history(fname) != 0 ){
+      fprintf(stderr,"source -h: %s: No such file.\n",fname);
+      return 1;
+    }
+    return 0;
+  }
   char *cmdname=(char*)alloca(params.get_length(1)+5);
   sprintf(cmdname,"%s.cmd",fname);
 
@@ -106,9 +126,9 @@ int cmd_source( FILE *srcfil, Parse &params )
      && (_path(buffer,fname),  fp=fopen(finalname=buffer,"r"))==NULL
      && (_path(buffer,cmdname),fp=fopen(buffer,"r"))==NULL ){
     
-    fprintf(stderr,"source: %s: no such file \n",fname);
+    fprintf(stderr,"source: %s: No such file.\n",fname);
     limitter--;
-    return 0;
+    return 1;
   }
   const char *rc=fgets_chop(buffer,sizeof(buffer),fp);
   if( buffer[0] == '/' && buffer[1]=='*' ){

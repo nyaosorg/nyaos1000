@@ -12,7 +12,7 @@
 #define RED	"" /*"\x1B[31m"*/
 #define WHITE	"" /*"\x1B[37m"*/
 
-int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
+
 
 int prompt_myself=1;
 int screen_width=80;
@@ -30,6 +30,9 @@ char comspec[128]="COMSPEC=";
 char *cmdexe_path=comspec+8;
 
 int execute_result=0;
+extern int printexitvalue;
+
+int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 
 int cmd_ver( FILE *source , Parse &argv )
 {
@@ -82,6 +85,9 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   return dp;
 }
 
+
+
+
 #ifdef USE_SET_WIN_TITLE
 /* フラグ : FCF_TASKLIST が VIO ウインドウで立っている場合、
  * 「NYAOS.EXE」の代わりに set_win_title の引数がウインドウタイトルになる。
@@ -98,6 +104,12 @@ void set_win_title( const char *title )
   _THUNK_C_CALL ( WinSetTitle );
 }
 #endif
+
+
+
+
+
+
 
 int main(int argc, char **argv)
 {
@@ -280,7 +292,7 @@ int main(int argc, char **argv)
     
     printf("\n          Free Software           "
 	   "\n- Nihongo Yet Another Os/2 Shell -"
-	   "\n   1996,97,98 (c) HAYAMA,Kaoru    "
+	   "\n  1996,97,98,99 (c) HAYAMA,Kaoru  "
 	   "\n Ver."VERSION" compiled on "__DATE__
 	   "\n\n\x1b[0m"
 	   );
@@ -403,9 +415,9 @@ int main(int argc, char **argv)
     // ---- カーソルを BOX 型にする ----
     if( option_vio_cursor_control ){
       if( v_hardware() == V_COLOR_12 )
-	v_ctype( 11 , 0 );
+	v_ctype( 0 , 14 );
       else
-	v_ctype( 7 , 0 );
+	v_ctype( 0 , 6 );
     }
 
     edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
@@ -434,6 +446,7 @@ int main(int argc, char **argv)
 	++top;
       if( top[0] != '\0' ){
 	execute_result = execute(stdin,top);
+
 	if( execute_result == RC_QUIT ){
 	  // --- exitコマンドなどによる終了 ----
 	  fputs("Good bye.\n",stderr);
@@ -441,6 +454,10 @@ int main(int argc, char **argv)
 	}
 	if( option_cmdlike_crlf )
 	  putchar('\n');
+	
+	if( execute_result != 0 && printexitvalue !=0 ){
+	  printf("Exit %i\n",execute_result);
+	}
       }else{
 	execute_result = 0;
       }

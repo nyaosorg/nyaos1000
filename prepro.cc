@@ -1,5 +1,8 @@
 #include <ctype.h>
+#include <io.h>
 #include <stdlib.h>
+#include <stdio.h>
+
 #include "parse.h"
 #include "Edlin.h"
 #include "macros.h"
@@ -19,6 +22,67 @@ static struct PublicHistory {
 int nhistories = 0;
 
 char drivealias[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+/* 00h から 1Fh までの制御文字を ^H という形で表示するfputs。
+ * 出力先が端末でない、ファイル等の時は、変換を行わない。
+ *	p    文字列
+ *	fout 出力先ファイルポインタ
+ */
+static void fputs_ctrl(const char *p , FILE *fout)
+{
+  for( ; *p != '\0' ; p++ ){
+    if( 0 < *p && *p < ' ' && isatty(fileno(fout)) ){
+      putc( '^' , fout );
+      putc( '@'+*p , fout );
+    }else{
+      putc( *p , fout );
+    }
+  }
+}
+
+/* 「source -h ファイル名」を行う。
+ *	fname 読み込むファイル名
+ *
+ * return 0:成功 , -1:失敗(ファイルが存在しない)
+ *	メモリが確保できない場合などはエラーにならず、
+ *	読み込まれないだけ。
+ */
+int source_history( const char *fname )
+{
+  FILE *fp=fopen(fname,"rt");
+  if( fp==NULL )
+    return -1;
+
+  char buffer[1024];
+  while( fgets(buffer,sizeof(buffer),fp) != NULL ){
+    /* 先頭の数字と「:」を除く */
+    char *p = strchr(buffer,':');
+    if( p == NULL || *++p == '\0' || *++p == '\0' )
+      continue;
+
+    /* 末尾の \n を除く */
+    char *q= strchr(p,'\n');
+    if( q != NULL )
+      *q = '\0';
+
+    /* ---- public history ----- */
+    PublicHistory *tmp=(PublicHistory*)malloc(sizeof(PublicHistory));
+    if( tmp != NULL ){
+      tmp->string = strdup(p);
+      tmp->prev = public_history;
+      tmp->next = NULL;
+      if( public_history != NULL )
+	public_history->next = tmp;
+      public_history = tmp;
+      ++nhistories;
+    }
+    
+    /* ---- shell history ---- */
+    Shell::append_history(p);
+  }
+  fclose(fp);
+  return 0;
+}
 
 /* ヒストリを検索する。
  *	str ... 検索文字列。だたし、先頭 len 分だけが有効
@@ -399,7 +463,8 @@ void replace_history(const char *sp, char *_dp , int max )
 
   // ヒストリが参照されている場合は、変換後文字列を画面に表示する。
   if( is_history_refered ){
-    puts( _dp );
+    fputs_ctrl( _dp , stdout );
+    putc( '\n' , stdout );
   }
 
   PublicHistory *tmp=new PublicHistory;
@@ -559,15 +624,14 @@ void preprocess(const char *sp, char *_dp , int max )
  */
 int cmd_history(FILE *source,Parse &param)
 {
-  int n=10;
+  int n=nhistories;
   /* パラメータ(参照するヒストリの数)がある場合、その数値を取得。
-   * デフォルトは 10
    */
   if( param.get_argc() >= 2 ){
     char *arg1=(char*)alloca(param.get_length(1)+1);
     param.copy(1,arg1);
     if( (n=atoi(arg1)) < 1 )
-      n = 10;
+      n = nhistories;
   }
   FILE *fout=param.open_stdout();
 
@@ -576,11 +640,12 @@ int cmd_history(FILE *source,Parse &param)
     int i;
     for( i=0 ; i<n  && cur != NULL && cur != &Oth ; i++ )
       cur = cur->prev;
-    
+
     for( ; i > 0  && cur !=NULL ; i-- ){
       cur = cur->next;
-      fprintf( fout , "%4d : %s\n"
-	      , 1+nhistories-i , cur->string );
+      fprintf( fout , "%4d : " , 1+nhistories-i );
+      fputs_ctrl( cur->string , fout );
+      putc('\n',fout);
     }
   }
   return 0;

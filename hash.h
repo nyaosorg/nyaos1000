@@ -34,6 +34,7 @@ public:
   void *operator[](const char *key);
   void *operator[](const Substr &s);
   void *lookup_tolower(const Substr &s);
+  void *lookup_tolower(const char *s);
   
   HashB(int s) : size(s) , table((Bullet**)NULL) { }
   ~HashB(){ }
@@ -48,6 +49,7 @@ public:
   T *operator[](const char *key){ return (T*)HashB::operator[](key); }
   T *operator[](const Substr &key){ return (T*)HashB::operator[](key); }
   T *lookup_tolower(const Substr &key){ return (T*)HashB::lookup_tolower(key);}
+  T *lookup_tolower(const char *key){ return (T*)HashB::lookup_tolower(key);}
   
   void clean_and_delete();
   Hash(int i) : HashB(i) { }

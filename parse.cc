@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <ctype.h>
+#include <process.h>
 
 #include "macros.h"
 #include "parse.h"
@@ -100,6 +101,7 @@ Parse::~Parse()
       fclose(output_fp);
     }else{
       pclose(output_fp);
+      wait(NULL);
     }
   }
   /* ˆø”‚ÌŒãn–– */
