@@ -83,6 +83,7 @@ int main(int argc, char **argv)
 	break;
 
       case 'k':
+      case 'c':
 	if( i+1 < argc ){
 	  char buffer[256];
 
@@ -99,6 +100,9 @@ int main(int argc, char **argv)
 	      break;
 	  }
 	  fclose(fp);
+	  if( argv[i-1][1] == 'c' )
+	    return 0;
+
 	}else{
 	  fprintf(stderr,"%s: -k option needs filename parameter\n",
 		  argv[0],argv[1] );
@@ -136,7 +140,7 @@ int main(int argc, char **argv)
 	   "\n"
 	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "   Os/2 Shell 1.23     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "   Os/2 Shell 1.24     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	   "                                                          \n"
@@ -207,7 +211,7 @@ int main(int argc, char **argv)
 
 	    dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
 			  , screen_width ,
-			  " Nihongo Yet Another Os/2 Shell 1.23 "
+			  " Nihongo Yet Another Os/2 Shell 1.24 "
 			  " (c) 1996,97 HAYAMA,Kaoru "
 			  );
 	    edlin.using_i_mark = 1;

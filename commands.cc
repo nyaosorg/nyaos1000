@@ -107,7 +107,7 @@ int cmd_comment(FILE *source, Parse &params)
   }
 
   char *fname=(char*)alloca(params.get_length(1)+1);
-  params.copy(1,fname);
+  params.copy(1,fname,Parse::REPLACE_SLASH);
 
   struct _ea eavalue;
 
@@ -131,7 +131,7 @@ int cmd_comment(FILE *source, Parse &params)
     *ptr.word++ = 1;
     *ptr.word++ = 0xFFFD;
     *ptr.word++ = (unsigned short)
-      ( params.copyall( 2 , ptr.byte+2 , false ) - (ptr.byte+2) );
+      ( params.copyall( 2 , ptr.byte+2 , Parse::QUOTE_NOT_COPY ) - (ptr.byte+2) );
     printf("%s --> %s\n",fname,ptr.byte);
   }
   

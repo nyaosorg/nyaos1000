@@ -16,6 +16,17 @@ void alias_replace(const char *sp , char *destinate  )
   for(;;){ /* 各コマンド単位 */
     Parse params(sp);
 
+    /* 命令が空の場合、ただちにやり直し。
+     * 「&&」や startに変換する「&」などでは、これが必要らしい 
+     */
+    if( params.get_argc() == 0 ){
+      sp = params.get_tail();
+      if( *sp == '\0' )
+	break;
+      *dp++ = *sp++;
+      continue;
+    }
+
     int key=0;
     {/* ハッシュキーを計算する */
       int size=params.get_length(0);
@@ -58,7 +69,7 @@ void alias_replace(const char *sp , char *destinate  )
 		}else if( *spa == '@' ){
 		  while( ++n < params.get_argc() ){
 		    *dp++ = ' ';
-		    dp = params.copy(n,dp,false,true);
+		    dp = params.copy(n,dp,Parse::QUOTE_COPY);
 		  }
 		  ++spa;
 		}
@@ -74,7 +85,7 @@ void alias_replace(const char *sp , char *destinate  )
 	    case '@':
 	      percent_used = 1;
 	      spa++;
-	      dp = params.copyall(1,dp,true,true);
+	      dp = params.copyall(1,dp,Parse::REPLACE_SLASH);
 	      break;
 
 	    case '%':
@@ -101,15 +112,13 @@ void alias_replace(const char *sp , char *destinate  )
     }/* alias search loop */
 
     if( ptr == NULL )
-      dp = params.copyall(0,dp);
+      dp = params.betacopy(dp);
     
     sp = params.get_tail();
     if( *sp == '\0' )
       break;
     
-    *dp++ = ' ';
     *dp++ = *sp++;
-    *dp++ = ' ';
 
   }/* for(;;) */
 

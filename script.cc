@@ -29,10 +29,10 @@ static int copyargs( const char *&sp , char *&dp )
       while( is_space(*++sp) )
 	;
       if( *sp =='&' ){  /* && ‚Ìˆ— */
+	sp++; /* ‚Ü‚¸A'&' ‚ğ“Ç‚İ‚Æ‚Î‚· */
 	const char *s="& if not errorlevel 1 ";
 	while( *s != '\0' )
 	  *dp++ = *s++;
-	sp++;
       }else{
 	*dp++ = '&';
       }
@@ -44,10 +44,11 @@ static int copyargs( const char *&sp , char *&dp )
       while( is_space(*++sp) )
 	;
       if( *sp == '|' ){
+	sp++; /* | ‚ğ“Ç‚İ”ò‚Î‚·B*/
 	const char *s="& if errorlevel 1 ";
 	while( *s != '\0' )
 	  *dp++ = *s++;
-	sp++;
+
       }else{
 	*dp++ = '|';
       }

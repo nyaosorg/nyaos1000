@@ -13,6 +13,9 @@
 #include "complete.h"
 #include "edlin.h"
 
+#define ECHODEBUG(x)     /* */
+/* #define ECHODEBUG(x) (x) /* */
+
 extern int echoflag;
 int cmd_mode  (FILE *source , Parse &params );
 int cmd_pwd   (FILE *source , Parse &params );
@@ -187,97 +190,96 @@ static int cmd_set( FILE *srcfil, Parse &params )
   if( params.get_argc() < 2 )
     return RC_HOOK;
 
-  const char *parameter = params.get_parameter();
-  if( parameter == NULL )
+  const char *sp = params.get_parameter();
+  if( sp == NULL )
     return RC_HOOK;
 
   int ch;
   char envname[1024],*dp=envname;
 
   /* 変数名の前の空白のスキップ */
-  while( *parameter!='\0' && is_space(*parameter) )
-    parameter++;
+  while( *sp!='\0' && is_space(*sp) )
+    sp++;
 
   /* 変数名のコピ－ */
-  while( *parameter != '=' && !is_space(*parameter ) ){
-    if(   *parameter=='\0' || *parameter=='&' 
-       || *parameter=='>'  || *parameter=='|' ){
+  while( *sp != '=' && !is_space(*sp ) ){
+    if(   *sp=='\0' || *sp=='&' 
+       || *sp=='>'  || *sp=='|' ){
       /* 変数名がない ---> 画面表示のみ */
       return RC_HOOK;
-    }else if( *parameter=='<' ){
+    }else if( *sp=='<' ){
       fputs("You cannot input-redirect on command set.\n",stderr);
       return 1;
     }
-    if( is_kanji(*parameter) ){
-      *dp++ = *parameter++;
-      *dp++ = *parameter++;
+    if( is_kanji(*sp) ){
+      *dp++ = *sp++;
+      *dp++ = *sp++;
     }else{
-      *dp++ = to_upper(*parameter) ;
-      parameter++;
+      *dp++ = to_upper(*sp) ;
+      sp++;
     }
   }
 
   /* 変数名～「=」の空白のスキップ */
-  while( *parameter != '=' ){
-    if( *parameter=='&'  || *parameter=='\0'  ||  *parameter=='|' 
-       || *parameter == '>' ){
+  while( *sp != '=' ){
+    if( *sp=='&'  || *sp=='\0'  ||  *sp=='|' 
+       || *sp == '>' ){
 
       return RC_HOOK;
-    }else if( *parameter == '<' ){
+    }else if( *sp == '<' ){
       fputs("You cannot input-redirect on command set.\n",stderr);
       return 1;
     }
 
-    if( !is_space(*parameter) ){
+    if( !is_space(*sp) ){
       fputs("Invalid Argument.\n",stderr);
       return -1;
     }
-    parameter++;
+    sp++;
   }
   /* 「=」のスキップ */
-  *dp++ = *parameter++;
+  *dp++ = *sp++;
   
-  /* 「=」～引数の空白を削除 */
-  while( *parameter != '\0'  && is_space(*parameter ) )
-    parameter++;
+  /* 「=」～引数の直前の空白を削除 */
+  while( *sp != '\0'  && is_space(*sp) )
+    sp++;
 
   /*  右辺値のコピ－ */
+  
   char *final_space=NULL;
-  while( *parameter != '\0' ){
-    if( is_space(*parameter) ){
-      if( final_space==NULL )
+  int quote=0;
+  int compati=( *sp != '"' );
+  
+  while( *sp!='\0' && (quote!=0 || (*sp!='&' && *sp!='|'))){
+    if( is_space(*sp) ){
+      if( final_space==NULL && quote==0 )
 	final_space = dp;
     }else{
       final_space = NULL;
-    }
-
-    if( *parameter == '%' ){
-      char refenv[256] , *dp2=refenv;
-      for(;;){
-	++parameter;
-	if( *parameter == '%' ){
-	  ++parameter;
-	  break;
-	}else if( *parameter == '\0' ){
-	  break;
-	}else{
-	  *dp2++ = to_upper(*parameter);
+      if( *sp == '^' &&  *++sp !='\0' ){
+	if( is_kanji(*sp) )
+	  *dp++ = *sp++;
+	*dp++ = *sp++;
+	continue;
+      }else if( *sp == '"' ){
+	if( ! compati ){
+	  if( *(sp+1) == '"' ){
+	    *dp++ = '"';
+	    sp += 2;
+	  }else{
+	    sp++;
+	    quote ^= 1;
+	  }
+	  continue;
 	}
-	if( dp2 >= refenv+sizeof(refenv)-2 )
-	  break;
+	quote ^= 1;
       }
-      *dp2 = '\0';
-      const char *sp2=getenv(refenv);
-      if( sp2 != NULL ){
-	while( *sp2 != '\0' )
-	  *dp++ = *sp2++;
-      }
-    }else{
-      if( is_kanji(*parameter) )
-	*dp++ = *parameter++;
-      *dp++ = *parameter++;
     }
+    if( is_kanji(*sp) )
+      *dp++ = *sp++;
+    *dp++ = *sp++;
   }
+ exit:
   *dp = '\0';
   
   if( final_space != NULL )
@@ -303,7 +305,7 @@ static int cmd_source( FILE *srcfil, Parse &params )
   char *fname=(char*)alloca(params.get_length(1)+1);
   params.copy(1,fname);
 
-  char *cmdname=(char*)alloca(params.get_length(1)+1);
+  char *cmdname=(char*)alloca(params.get_length(1)+5);
   sprintf(cmdname,"%s.cmd",fname);
 
   FILE *fp;
@@ -431,7 +433,7 @@ static int cmd_echo(FILE *srcfil, Parse &params )
 static int cmd_lecho(FILE *source, Parse &params )
 {
   for(int i=0 ; i<params.get_argc() ; i++ ){
-    char argv[256];
+    char argv[1024];
     params.copy(i,argv);
     printf("[%s] ",argv);
   }
@@ -554,27 +556,28 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
 
   /* カレントドライブの変更 */
   if(   is_alpha(cmdline[0]) && cmdline[1]==':' 
-     && (cmdline[2]=='\0' || is_space(cmdline[2])) )
-    {
-      _chdrive(cmdline[0]);
-      return 0;
-    }
-  
-  /* エイリアスの置換処理 */
-  /* printf("original [%s]\n",cmdline); */
+     && (cmdline[2]=='\0' || is_space(cmdline[2])) ) {
+    _chdrive(cmdline[0]);
+    return 0;
+  }
 
-  char alias_replaced_buffer[1024];
-  alias_replace( cmdline , alias_replaced_buffer );
-  cmdline = alias_replaced_buffer;
+  ECHODEBUG( printf("org:{%s}\n",cmdline) );
 
-  /* printf("alias [%s]\n",cmdline); */
-  
   /* 環境変数の置換処理 */
   char env_replaced_buffer[1024];
   replace_envvar( cmdline , env_replaced_buffer );
   cmdline = env_replaced_buffer;
   if( cmdline[0]=='\0' )
     return 0;
+  
+  ECHODEBUG( printf("pre:{%s}\n",cmdline) );
+  
+  /* エイリアスの置換処理 */
+  char alias_replaced_buffer[1024];
+  alias_replace( cmdline , alias_replaced_buffer );
+  cmdline = alias_replaced_buffer;
+
+  ECHODEBUG( printf("ali{%s}\n",cmdline) );
   
   Parse params(cmdline);
 
@@ -597,18 +600,17 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
 	break;
       }else{
 	if( rc == 0  &&  *params.get_tail() == '&' )
-	  return execute( srcfil , params.get_tail()+1 );
+	  return execute( srcfil , params.get_nextcmds() );
 	return rc;
       }
     }
     if( ++key > numof(hashtable) )
       key = 0;
   }
-  /* printf("[%s]\n",cmdline); */
-
   replace_script( cmdline , alias_replaced_buffer );
   cmdline = alias_replaced_buffer;
-  /* printf("<%s>\n",cmdline); */
+  
+  ECHODEBUG( printf("scr:{%s}\n",cmdline) );
 
   if( echoflag )
     puts( cmdline );

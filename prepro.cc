@@ -76,6 +76,8 @@ char *insert_env(const char *env,char *dp)
   return dp;
 }
 
+char *replace_envvar(const char *sp, char *_dp );
+
 static char *history_copy(const char *&sp, char *dp )
 {
   /* 引数 sp は、「!」を指していると仮定 */
@@ -84,6 +86,8 @@ static char *history_copy(const char *&sp, char *dp )
   switch( *++sp ){
   case '!':
     histring = get_hist_r(0);
+    if( histring == NULL )
+      fprintf(stderr,"! : Event not found.\n");
     sp++;
     break;
 
@@ -99,10 +103,17 @@ static char *history_copy(const char *&sp, char *dp )
 	n = n*10+(*sp-'0');
       }while( is_digit(*++sp) );
       
-      if( minus )
+      if( minus ){
 	histring = get_hist_r(n>0 ? n-1 : 0 );
-      else
+	if( histring == NULL )
+	  fprintf(stderr,"-%d : Event not found.\n",n);
+      }else{
 	histring = get_hist_f(n);
+	if( histring == NULL )
+	  fprintf(stderr,"%d : Event not found.\n",n);
+      }
+      
+
     }else if( *sp == '?' ){
       char buffer[1024] , *bp = buffer;
       ++sp; /* 最初の'?'のスキップ */
@@ -112,6 +123,9 @@ static char *history_copy(const char *&sp, char *dp )
       *bp = '\0';
 
       histring = seek_hist_mid(buffer);
+      if( histring == NULL )
+	fprintf(stderr,"%s : Event not found.\n",buffer);
+	
     }else{
       char buffer[1024] , *bp = buffer;
       int len=0;
@@ -121,18 +135,16 @@ static char *history_copy(const char *&sp, char *dp )
       }
       *bp = '\0';
       histring = seek_hist_top(buffer,len);
+      if( histring == NULL )
+	fprintf(stderr,"%s : Event not found.\n",buffer);
     }
     break;
   }/* end of switch */
 
-  if( histring != NULL ){
-    while( *histring != '\0' )
-      *dp++ = *histring++;
-  }
-  return dp;
+  return (histring != NULL ? replace_envvar(histring,dp) : dp) ;
 }
 
-void replace_envvar(const char *sp, char *_dp )
+char *replace_envvar(const char *sp, char *_dp )
 {
   char *dp=_dp;
   int is_history_refered=0;
@@ -280,6 +292,7 @@ void replace_envvar(const char *sp, char *_dp )
   }else{
     puts( _dp );
   }
+  return dp;
 }
 
 int cmd_history(FILE *source,Parse &param)

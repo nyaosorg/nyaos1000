@@ -7,6 +7,9 @@
 class Parse{
   const char *sp;
 
+  const char *nextcmds,*tail;
+  int tailcheck();
+
   int terminal;
   int argc;
 
@@ -38,15 +41,25 @@ public:
 
   ~Parse();
 
-  const char *get_tail(){ return sp; }
+  enum{
+    QUOTE_NOT_COPY = 0,
+    QUOTE_COPY     = 1,
+    SLASH_REPLACE  = 2,
+    REPLACE_SLASH  = 2,
+  };
+
+  const char *get_tail(){ return tail; }
+  const char *get_nextcmds(){ return nextcmds; }
+
   int get_argc(){ return argc; }
   const char *get_argv(int n){ return n < argc ? args[n].pointor : NULL; }
   int   get_length(int n){ return n < argc ? args[n].length : 0; }
 
-  char *copy   (int n, char *dp, bool quote_copy_flag=false ,
-		bool replace_flag=false );
-  char *copyall(int n, char *dp, bool quote_copy_flag=true ,
-		bool replace_flag=false );
+  char *copy   (int n, char *dp, int flag=0 );
+  char *copyall(int n, char *dp, int flag=QUOTE_COPY);
+
+  /* 何も置換せずに、そのまま、ベタでコピーする。*/
+  char *betacopy(char *dp,int n=0);
 
   int get_length_later(int n){ return n < argc ? sp-args[n].pointor : 0; }
   const char *get_parameter(){ return args[1].pointor; }

@@ -1,3 +1,8 @@
+/* eadir.cc $Id: eadir.cc 1.3 1997/08/15 19:24:11 kaoru Exp kaoru $
+ *   color-ls や .COMMENT,.LONGNAME 表示機能付dir(eadir)
+ *   を実際に実行するモジュール。
+ */
+
 #include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -36,12 +41,16 @@ enum{
 static char *ls_left_code="\033[";
 static char *ls_right_code="m";
 static char *ls_end_code="\033[0m";
-static char *ls_normal_file="1";
-static char *ls_directory="32;1";
-static char *ls_system_file="31;1";
-static char *ls_read_only_file="33;1";
-static char *ls_hidden_file="44;37;1";
-static char *ls_executable_file="35;1";
+
+static char *ls_normal_file="1";	/* 白 */
+static char *ls_directory="32;1";	/* 緑 */
+static char *ls_system_file="31;1";	/* 青 */
+static char *ls_read_only_file="33;1";	/* 黄 */
+static char *ls_hidden_file="44;37;1";	/* 青地の白 */
+static char *ls_executable_file="35;1"; /* 紫 */
+
+static char *ls_comment="44;37;1";	/* 青地に白 */
+static char *ls_longname="41;37;1";     /* 赤字に白 */
 
 struct {
   const char *xx;
@@ -56,6 +65,8 @@ struct {
   { "ro",&ls_read_only_file },
   { "hi",&ls_hidden_file },
   { "ex",&ls_executable_file },
+  { "cm",&ls_comment} ,
+  { "ln",&ls_longname} ,
 };
 
 void set_ls_color_table(const char *s)
@@ -333,10 +344,12 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
   if( flag & COLOR_MODE ){
     fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
   }
-  fputs(flist->name,fout);
+  ncolumns += fprintf(fout,"%s",flist->name,fout);
   if( flag & COLOR_MODE )
     fputs(ls_end_code,fout);
+  
   putc(tailchar,fout);
+  ncolumns++;
 
   if( (flag & PRINT_MASK)==DIR_MODE ){
     more(flag,fout);
@@ -381,11 +394,20 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 	s[n++] = '\0';
 	
 	int nspaces = screen_width - ncolumns - n ;
+	if( nspaces < 0 ){
+	  putc( '\n' , fout );
+	  nspaces = screen_width - n;
+	}
+
 	while( nspaces-- > 0 )
 	  putc( ' ' , fout );
 	
-	while( *s != '\0' )
-	  putc( *s++ , fout );
+	if( flag & COLOR_MODE )
+	  fprintf(fout,"%s%s%s%s%s",
+		  ls_left_code,ls_longname,ls_right_code,s,ls_end_code);
+	else
+	  while( *s != '\0' )
+	    putc( *s++ , fout );
       }
     }
     _ea_free( &ea );
@@ -407,9 +429,13 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 	  if( (flag & PRINT_MASK)== INDEX_MODE &&  ncolumns < 8 )
 	    putc('\t',fout);
 	  putc('\t',fout);
+	  if( flag & COLOR_MODE )
+	    fprintf(fout,"%s%s%s",ls_left_code,ls_comment,ls_right_code);
 	  while( size-- > 0 ){
 	    putc( *ptr.byte++ , fout );
 	  }
+	  if( flag & COLOR_MODE )
+	    fputs(ls_end_code,fout);
 	  more(flag,fout);
 	}else{
 	  ptr.byte += (*ptr.word + 2);
@@ -533,7 +559,17 @@ int the_dir(const char *dir,int flag , FILE *fout )
   if( nlists == 0 )
     return 0;
 
-  print_filelist(first,nlists,max_length,flag,fout);
+  if( flag & EADIR_MODE ){
+    char cwd[FILENAME_MAX];
+
+    _getcwd2(cwd,sizeof(cwd));
+    _chdir2( dir );
+    print_filelist(first,nlists,max_length,flag,fout);
+    _chdir2( cwd );
+
+  }else{
+    print_filelist(first,nlists,max_length,flag,fout);
+  }
 
   column=0;
   return nlists;
@@ -701,7 +737,11 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     if( filecount > 0 ){
       assert( files != NULL );
 
-      print_filelist( files , filecount , max_length , flag , fout );
+      /* dotfile や Hidden属性があっても、直接コマンドラインで指定しているの
+       * だから、表示させる 
+       */
+      print_filelist( files , filecount , max_length 
+		     , flag | HIDDEN_MODE , fout );
 
       if( dircount > 0 )
 	putc('\n',fout);
