@@ -23,7 +23,11 @@ void alias_replace(const char *sp , char *destinate  )
       sp = params.get_tail();
       if( *sp == '\0' )
 	break;
-      *dp++ = *sp++;
+      while( sp < params.get_nextcmds() )
+	*dp++ = *sp++;
+      if( *sp == '\0' )
+	break;
+
       continue;
     }
 
@@ -117,8 +121,10 @@ void alias_replace(const char *sp , char *destinate  )
     sp = params.get_tail();
     if( *sp == '\0' )
       break;
-    
-    *dp++ = *sp++;
+    while( sp < params.get_nextcmds() )
+      *dp++ = *sp++;
+    if( *sp == '\0' )
+      break;
 
   }/* for(;;) */
 

@@ -8,10 +8,11 @@ CC = gcc -O2
 
 NYAOS=nyaos.o edlin.o escedlin.o complete.o eadir.o \
 	shell.o foreach.o script.o alias.o parse.o execute.o \
-	commands.o prepro.o bindkey.o
+	commands.o prepro.o bindkey.o open.o
 nyaos.exe : $(NYAOS)
-	$(CC) $(NYAOS) -o nyaos.out -lvideo
+	$(CC) $(NYAOS) -o nyaos.out -lvideo -lwrap -Zcrtdll
 	emxbind nyaos.out
+	del nyaos.out
 
 # siminput.o
 bindkey.o : bindkey.cc
@@ -53,6 +54,7 @@ execute.o : execute.cc
 
 commands.o : commands.cc
 prepro.o : prepro.cc
+open.o : open.cc
 
 clean :
 	rm -f *.o *~

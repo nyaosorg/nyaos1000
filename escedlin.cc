@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/kbdscan.h>
-#include <sys/nls.h> /* for getkey() */
+#include "macros.h"
 #include "Edlin.h"
 
 void EscEdlin::putchr(int c)
@@ -29,7 +29,7 @@ static int get_key(int wait)
   int ch = (get86key(wait) & 0xFF );
   if( ch == 0 )
     ch = (get86key(wait)|0x100);
-  else if( _nls_is_dbcs_lead(ch & 255) )
+  else if( is_kanji(ch) )
     ch = ((ch << 8)|(get86key(wait) & 0xFF));
   return ch;
 }

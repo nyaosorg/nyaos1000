@@ -28,7 +28,9 @@ struct filelist{
   char name[1]; /* ‰Â•Ï’· */
 };
 
-struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp);
+struct filelist *fsort_and_insert(struct filelist *first,
+				  struct filelist *tmp,
+				  int *count  );
 int dircompare(struct filelist *d1,struct filelist *d2);
 int pathsplit( const char *path, char *dir, char *fname );
 int which_suffix(const char *path,...);
@@ -64,7 +66,7 @@ public:
   void cleanup();
   char *nextchar();
   int get_fname_common_length()const{ return common_length; }
-  const char *get_real_name1() const { return list->name; }
+  const char *get_real_name1() const ;
 
   struct filelist *findfirst(){ return findptr=list; }
   struct filelist *findnext(){  return findptr=findptr->next; }

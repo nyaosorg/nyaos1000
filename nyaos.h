@@ -58,7 +58,8 @@ void kill_filter(struct Command *list);
 struct Command *make_filter( const char *sp );
 struct Command *alias_filter(struct Command *dummyfirst);
 
-extern int scriptflag;
+extern int scriptflag,option_sos;
+
 int replace_script( const char *source , char *destinate );
 
 extern int option_tilda_is_home;

@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <ctype.h>
-#include <sys/nls.h>
 
 #include "macros.h"
 #include "parse.h"
@@ -65,7 +64,7 @@ Parse::~Parse()
 int Parse::check_redirect()
 {
   int mark=*sp;
-  if( _nls_is_dbcs_lead(*sp & 255) )
+  if( is_kanji(*sp) )
     ++sp;
 
   if( *++sp == '>' ){
@@ -81,12 +80,12 @@ int Parse::check_redirect()
     return -1;
 
   do{
-    if( _nls_is_dbcs_lead(*sp & 255) )
+    if( is_kanji(*sp) )
       ++sp;
     ++sp;
     if( *sp=='"' ){
       do{
-	if( _nls_is_dbcs_lead(*sp & 255 ) )
+	if( is_kanji(*sp) )
 	   ++sp;
 	++sp;
 	if( *sp == '\0' )
@@ -359,7 +358,7 @@ char *Parse::betacopy(char *dp,int n=0)
 {
   const char *ssp=args[n].pointor;
 
-  while( ssp < sp ){
+  while( ssp < tail ){
     *dp++ = *ssp++;
   }
   *dp = '\0';

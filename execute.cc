@@ -19,6 +19,7 @@
 extern int echoflag;
 int cmd_mode  (FILE *source , Parse &params );
 int cmd_pwd   (FILE *source , Parse &params );
+int chdir_with_cdpath(const char *cwd);
 int cmd_chdir (FILE *srcfil, Parse &params );
 int cmd_option(FILE *source, Parse &params );
 int cmd_comment(FILE *source, Parse &params );
@@ -27,6 +28,8 @@ int cmd_unalias(FILE *source, Parse & );
 int cmd_mkdir(FILE *source, Parse & );
 int cmd_rmdir(FILE *source, Parse & );
 int cmd_history(FILE *source, Parse & );
+
+int cmd_open(FILE *source,Parse &);
 
 void alias_replace(const char *sp,char *dp);
 
@@ -146,17 +149,18 @@ static int cmd_pushd( FILE *srcfil , Parse &params)
 {
   char cwd[FILENAME_MAX];
   _getcwd2(cwd,sizeof(cwd));
+  
+  if( params.get_argc() > 1 ){
+    char dir[FILENAME_MAX];
+    params.copy(1,dir);
+    if( chdir_with_cdpath(dir) )
+      return 0;
+  }
 
   Dirstack *tmp=(Dirstack*)malloc(sizeof(dirstack)+strlen(cwd));
   tmp->prev = dirstack;
   strcpy( tmp->buffer , cwd );
   dirstack = tmp;
-  
-  if( params.get_argc() > 1 ){
-    char dir[FILENAME_MAX];
-    params.copy(1,dir);
-    _chdir2( dir );
-  }
 
   return cmd_dirs(srcfil,params);
 }
@@ -459,6 +463,7 @@ struct commandtable_tag jumptable[]={
   {"md",     cmd_mkdir   },
   {"mode",   cmd_mode    },
   {"mkdir",  cmd_mkdir   },
+  {"open",   cmd_open    },
   {"option", cmd_option  },
   {"pwd",    cmd_pwd     },
   {"popd",   cmd_popd    },
@@ -577,7 +582,7 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
   alias_replace( cmdline , alias_replaced_buffer );
   cmdline = alias_replaced_buffer;
 
-  ECHODEBUG( printf("ali{%s}\n",cmdline) );
+  ECHODEBUG( printf("ali:{%s}\n",cmdline) );
   
   Parse params(cmdline);
 
@@ -607,8 +612,9 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
     if( ++key > numof(hashtable) )
       key = 0;
   }
-  replace_script( cmdline , alias_replaced_buffer );
-  cmdline = alias_replaced_buffer;
+  ECHODEBUG( printf("tmp:{%s}\n",cmdline ) );
+  replace_script( cmdline , env_replaced_buffer );
+  cmdline = env_replaced_buffer;
   
   ECHODEBUG( printf("scr:{%s}\n",cmdline) );
 

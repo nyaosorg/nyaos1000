@@ -81,14 +81,24 @@ int cmd_mkdir( FILE *source , Parse &params)
   }
 }
 
+int chdir_with_cdpath(const char *cwd)
+{
+  if( _chdir2( cwd ) ){
+    /* CDPATH */
+    char cdpath[FILENAME_MAX];
+    _searchenv(cwd,"CDPATH",cdpath);
+    if( cdpath[0] == '\0'  ||  _chdir2(cdpath) )
+      fprintf(stderr,"%s : no such directory.\n",cwd);
+  }
+}
+
 int cmd_chdir( FILE *srcfil, Parse &params)
 {
   char cwd[FILENAME_MAX];
 
   if( params.get_argc() > 1 ){
     params.copy(1,cwd);
-    if( _chdir2( cwd ) )
-      fprintf(stderr,"%s : no such directory.\n",cwd);
+    chdir_with_cdpath(cwd);
   }else if( option_cd_goto_home ){
     const char *home=getenv("HOME");
     if( home == NULL || _chdir2(home) != 0 )
@@ -160,6 +170,7 @@ struct{
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
   { "script"               , &scriptflag                       , 1  , 0 },
+  { "sos"                  , &option_sos                       , 1  , 0 },
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
   { "slash_to_backslash_after_tilda"
       , &option_replace_slash_to_backslash_after_tilda , 1 , 0 },

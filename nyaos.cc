@@ -49,44 +49,74 @@ int main(int argc, char **argv)
   char directory[FILENAME_MAX];
   char thename[FILENAME_MAX];
 
+  if( dbcs_table_init() != 0 ){
+    fprintf(stderr,"nyaos: DBCS init error\n");
+    return -1;
+  }
   setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
   Shell::bindkey_tcshlike();
 
+  const char *shell=getenv("COMSPEC");
+  if(   strstr(shell,"nyaos") != NULL
+     || strstr(shell,"NYAOS") != NULL ){
+    
+    /* COMSPEC に、NYAOS自身が設定されていると、
+       動作がおかしくなるので、
+       CMD.EXE に切り換えさせる。 */
+
+    static char comspec[256];
+    auto char cmdexe_path[100];
+    
+    if( _path(cmdexe_path,"CMD.EXE") != 0 ){
+      fprintf(stderr,"NYAOS: can not find cmd.exe.");
+      return -1;
+    }
+    sprintf(comspec,"COMSPEC=%s",cmdexe_path);
+    putenv(comspec);
+  }
+
   for(int i=1;i<argc;i++){
-    if( argv[i][0] == '-' ){
+    if( argv[i][0] == '-' || argv[i][0] == '/' ){
       switch(argv[i][1]){
+      case 'C':
+      case 'c':
+      case 'K':
+      case 'k':
       case 'e':
-	{
-	  int length=strlen(argv[i]+2);
+	if( i+1 < argc ){
+	  int length=0;
 	  for(int j=i+1;j<argc;j++)
-	    length += strlen(argv[i])+1;
+	    length += strlen(argv[j])+1;
 	  
-	  char *oneline=(char*)alloca(length+1);
+	  char *oneline=(char*)alloca(length);
 	  char *dp=oneline;
-	  char *sp=&argv[i][2];
-	  while( *sp != '\0' )
-	    *dp++ = *sp++;
 	  
-	  for(int j=i+1;j<argc;j++){
-	    *dp++ = ' ';
-	    sp=argv[j];
+	  for(int j=i+1;;){
+	    const char *sp=argv[j];
 	    while( *sp != '\0' )
 	      *dp++ = *sp++;
+	    if( ++j >= argc )
+	      break;
+	    *dp++ = ' ';
 	  }
 	  *dp = '\0';
-	  
-	  return execute(stdin,oneline);
+
+	  int rc=execute(stdin,oneline);
+	  if( argv[i][1] == 'c' || argv[i][1] == 'C' || argv[i][1] == 'e' )
+	    return rc;
 	}
+	goto end_argv;
 	
       case 'f':
 	option_nyaos_rc = 0;
 	break;
 
+#if 0
       case 'k':
       case 'c':
 	if( i+1 < argc ){
 	  char buffer[256];
-
+	  
 	  _searchenv(argv[++i],"HOME",buffer);
 	  FILE *fp=fopen(buffer,"rt");
 	  if( fp==NULL ){
@@ -107,12 +137,14 @@ int main(int argc, char **argv)
 	  fprintf(stderr,"%s: -k option needs filename parameter\n",
 		  argv[0],argv[1] );
 	}
+#endif
       }
     }else{
       fprintf(stderr,"%s: %s:invalid argument.\n",argv[0],argv[i]);
       return -1;
     }
   }
+ end_argv:
   if( option_nyaos_rc ){
     char buffer[FILENAME_MAX];
     FILE *fp;
@@ -140,7 +172,7 @@ int main(int argc, char **argv)
 	   "\n"
 	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "   Os/2 Shell 1.24     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "   Os/2 Shell 1.25     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	   "                                                          \n"
@@ -211,7 +243,7 @@ int main(int argc, char **argv)
 
 	    dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
 			  , screen_width ,
-			  " Nihongo Yet Another Os/2 Shell 1.24 "
+			  " Nihongo Yet Another Os/2 Shell 1.25 "
 			  " (c) 1996,97 HAYAMA,Kaoru "
 			  );
 	    edlin.using_i_mark = 1;

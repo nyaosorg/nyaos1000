@@ -208,8 +208,7 @@ int fnexplode2(struct filelist *&list   , int &count ,
     while( sp < dir_p )
       *dp++ = *sp++;
     *dp = '\0';
-    dirlist = fsort_and_insert(dirlist,tmp);
-    dircount++;
+    dirlist = fsort_and_insert(dirlist,tmp,&dircount);
     return 0;
   }
 
@@ -247,11 +246,9 @@ int fnexplode2(struct filelist *&list   , int &count ,
     tmp->size   = dirbuf->d_size;
 
     if( tmp->attr & A_DIR ){
-      dirlist = fsort_and_insert(dirlist,tmp);
-      dircount++;
+      dirlist = fsort_and_insert(dirlist,tmp,&dircount);
     }else{
-      list = fsort_and_insert(list,tmp);
-      count++;
+      list = fsort_and_insert(list,tmp,&count);
       if( tmp->length > max_length )
 	max_length = tmp->length;
     }
@@ -548,7 +545,7 @@ int the_dir(const char *dir,int flag , FILE *fout )
     if( tmp->length > max_length )
       max_length = tmp->length;
 
-    first = fsort_and_insert(first,tmp);
+    first = fsort_and_insert(first,tmp,NULL);
 
     if( is_file_print(tmp,flag) )
       nlists++;
@@ -658,13 +655,11 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	      node->d.year   = tmbuf->tm_year-80; /* 0:1900 --> 0:1980 */
 	      
 	      if( stbuf.st_attr & A_DIR ){
-		dirs  = fsort_and_insert(dirs ,node);
-		dircount++;
+		dirs  = fsort_and_insert(dirs ,node,&dircount);
 	      }else{
-		files = fsort_and_insert(files,node);
+		files = fsort_and_insert(files,node,&filecount);
 		if( len > max_length )
 		  max_length = len;
-		filecount++;
 	      }
 	    }else{
 	      fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
@@ -701,13 +696,11 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	    node->d.year   = tmbuf->tm_year-80; /* 0:1900 --> 0:1980 */
 	    
 	    if( stbuf.st_attr & A_DIR ){
-	      dirs  = fsort_and_insert(dirs ,node);
-	      dircount++;
+	      dirs  = fsort_and_insert(dirs ,node,&dircount);
 	    }else{
-	      files = fsort_and_insert(files,node);
+	      files = fsort_and_insert(files,node,&filecount);
 	      if( len > max_length )
 		max_length = len;
-	      filecount++;
 	    }
 	  }else{
 	    fprintf(stderr,"%s: no such file or directory\n",argv[i]);

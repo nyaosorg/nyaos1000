@@ -1,8 +1,11 @@
 #ifndef MACROS_H
 #define MACROS_H
 
+extern char dbcstable[256];
+int dbcs_table_init();
+
 #define is_space(x) isspace((x)& 255)
-#define is_kanji(x) _nls_is_dbcs_lead((x)& 255)
+#define is_kanji(x) dbcstable[(x)& 255]
 #define is_digit(x) isdigit((x)& 255)
 #define is_alpha(x) isalpha((x)& 255)
 #define is_xdigit(x) isxdigit((x)& 255)

@@ -13,6 +13,22 @@ int Complete::directory_split_char='\\';
 int Complete::complete_tail_tilda=0;
 int Complete::complete_hidden_file=0;
 
+const char *Complete::get_real_name1() const
+{
+  struct filelist *p=list;
+  if( p != NULL ){
+    struct filelist *q=list->next;
+    while( q != NULL ){
+      if(     q->length < p->length 
+	 || ( q->length == p->length && (q->attr & A_DIR) != 0 ) ){
+	p=q;
+      }
+      q = q->next;
+    }
+  }
+  return p->name;
+}
+
 int which_suffix(const char *path,...)
 {
   /* まず、拡張子のドットを検索する。*/
@@ -248,33 +264,44 @@ static int instrcmp(const char *s1,const char *s2,int n)
   }
   return 0;
 }
-struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp)
+
+struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp,
+				  int *nfiles)
 {
-  if( first == NULL || dircompare(tmp,first) < 0 ){
+  int diff;
+  if( first == NULL || (diff=strcmp(tmp->name,first->name)) < 0 ){
+    if( nfiles != NULL )
+      ++*nfiles;
     tmp->next = first;
     return tmp;
-  }else{
-    struct filelist *prev=first,*cur=first->next;
-    for(;;){
-      if( cur == NULL ){
-	prev->next = tmp;
-	tmp->next  = NULL;
-	break;
-      }
-      int diff=dircompare(tmp,cur);
-      if( diff < 0 ){
-	tmp ->next = cur;
-	prev->next = tmp;
-	break;
-      }else if( diff==0  &&  strcmp(tmp->name,cur->name)==0 ){
-	/* 同じファイル名の場合、何もしない。 */
-	break;
-      }
-      prev = cur;
-      cur = cur->next;
-    }
-    return first;
   }
+  if( diff == 0 )
+    return first;
+
+  struct filelist *prev=first,*cur=first->next;
+  for(;;){
+    if( cur == NULL ){
+      prev->next = tmp;
+      tmp->next  = NULL;
+      break;
+    }
+    int diff=strcmp(tmp->name,cur->name);
+    
+    if( diff==0 ){
+      /* 同じファイル名の場合、何もしない。 */
+      return first;
+    }else if( diff < 0 ){
+      prev->next = tmp;
+      tmp ->next = cur;
+      break;
+    }
+    prev = cur;
+    cur = cur->next;
+  }
+
+  if( nfiles != NULL )
+    ++*nfiles;
+  return first;
 }
 
 int Complete::makelist_core(int command_complete, int is_with_dir)
@@ -331,8 +358,8 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
       if( dirbuf->d_namlen > max_length )
 	max_length = dirbuf->d_namlen;
 
-      list = fsort_and_insert(list,tmp);
-      nlists++;
+      list = fsort_and_insert(list,tmp,&nlists);
+
     }
   }
   closedir(dirp);
@@ -424,8 +451,7 @@ int Complete::add_buildin_command(const char *name)
       tmp->size = 0;
       if( length > max_length )
 	max_length = length;
-      list = fsort_and_insert(list,tmp);
-      nlists++;
+      list = fsort_and_insert(list,tmp,&nlists);
       return 0;
     }
   }
@@ -440,12 +466,16 @@ char *Complete::nextchar()
     return "\0";
 
   struct filelist *p=list;
+  
   if( p == NULL )
     return "\0";
 
-  strcpy( buffer , p->name+common_length );
+  strcpy( buffer , get_real_name1() + common_length );
 
-  while( (p=p->next) != NULL ){
+  /* ここの、get_real_name1() は、p でもよいのだが、
+     表示時の大文字・小文字の統一をうんたらかんたら...*/
+  
+  for( ; p != NULL ; p=p->next ){
     const char *q = p->name+common_length ;
     char *r=buffer;
 

@@ -129,7 +129,7 @@ static char *history_copy(const char *&sp, char *dp )
     }else{
       char buffer[1024] , *bp = buffer;
       int len=0;
-      while( *sp != '\0' ){
+      while( *sp != '\0' && !isspace(*sp) ){
 	*bp++ = *sp++;
 	len++;
       }

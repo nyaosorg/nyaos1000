@@ -1,6 +1,5 @@
 #include <stdlib.h>      /*** for _osmode             ***/
 #include <ctype.h>       /*** for isspace             ***/
-#include <sys/nls.h>     /*** for _nls_is_dbcs_lead() ***/
 #include <dos.h>         /*** for _int86              ***/
 #include <sys/kbdscan.h> /*** for _read_kbd()         ***/
 #include <string.h>
@@ -93,7 +92,7 @@ void Edlin::insert_and_forward(const char *s)
   len += shift;
   
   while( *s != '\0' ){
-    if( _nls_is_dbcs_lead( *s & 0xFF ) ){
+    if( is_kanji(*s) ){
       putchr( strbuf[ pos ] = *s++ );
       atrbuf[ pos++ ] = DBC1ST;
       putchr( strbuf[ pos ] = *s++ );
