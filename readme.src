@@ -21,16 +21,21 @@ makefile
 
 nyaos.cc
 	main関数があり、NYAOS はここから始まります。
-	プロンプト文字列を生成して、入力部と実行部を呼び出す以外は
-	たいした事はやっていません。
+	入力部と実行部を呼び出す以外はたいした事はやっていません。
 
 nyaos.h
 	ソ－ス全体から参照される宣言を主に含みます。結構、無秩序です。
+
+prompt.cc
+	プロンプトの文字列を作成します。
 
 finds.h , finds.cc
 	ディレクトリを読む汎用クラス Dir を宣言・定義しています。
 	DosFindFirst/Next を使い易くしています。他にワイルドカード展開関数
 	fnexplode2 / fnexplode2_free があります。共に汎用です。
+
+hash.h , hash.cc
+	連想配列クラス Hash。
 
 
 ------ コマンドインタープリタ -------
@@ -60,6 +65,9 @@ search.cc
 commands.cc
 	もろもろ内蔵コマンドの内蔵命令のルーチンがあります。重要なものとして
 	option 命令と、optionの項目テーブル(構造体配列 optlist)があります。
+
+command2.cc
+	bind , bindkey , set , cursor , lecho , echo
 
 eadir.cc
 	ls , eadir
@@ -107,3 +115,6 @@ complete.h , complete.cc
 bindkey.cc
 	キーボード入力と ShellEdlin を結びつけるクラス Shell を定義していま
 	す。そのうち、ShellEdlin , Edlin などに統合しようと考えています。
+
+getkey.cc
+	キーボード一文字入力ルーチンです。

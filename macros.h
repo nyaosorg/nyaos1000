@@ -2,6 +2,7 @@
 #ifndef MACROS_H
 #define MACROS_H
 
+/* dbcs.c */
 extern char dbcs_table[128+256];
 int dbcs_table_init();
 extern char toupper_table[128+256];
@@ -9,7 +10,6 @@ extern char tolower_table[128+256];
 #define is_kanji(x) (dbcs_table+128)[x]
 #define to_upper(x) (toupper_table+128)[x]
 #define to_lower(x) (tolower_table+128)[x]
-
 #define is_space(x) isspace((x)& 255)
 
 #define is_digit(x) isdigit((x)& 255)
@@ -32,16 +32,9 @@ enum{
 
 int SearchEnv(const char *fname,const char *envname,char *path);
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-  void raw_mode(void);
-  void cocked_mode(void);
-  int get86key(void);
-  int getkey(void);
-#ifdef __cplusplus
-}
-#endif
-
+void raw_mode(void);
+void cocked_mode(void);
+int get86key(void);
+int getkey(void);
 
 #endif

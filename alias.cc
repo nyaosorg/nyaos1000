@@ -3,17 +3,16 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
+#include "hash.h"
 #include "nyaos.h"
 #include "parse.h"
 
-extern int wrdcmp(const char *tblstr,const char *cmdstr);
-struct Alias *alias_hashtable[];
+Hash <Alias> alias_hash(1024);
 
-int alias_nesting=0;
-
-void alias_replace(const char *sp , char *destinate  )
+void replace_alias(const char *sp , char *destinate , int max )
 {
-  char *dp=destinate;
+  SmartPtr dp(destinate,max);
+
   for(;;){ /* 各コマンド単位 */
     Parse params(sp);
 
@@ -32,118 +31,100 @@ void alias_replace(const char *sp , char *destinate  )
       continue;
     }
 
-    unsigned int key=0;
-    {/* ハッシュキーを計算する */
-      int size=params.get_length(0);
-      const char *sp2=params.get_argv(0);
-      while( size-- ){
-	key += tolower(*sp2 & 255);
-	sp2++;
+    Alias *ptr = alias_hash[ params[0] ];
+    if( ptr == NULL ){
+      dp = params.betacopy(dp);
+    }else{
+      const char *spa=ptr->base;
+      int percent_used=0;
+      
+      while( *spa != '\0' ){
+	if( *spa == '%' ){
+	  switch( *++spa ){
+	  default:
+	    if( is_digit(*spa) ){
+	      percent_used = 1;
+	      int n=0;
+	      do{
+		n *= 10;
+		n += (*spa-'0');
+	      }while( is_digit(*++spa) );
+	      if( n < params.get_argc() )
+		dp = params.copy(n,dp);
+	      
+	      if( *spa == '*' ){
+		while( ++n < params.get_argc() ){
+		  *dp++ = ' ';
+		  dp = params.copy(n,dp);
+		}
+		++spa;
+	      }else if( *spa == '@' ){
+		while( ++n < params.get_argc() ){
+		  *dp++ = ' ';
+		  dp = params.copy(n,dp,Parse::QUOTE_COPY);
+		}
+		++spa;
+	      }
+	    }
+	    break;
+	    
+	  case '*':
+	    percent_used = 1;
+	    spa++;
+	    dp = params.copyall(1,dp);
+	    break;
+	    
+	  case '@':
+	    percent_used = 1;
+	    spa++;
+	    dp = params.copyall(1,dp,Parse::REPLACE_SLASH);
+	    break;
+	    
+	  case '%':
+	    spa++;
+	    *dp++ = '%';
+	    break;
+	    
+	  case '\\':case '/':
+	    if( dp==destinate || (dp[-1] != '\\' && dp[-1] != '/') )
+	      *dp++ = *spa;
+	    spa++;
+	  }
+	}else{
+	  *dp++ = *spa++;
+	}
+      }
+      if( percent_used == 0 ){
+	*dp++ = ' ';
+	dp = params.copyall(1,dp);
+      }
+      
+      /* リダイレクト文字列の再現 */
+      const Substr *redirect=params.get_redirect();
+      if( redirect[0] != NULL ){
+	*dp++ = ' ';
+	*dp++ = '<';
+	redirect[0] >> dp;
+	dp += redirect[0].len;
+      }
+      if( redirect[1] != NULL ){
+	*dp++ = ' ';
+	*dp++ = '>';
+	if( params.is_append_redirect(1) )
+	  *dp++ = '>';
+	redirect[1] >> dp;
+	dp += redirect[1].len;
+      }
+      if( redirect[2] != NULL ){
+	*dp++ = ' ';
+	*dp++ = '2';
+	*dp++ = '>';
+	if( params.is_append_redirect(2) )
+	  *dp++ = '>';
+	redirect[2] >> dp;
+	dp += redirect[2].len;
       }
     }
-    Alias *ptr=alias_hashtable[ key % numof(alias_hashtable) ];
-    for( ; ptr != NULL ; ptr = ptr->next ){
-
-      int len;
-      if(   ptr->name[0] == params.get_argv(0)[0]
-	 && wrdcmp(ptr->name,params.get_argv(0) ) == 0 ){
-	
-	const char *spa=ptr->base;
-	int percent_used=0;
-
-	while( *spa != '\0' ){
-	  if( *spa == '%' ){
-	    switch( *++spa ){
-	    default:
-	      if( is_digit(*spa) ){
-		percent_used = 1;
-		int n=0;
-		do{
-		  n *= 10;
-		  n += (*spa-'0');
-		}while( is_digit(*++spa) );
-		if( n < params.get_argc() )
-		  dp = params.copy(n,dp);
-		
-		if( *spa == '*' ){
-		  while( ++n < params.get_argc() ){
-		    *dp++ = ' ';
-		    dp = params.copy(n,dp);
-		  }
-		  ++spa;
-		}else if( *spa == '@' ){
-		  while( ++n < params.get_argc() ){
-		    *dp++ = ' ';
-		    dp = params.copy(n,dp,Parse::QUOTE_COPY);
-		  }
-		  ++spa;
-		}
-	      }
-	      break;
-
-	    case '*':
-	      percent_used = 1;
-	      spa++;
-	      dp = params.copyall(1,dp);
-	      break;
-
-	    case '@':
-	      percent_used = 1;
-	      spa++;
-	      dp = params.copyall(1,dp,Parse::REPLACE_SLASH);
-	      break;
-
-	    case '%':
-	      spa++;
-	      *dp++ = '%';
-	      break;
-
-	    case '\\':case '/':
-	      if( dp==destinate || (dp[-1] != '\\' && dp[-1] != '/') )
-		*dp++ = *spa;
-	      spa++;
-	    }
-	  }else{
-	    *dp++ = *spa++;
-	  }
-	}
-	if( percent_used == 0 ){
-	  *dp++ = ' ';
-	  dp = params.copyall(1,dp);
-	}
-
-	/* リダイレクト文字列の再現 */
-	const Substr *redirect=params.get_redirect();
-	if( redirect[0] != NULL ){
-	  *dp++ = ' ';
-	  *dp++ = '<';
-	  redirect[0] >> dp;
-	  dp += redirect[0].len;
-	}
-	if( redirect[1] != NULL ){
-	  *dp++ = ' ';
-	  *dp++ = '>';
-	  if( params.is_append_redirect(1) )
-	    *dp++ = '>';
-	  redirect[1] >> dp;
-	  dp += redirect[1].len;
-	}
-	if( redirect[2] != NULL ){
-	  *dp++ = ' ';
-	  *dp++ = '2';
-	  *dp++ = '>';
-	  if( params.is_append_redirect(2) )
-	    *dp++ = '>';
-	  redirect[2] >> dp;
-	  dp += redirect[2].len;
-	}
-	break;
-      }
-
-    }/* alias search loop */
-    
-    if( ptr == NULL )
-      dp = params.betacopy(dp);
     
     sp = params.get_tail();
     if( *sp == '\0' )
@@ -151,38 +132,12 @@ void alias_replace(const char *sp , char *destinate  )
 
     while( sp < params.get_nextcmds() )
       *dp++ = *sp++;
+
     if( *sp == '\0' )
       break;
-
   }/* for(;;) */
 
   *dp = '\0';
-}
-
-int unalias(int key,const char *name)
-{
-  Alias *pre=alias_hashtable[ key ];
-
-  if( pre == NULL )
-    return -1;
-
-  Alias *cur=pre->next;
-  if( pre->name[0] == name[0]  &&  strcmp(pre->name, name )==0  ){
-    alias_hashtable[ key ] = cur; /* curとあるが、示しているのは次のリスト*/
-    free(pre);
-    return 0;
-  }
-  int firstchar=tolower(name[0]);
-  while( cur != NULL ){
-    if( tolower(cur->name[0]) == firstchar  &&  stricmp(cur->name,name)==0 ){
-      pre->next = cur->next;
-      free(cur);
-      return 0;
-    }
-    pre = cur;
-    cur = cur->next;
-  }
-  return -1;
 }
 
 int cmd_unalias(FILE *fin, Parse &params)
@@ -193,32 +148,23 @@ int cmd_unalias(FILE *fin, Parse &params)
   if( argc < 2 )
     return 0;
   
-  char *name=(char*)alloca(params.get_length(1)+3);
-  params.copy(1,name);
-
-  const char *sp=name;
-  unsigned int key=0;
-  while( *sp != '\0' ){
-    key += (tolower( *sp & 0xFF ) );
-    ++sp;
-  }
-
-  if( unalias( key %= numof(alias_hashtable) , name ) != 0 ){
-    fprintf(stderr,"unalias: no such alias %s\n",name );
+  if( alias_hash.remove( params[1] ) != 0 ){
+    fputs("unalias: no such alias ",stderr);
+    for(int i=0;i<params[1].len;i++)
+      putc(params[1].ptr[i],stderr);
+    putc('\n',stderr);
+    
     return 1;
   }
   return 0;
 }
 
-static int print_one_alias(int key,const char *name,FILE *fout=stdout)
+static int print_one_alias(const char *name,FILE *fout=stdout)
 {
-  Alias *ptr=alias_hashtable[ key % numof(alias_hashtable) ];
-  while( ptr != NULL ){
-    if( stricmp(ptr->name,name)==0 ){
-      fprintf(fout,"%s=%s\n",ptr->name,ptr->base);
-      return 0;
-    }
-    ptr = ptr->next;
+  Alias *ptr=alias_hash[ name ];
+  if( ptr != NULL ){
+    fprintf(fout,"%s=%s\n",ptr->name,ptr->base);
+    return 0;
   }
   return 1;
 }
@@ -234,25 +180,21 @@ int cmd_alias(FILE *fp, Parse &params)
       fputs("alias : cannot make a pipe or file\n",stderr);
       return 1;
     }
-    for(int i=0 ; i<numof(alias_hashtable) ; i++ ){
-      Alias *cur=alias_hashtable[i];
-      while( cur != NULL ){
-	fprintf(fout,"%s=%s\n",cur->name,cur->base);
-	cur=cur->next;
-      }
+    for( HashPtr hp(alias_hash) ; *hp != NULL ; hp++ ){
+      Alias *cur = (Alias*)*hp;
+      fprintf(fout,"%s=%s\n",cur->name,cur->base);
     }
   }else{
     int length=strlen(sp);
     struct Alias *tmp=(Alias*)malloc(sizeof(struct Alias)+length);
     assert( tmp != NULL );
 
-    int key=0;
     char *dp=tmp->name;
     while( !is_space(*sp) ){
       if( sp >= params.get_tail() ){
 	*dp = '\0';
 	FILE *fout=params.open_stdout();
-	print_one_alias(key,tmp->name,fout);
+	print_one_alias(tmp->name,fout);
 	free(tmp);
 	return 0;
       }
@@ -268,8 +210,7 @@ int cmd_alias(FILE *fp, Parse &params)
 	  break;
 	}
       }
-      key += (*dp++ = tolower( *sp & 255 ));
-      sp++;
+      *dp++ = *sp++;
     }
     *dp++ = '\0';
     
@@ -279,11 +220,11 @@ int cmd_alias(FILE *fp, Parse &params)
 
     if( sp >= params.get_tail() ){
       FILE *fout=params.open_stdout();
-      print_one_alias(key,tmp->name,fout);
+      print_one_alias(tmp->name,fout);
       free(tmp);
       return 0;
     }
-
+    
     tmp->base = dp;
 
     if( *sp == '"' ){
@@ -296,7 +237,7 @@ int cmd_alias(FILE *fp, Parse &params)
 	*dp++ = '"';
 	++sp;
       }
-
+      
       for(;;){
 	if( *sp == '"' ){
 	  if( *++sp == '"' ){
@@ -324,12 +265,8 @@ int cmd_alias(FILE *fp, Parse &params)
 	*dp++ = *sp++;
       *dp = '\0';
     }
-
-    /* 重複するエイリアスは廃棄 */
-    unalias( key %= numof(alias_hashtable) , tmp->name );
-
-    tmp->next = alias_hashtable[ key ];
-    alias_hashtable[ key ] = tmp;
+    alias_hash.destruct( tmp->name );
+    alias_hash.insert( tmp->name , tmp );
   }
   return 0;
 }

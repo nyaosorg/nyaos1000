@@ -18,6 +18,8 @@ static struct PublicHistory {
 
 int nhistories = 0;
 
+char drivealias[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
 static const char *seek_hist_top(const char *str,int len)
 {
   PublicHistory *cur=public_history;
@@ -66,7 +68,7 @@ static const char *get_hist_r(int n)
   return cur->string;
 }
 
-char *insert_env(const char *env,char *dp)
+SmartPtr insert_env(const char *env,SmartPtr dp)
 {
   const char *sp=getenv(env);
   if( sp != NULL ){
@@ -77,8 +79,8 @@ char *insert_env(const char *env,char *dp)
   return dp;
 }
 
-static char *word_designator(const char *&sp , const char *histring ,
-			     char *dp )
+static SmartPtr word_designator(const char *&sp , const char *histring ,
+				SmartPtr dp )
 {
   /* sp は、':' の後にあるとする */
 
@@ -165,7 +167,7 @@ static char *word_designator(const char *&sp , const char *histring ,
   *dp = '\0';
 }
 
-static char *history_copy(const char *&sp, char *dp )
+static SmartPtr history_copy(const char *&sp, SmartPtr dp )
 {
   /* 引数 sp は、「!」を指していると仮定 */
   const char *histring=0;
@@ -253,9 +255,10 @@ static char *history_copy(const char *&sp, char *dp )
   }
 }
 
-char *replace_envvar(const char *sp, char *_dp )
+void replace_envvar(const char *sp, char *_dp , int max )
 {
-  char *dp=_dp;
+  SmartPtr dp(_dp,max);
+  
   int is_history_refered=0;
   int quote=0;
   int prevchar=' ';
@@ -366,9 +369,9 @@ char *replace_envvar(const char *sp, char *_dp )
       break;
 
     case '!':
-      if( !quote  &&  option_tcshlike_history ){
+      if( !quote  &&  option_tcshlike_history ) {
 	dp = history_copy(sp,dp);
-	is_history_refered = 1;
+	/* is_history_refered = 1; */
       }
       break;
 
@@ -396,7 +399,6 @@ char *replace_envvar(const char *sp, char *_dp )
       }
       break;
     }
-
     if( is_kanji(*sp) ){
       prevchar = *dp++ = *sp++;
       *dp++ = *sp++;
@@ -422,7 +424,6 @@ char *replace_envvar(const char *sp, char *_dp )
   }else{
     puts( _dp );
   }
-  return dp;
 }
 
 int cmd_history(FILE *source,Parse &param)

@@ -246,7 +246,7 @@ int cmd_pushd( FILE *srcfil , Parse &params)
       return 0;
   }
 
-  Dirstack *tmp=(Dirstack*)malloc(sizeof(dirstack)+strlen(cwd));
+  Dirstack *tmp=(Dirstack*)malloc(sizeof(Dirstack)+strlen(cwd));
   tmp->prev = dirstack;
   strcpy( tmp->buffer , cwd );
   dirstack = tmp;

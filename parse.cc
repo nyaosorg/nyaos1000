@@ -7,6 +7,27 @@
 
 int Parse::option_semicolon_terminate=1;
 
+char *Substr::dup() const
+{
+  if( len > 0 && ptr != NULL ){
+    char *s=(char*)malloc(len+1);
+    
+    char *p=s;
+    for(int i=0;i<len;i++)
+      *p++ = ptr[i];
+    *p = '\0';
+    return s;
+  }
+  return NULL;
+}
+
+void Substr::operator >> (SmartPtr dp) const
+{
+  for(int i=0;i<len;i++)
+    *dp++ = ptr[i];
+  *dp = '\0';
+}
+
 char *Substr::quote(char *dp) const
 {
   const char *tail=ptr+len;
@@ -75,10 +96,11 @@ Parse::~Parse()
   if( input_fp != NULL  &&  input_fp != stdin )
     fclose(input_fp);
   if( output_fp != NULL  &&  output_fp != stdout ){
-    if( pipemode == REDIRECT )
+    if( pipemode == REDIRECT ){
       fclose(output_fp);
-    else
+    }else{
       pclose(output_fp);
+    }
   }
   /* ˆø”‚ÌŒãŽn–– */
   if( args != argbase  &&  args != NULL )
@@ -321,7 +343,7 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv) )
   char **argv=(char**)alloca(sizeof(char*)*(argc+3));
   for(i=0;i<argc;i++){
     argv[i]=(char *)alloca(args[i].len+5);
-    copy(i,argv[i]);
+    copy(i,SmartPtr(argv[i],args[i].len+5) );
   }
   argv[i] = NULL;
   
@@ -334,7 +356,7 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
   char **argv=(char**)alloca(sizeof(char*)*(argc+5));
   for(i=0;i<argc;i++){
     argv[i]=(char *)alloca(args[i].len+5);
-    copy(i,argv[i]);
+    copy(i,SmartPtr(argv[i],args[i].len+5));
   }
   argv[i] = NULL;
   if( _osmode != OS2_MODE )
@@ -348,7 +370,7 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
   return (*routine)(argc,argv,fout);
 }
 
-char *Parse::copy(int n, char *dp, int flag )
+SmartPtr Parse::copy(int n, SmartPtr dp, int flag )
 {
   if( n < argc ){
     const char *sp   = args[n].ptr ;
@@ -423,18 +445,19 @@ char *Parse::copy(int n, char *dp, int flag )
   }
   return dp;
 }
-char *Parse::betacopy(char *dp,int n=0)
+
+SmartPtr Parse::betacopy(SmartPtr dp,int n)
 {
   const char *ssp=args[n].ptr;
 
-  while( ssp < tail ){
+  while( ssp < tail )
     *dp++ = *ssp++;
-  }
+
   *dp = '\0';
   return dp;
 }
 
-char *Parse::copyall(int n, char *dp, int flag)
+SmartPtr Parse::copyall(int n, SmartPtr dp, int flag)
 {
   if( n < argc ){
     

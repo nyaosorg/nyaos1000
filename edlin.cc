@@ -176,9 +176,8 @@ int Edlin::seek_word_top()
 	  if( atrbuf[p] != SBC )
 	    p++;
 	  p++;
-	  if( p >= pos ){
+	  if( p >= pos )
 	    return wrdtop;
-	  }
 	}while( strbuf[p] != '"' );
       }
       if( atrbuf[p] != SBC )
@@ -223,8 +222,7 @@ void Edlin::complete_core(int fntop,int basesize)
   for(int i=0 ; i<basesize ;  )
     i += backward();
 
-  if( !quoted && (   strchr(nextstr,' ') != NULL
-		  || strchr(nextstr,'^') != NULL) ){
+  if( !quoted && strpbrk(nextstr," ^!") != NULL ){
     insert('"');
     quoted = 1;
     forward();

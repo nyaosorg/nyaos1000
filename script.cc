@@ -6,12 +6,13 @@
 #include <sys/nls.h>
 #include "macros.h"
 #include "finds.h"
+#include "hash.h"
 #include "Parse.h"
 
 int scriptflag=1;
 int option_amp_start=1;
 int option_sos=0;
-
+int option_script_cache=1;
 
 // ファイル名を、'/' <--> '\\' 変換しながら、コピーする
 // 空白や、ヌルをファイル名末尾とみなす。
@@ -22,13 +23,46 @@ enum{
   BACKSLASH_DEMILITOR	= 4,
 };
 
-static void copy_filename(  const char *sp , char *dp
+struct ScriptCache{
+  char *name;
+  char interpreter[1];
+  void *operator new(int s,int n){ return malloc(s+n-1); }
+  void operator delete(void *p){ free(p); }
+};
+Hash<ScriptCache> script_hash(1024);
+
+extern int option_debug_echo;
+
+SmartPtr strcpy_tail(SmartPtr dp,const char *sp)
+{
+  while( *sp != '\0' )
+    *dp++ = *sp++;
+  *dp = '\0';
+  return dp;
+}
+
+int cmd_cache(FILE *source, Parse &args )
+{
+  for(HashIndex<ScriptCache> hi(script_hash) ; *hi != NULL ; hi++ ){
+    printf("%s = %s\n",hi->name,hi->interpreter);
+  }
+}
+
+int cmd_rehash(FILE *source , Parse &args )
+{
+  extern void make_command_cache(void);
+
+  make_command_cache();
+  script_hash.destruct_all();
+}
+
+static void copy_filename(  const char *sp , SmartPtr dp
 			  , const char **sp_tail=NULL 
-			  , char **dp_tail=NULL 
+			  , SmartPtr *dp_tail=NULL
 			  , int flag=SPACE_TERMINATE )
 {
   while( ! Parse::is_terminal_char(*sp)
-	&& ! ((flag & SPACE_TERMINATE)!=0 && is_space(*sp)) ){
+	&& ! ((flag & SPACE_TERMINATE)!=0 && is_space(*sp)) && dp.ok() ){
 
     /* コマンド名 : "/"-->"\\"に置換 */
     if( *sp == '"' ){
@@ -61,10 +95,10 @@ static void copy_filename(  const char *sp , char *dp
 //	全ての引数をコピーする
 //      この関数の実行後、*sp_tail は \0 , & , | のどれかを差している。
 
-static void copyargs(  const char *sp       , char *dp
-		     , const char **sp_tail , char **dp_tail )
+static void copyargs(  const char *sp       , SmartPtr dp
+		     , const char **sp_tail , SmartPtr *dp_tail )
 {
-  while( ! Parse::is_terminal_char(*sp) ){
+  while( ! Parse::is_terminal_char(*sp) && dp.ok() ){
     if( *sp == '"' ){
       do{
 	if( is_kanji(*sp) )
@@ -111,7 +145,7 @@ static void skipargs(  const char *&sp )
 //   dp は スクリプト名を書く直前
 //   path は スクリプトの絶対パス
 
-static int sos(const char *&sp , char *&dp ,  const char *path )
+static int sos(const char *&sp , SmartPtr &dp ,  const char *path )
 {
   FILE *fp=fopen(path,"r");
   if( fp==NULL )
@@ -171,7 +205,7 @@ static int sos(const char *&sp , char *&dp ,  const char *path )
 }
 
 /* インタープリタ名を挿入する */
-static int insert_interpretor(const char *fname , char *&dp)
+static int insert_interpretor(const char *cache,const char *fname,SmartPtr &dp)
 {
   FILE *fp=fopen(fname,"r");
   if( fp==NULL )
@@ -181,6 +215,8 @@ static int insert_interpretor(const char *fname , char *&dp)
     fclose(fp);
     return -2;
   }
+
+  const char *interpreter=dp.rawptr();
     
   /* 環境変数 USRDRIVE の最初の一文字を複写 */
   const char *usp;
@@ -200,12 +236,27 @@ static int insert_interpretor(const char *fname , char *&dp)
     ch=getc(fp);
   }
   fclose(fp);
+
+  if( option_script_cache ){
+    ScriptCache *sc=new(dp.rawptr()-interpreter+1) ScriptCache;
+    assert( sc != NULL );
+    sc->name = strdup(cache);
+    assert( sc->name != NULL );
+    char *p=sc->interpreter;
+    while(interpreter < dp.rawptr() )
+      *p++ = *interpreter++;
+    *p = '\0';
+
+    script_hash.destruct( sc->name );
+    script_hash.insert( sc->name , sc );
+  }
   *dp++ = ' ';
   return 0;
 }
 
-int replace_script( const char *sp , char *dp )
+int replace_script( const char *sp , char *dst, int max  )
 {
+  SmartPtr dp(dst,max);
   for(;;){
     while( is_space(*sp) )
       *dp++ = *sp++;
@@ -263,21 +314,30 @@ int replace_script( const char *sp , char *dp )
       char fname[FILENAME_MAX];
       char path[FILENAME_MAX];
       
-      copy_filename(sp,fname,&sp,NULL);
+      copy_filename(sp,SmartPtr(fname,sizeof(fname)),&sp,NULL);
       
-      int type=SearchEnv(fname,"SCRIPTPATH",path);
-      
-      if( type==FILE_EXISTS ){
+      ScriptCache *sc;
+      int type;
+
+      if( option_script_cache  &&  (sc=script_hash[fname]) != NULL ){
+	/* ---- スクリプト(キャッシュヒット) ---- */
+	if( option_debug_echo ){
+	  fputs( "Script cache hit\n",stderr);
+	  fflush(stderr);
+	}
+	dp = strcpy_tail(dp,sc->interpreter);
+	*dp++ = ' ';
+	copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
+	copyargs(sp,dp,&sp,&dp);
+      }else if( (type=SearchEnv(fname,"SCRIPTPATH",path))==FILE_EXISTS ){
 	// --- おそらく、スクリプト ---
-	insert_interpretor(path,dp);
+	insert_interpretor(fname,path,dp);
 	/* dp = strcpy_tail(dp,path); */
 	copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
       }else if( type != COM_FILE  || sos(sp,dp,path) != 0 ){
 	// --- OS/2 の実行ファイル ---
-	/* dp = strcpy_tail(dp,path); */
 	copy_filename(fname,dp,NULL,&dp, BACKSLASH_DEMILITOR );
-	/* 上の fname を path に変えれば、SCRIPTPATH を PATH と同じにできる。*/
 	copyargs(sp,dp,&sp,&dp);
       }
     }else{

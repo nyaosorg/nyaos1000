@@ -12,15 +12,13 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/ea.h>
-#include <sys/nls.h>
-#include <fnmatch.h>
 #include <conio.h>
 #include <io.h>
 #include <time.h>
 #include <string.h>
 #include <signal.h>
 
-#include <sys/video.h>
+#include <sys/video.h>	/* 3行スクロールモード用 */
 
 #define INCL_DOSNLS
 #include "nyaos.h"
@@ -338,91 +336,92 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 
   if( (flag & PRINT_MASK)==EADIR_MODE ){
     /* EAの LONGNAME を表示する */
-    if( _ea_get( &ea , flist->name , 0 , ".LONGNAME" ) == 0
-       && ea.size > 0  &&  ea.value != NULL  ){
+    if( _ea_get( &ea , flist->name , 0 , ".LONGNAME" ) == 0 ){
+      if( ea.size > 0  &&  ea.value != NULL  ){
       
-      ptr.value = ea.value;
-      int type = *ptr.word++;
-      if( type == 0xFFFD ){
-	int size = *ptr.word++; /* 実際のサイズ */
-	int n = 0;              /* ctrl-codeを ^N などと変形した後のサイズ*/
-	char *s=(char*)alloca(size*2); /* 変形後の文字列が入る */
-
-	for(int i=0 ; i<size ; i++ ){
-	  if( *ptr.byte == '\r' ){
-	    ptr.byte++;
-	  }else if( *ptr.byte == '\n' ){
-	    s[n++] = ' ';
-	    ptr.byte++;
-	  }else if( 0 <= *ptr.byte  && *ptr.byte < ' ' ){
-	    if( flag & COLOR_MODE )
-	      s[n++] = '^';
-	    s[n++] = '@'+*ptr.byte++ ;
-	  }else{
-	    s[n++] = *ptr.byte++ ;
+	ptr.value = ea.value;
+	int type = *ptr.word++;
+	if( type == 0xFFFD ){
+	  int size = *ptr.word++; /* 実際のサイズ */
+	  int n = 0;              /* ctrl-codeを ^N などと変形した後のサイズ*/
+	  char *s=(char*)alloca(size*2); /* 変形後の文字列が入る */
+	  
+	  for(int i=0 ; i<size ; i++ ){
+	    if( *ptr.byte == '\r' ){
+	      ptr.byte++;
+	    }else if( *ptr.byte == '\n' ){
+	      s[n++] = ' ';
+	      ptr.byte++;
+	    }else if( 0 <= *ptr.byte  && *ptr.byte < ' ' ){
+	      if( flag & COLOR_MODE )
+		s[n++] = '^';
+	      s[n++] = '@'+*ptr.byte++ ;
+	    }else{
+	      s[n++] = *ptr.byte++ ;
+	    }
+	  }/* for(int i...) */
+	  s[n++] = '\0';
+	  
+	  int nspaces = screen_width - ncolumns - n ;
+	  if( nspaces < 0 ){
+	    more(flag,fout);
+	    nspaces = screen_width - n;
 	  }
-	}/* for(int i...) */
-	s[n++] = '\0';
-	
-	int nspaces = screen_width - ncolumns - n ;
-	if( nspaces < 0 ){
-	  more(flag,fout);
-	  nspaces = screen_width - n;
+	  
+	  while( nspaces-- > 0 )
+	    putc( ' ' , fout );
+	  
+	  if( flag & COLOR_MODE ){
+	    fputs( ls_left_code , fout );
+	    fputs( ls_longname , fout );
+	    fputs( ls_right_code , fout );
+	    dbcs_fputs( s , fout );
+	    fputs( ls_end_code , fout );
+	  }else{
+	    while( *s != '\0' )
+	      putc( *s++ , fout );
+	  }
 	}
-
-	while( nspaces-- > 0 )
-	  putc( ' ' , fout );
-	
-	if( flag & COLOR_MODE ){
-	  fputs( ls_left_code , fout );
-	  fputs( ls_longname , fout );
-	  fputs( ls_right_code , fout );
-	  dbcs_fputs( s , fout );
-	  fputs( ls_end_code , fout );
-	}else{
-	  while( *s != '\0' )
-	    putc( *s++ , fout );
-	}
+	_ea_free( &ea );
       }
     }
-    _ea_free( &ea );
     more(flag,fout);
   }
   
   /* EAのコメントを表示する */
   if(   (flag & PRINT_MASK)!=DIR_MODE
-     && _ea_get( &ea , flist->name , 0 , ".COMMENTS" ) == 0
-     && ea.size > 0  &&  ea.value != NULL ){
-    
-    ptr.value = ea.value;
-    if( *ptr.word++ == 0xFFDF ){
-      ptr.word++; /* code page は要らない */
-      int nentries = *ptr.word++;
-      while( nentries-- > 0 ){
-	if( *ptr.word++ == 0xFFFD ){
-	  int size = *ptr.word++;
-	  if( (flag & PRINT_MASK)== INDEX_MODE &&  ncolumns < 8 )
+     && _ea_get( &ea , flist->name , 0 , ".COMMENTS" ) == 0 ){
+    if( ea.size > 0  &&  ea.value != NULL ){
+      ptr.value = ea.value;
+      if( *ptr.word++ == 0xFFDF ){
+	ptr.word++; /* code page は要らない */
+	int nentries = *ptr.word++;
+	while( nentries-- > 0 ){
+	  if( *ptr.word++ == 0xFFFD ){
+	    int size = *ptr.word++;
+	    if( (flag & PRINT_MASK)== INDEX_MODE &&  ncolumns < 8 )
+	      putc('\t',fout);
 	    putc('\t',fout);
-	  putc('\t',fout);
-	  if( flag & COLOR_MODE ){
-	    fprintf(fout,"%s%s%s",ls_left_code,ls_comment,ls_right_code);
+	    if( flag & COLOR_MODE ){
+	      fprintf(fout,"%s%s%s",ls_left_code,ls_comment,ls_right_code);
+	    }
+	    while( size-- > 0 ){
+	      putc( *ptr.byte++ , fout );
+	    }
+	    if( flag & COLOR_MODE )
+	      fputs(ls_end_code,fout);
+	    more(flag,fout);
+	  }else{
+	    ptr.byte += (*ptr.word + 2);
 	  }
-	  while( size-- > 0 ){
-	    putc( *ptr.byte++ , fout );
-	  }
-	  if( flag & COLOR_MODE )
-	    fputs(ls_end_code,fout);
-	  more(flag,fout);
-	}else{
-	  ptr.byte += (*ptr.word + 2);
-	}
-	if( (flag & PRINT_MASK) == INDEX_MODE ) break;
-      }/* end while */
+	  if( (flag & PRINT_MASK) == INDEX_MODE ) break;
+	}/* end while */
+      }
     }
+    _ea_free( &ea );
   }else if( (flag & PRINT_MASK) == INDEX_MODE ){
-    more(flag,fout);
+      more(flag,fout);
   }
-  _ea_free( &ea );
 }
 
 int is_file_print(struct filelist *f,int flag)

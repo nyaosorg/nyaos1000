@@ -40,12 +40,14 @@ public:
 
     AND_ARCHIVED	= 0x2000,
     AND_DIRECTORY	= 0x1000,
+    AND_VOLUME		= 0x800,
     AND_SYSTEM		= 0x400,
     AND_HIDDEN		= 0x200,
     AND_READONLY	= 0x100,
 
     OR_ARCHIVED		= 0x20,
     OR_DIRECTORY	= 0x10,
+    OR_VOLUME		= 0x8,
     OR_SYSTEM		= 0x4,
     OR_HIDDEN		= 0x2,
     OR_READONLY		= 0x1,
@@ -103,39 +105,14 @@ public:
   Dir();
   Dir(const char *path,int attr=ALL);
   ~Dir();
+
+  int is_dir()      const { return buffer.attrFile & DIRECTORY; }
+  int is_system()   const { return buffer.attrFile & SYSTEM; }
+  int is_hidden()   const { return buffer.attrFile & HIDDEN; }
+  int is_readonly() const { return buffer.attrFile & READONLY; }
 };
 
 char **fnexplode2(const char *path);
 void fnexplode2_free(char **list);
-
-#undef CACHE
-#ifdef CACHE
-class PathCache{
-  struct FileList {
-    FileList *next;
-    char *fname;
-    char *interpret;
-    char fullpath[1];
-  } **hash;
-
-  struct DirTree{
-    enum{ ONE_FILE , FULL_DIR } type;
-    union{
-      FileList *one;
-      FileList **tree;
-    };
-    int add(const char *s);
-  };
-  
-  void rehash_1_dir(const char *dirname);
-public:
-  PathCache(int n=1024) : hashsize(n),hash(NULL) {}
-  ~PathCache();
-  void rehash(const char *env);
-  const char *find(const char *fname);
-};
-#endif
-char *strcpy_tail(char *dp,const char *sp);
-
 
 #endif

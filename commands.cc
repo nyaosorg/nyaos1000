@@ -20,12 +20,17 @@ extern int option_amp_start;
 extern int option_tilda_is_home;
 extern int option_tcshlike_history;
 extern int option_dots;
+extern int option_script_cache;
+extern int option_backquote;
+extern int option_backquote_in_quote;
 
 int echoflag=0;
 
 int cmd_mode( FILE *source , Parse &args )
 {
-  if( to_upper(args[1].ptr[0])=='C' && to_upper(args[1].ptr[1])=='O' ){
+  if(   args.get_argc() >= 2
+     && to_upper(args[1].ptr[0])=='C'
+     && to_upper(args[1].ptr[1])=='O' ){
     char *p;
     screen_width  = strtol(args[1].ptr+2,&p,0);
     if( screen_width < 10 && screen_width > 300 ){
@@ -166,7 +171,7 @@ int cmd_comment(FILE *source, Parse &params)
   return rc;
 }
 
-struct{
+struct Option{
   const char *name;
   int *pointor;
   int true_value;
@@ -174,6 +179,8 @@ struct{
 } optlist[]={
   { "amp_start"            , &option_amp_start                 , 1  , 0 },
   { "anywhere_history"     , &option_tcshlike_history          , 1  , 0 },
+  { "backquote"            , &option_backquote                 , 1  , 0 },
+  { "backquote_in_quote"   , &option_backquote_in_quote        , 1  , 0 },
   { "beep"                 , &ShellEdlin::beep_ok              , 1  , 0 },
   { "complete_hidden"      , &Complete::complete_hidden_file   , 1  , 0 },
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
@@ -185,12 +192,10 @@ struct{
   { "debug"                , &option_debug_echo                , 1  , 0 },
   { "dots"                 , &option_dots                      , 1  , 0 },
   { "echo"                 , &echoflag                         , 1  , 0 },
-#if 0
-  { "fast"                 , &option_fastmode                  , 1  , 0 },
-#endif
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
   { "prompt_even_piped"    , &option_prompt_even_piped         , 1  , 0 },
   { "script"               , &scriptflag                       , 1  , 0 },
+  { "script_cache"         , &option_script_cache              , 1  , 0 },
   { "semicolon"            , &Parse::option_semicolon_terminate, 1  , 0 },
   { "sos"                  , &option_sos                       , 1  , 0 },
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },

@@ -22,6 +22,9 @@
 #include "macros.h"
 #include "nyaos.h"
 #include "parse.h"
+#include "hash.h"
+
+extern Hash <Command> command_hash;
 
 int is_hab_initd=0;
 HAB hab;
@@ -142,7 +145,6 @@ int cmd_bg(FILE *source , Parse &argv )
 }
 
 int eadir( int argc, char **argv,FILE *fout=stdout);
-int wrdcmp(const char *s1,const char *s2);
 
 static int print_file(char *s)
 {
@@ -181,14 +183,13 @@ int cmd_which( FILE *source , Parse &params )
 
     char *arg =(char *)alloca(len+1);
     char *arg2=(char *)alloca(len+10);
-    params.copy(i,arg);
-
+    params.copy(i,SmartPtr(arg,len+1));
+    
     char replace_buffer1[FILENAME_MAX];
     char replace_buffer2[FILENAME_MAX];
     
-    alias_replace( arg , replace_buffer1 );
-
-    replace_script( replace_buffer1 , replace_buffer2 );
+    replace_alias( arg , replace_buffer1 , sizeof(replace_buffer1));
+    replace_script( replace_buffer1,replace_buffer2,sizeof(replace_buffer2));
 
     char *sp=replace_buffer2; /* 置換後のコマンドライン全体が入っている   */
     char *dp=replace_buffer1; /* 置換後のコマンド名のみを入れる(これから) */
@@ -201,29 +202,17 @@ int cmd_which( FILE *source , Parse &params )
       continue;
     }
 
-    /* 内部コマンドの検索 */
-    for(const struct commandtable_tag *p=jumptable ; p->name != NULL ; p++ ){
-      if(   tolower(arg[0])==p->name[0]
-	 && wrdcmp(p->name,arg)==0 ){
-	printf( "%s: nyaos built-in command\n",arg);
-	goto next;
+    if( command_hash[ params[i] ] != NULL ){
+      printf( "%s: nyaos built-in command\n",arg);
+    }else{
+      /* 実行ファイルの検索 */
+      type=SearchEnv(arg,"PATH",buffer);
+      if( (type != EXE_FILE && type != CMD_FILE ) || print_file(buffer)!=0 ){
+	printf( "%s : not found %s.\n"
+	       , arg 
+	       , scriptflag ? "in PATH and SCRIPTPATH" : "in PATH" );
       }
     }
-
-    /* 実行ファイルの検索 */
-    type=SearchEnv(arg,"PATH",buffer);
-    if( (type != EXE_FILE && type != CMD_FILE ) || print_file(buffer)!=0 ){
-      printf( "%s : not found %s.\n"
-	     , arg 
-	     , scriptflag ? "in PATH and SCRIPTPATH" : "in PATH" );
-    }
-  next:
-    ;
-
-    /* このみっともない、ラベル、どーにか、ならんかなぁー。
-     * C++ が、ループに対するラベルを認めて、
-     * 「continue ラベル」させてくれたら、万事解決なんだが...
-     */
   }
   return 0;
 }

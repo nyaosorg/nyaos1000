@@ -10,10 +10,41 @@
 #include "complete.h"
 #include "macros.h"
 #include "finds.h"
+#include "hash.h"
+#include "nyaos.h"
+
+extern Hash <Alias> alias_hash;
 
 int Complete::directory_split_char='\\';
 int Complete::complete_tail_tilda=0;
 int Complete::complete_hidden_file=0;
+
+struct filelist *new_filelist(Dir &dir)
+{
+  struct filelist *tmp=(struct filelist*)
+    malloc(sizeof(struct filelist)+dir.get_name_length() );
+  assert( tmp != NULL );
+  
+  strcpy( tmp->name , dir.get_name() );
+  tmp->length = dir.get_name_length();
+  tmp->date   = dir.get_last_write_date_by_short();
+  tmp->time   = dir.get_last_write_time_by_short();
+  tmp->attr   = dir.get_attr();
+  tmp->size   = dir.get_size();
+  tmp->next   = NULL;
+
+  return tmp;
+}
+
+struct filelist *dup_filelist(struct filelist *org)
+{
+  struct filelist *tmp=(struct filelist *)
+    malloc( sizeof(struct filelist) + org->length );
+  assert( tmp != NULL );
+  memcpy( tmp , org , sizeof(struct filelist)+org->length );
+  tmp->next = NULL;
+  return tmp;
+}
 
 const char *Complete::get_real_name1() const
 {
@@ -131,124 +162,6 @@ int pathsplit( const char *path, char *dir, char *fname )
 
   return (lastroot != NULL ? *lastroot : '\0');
 }
-#if 0
-int dircompare(struct filelist *d1,struct filelist *d2)
-{
-  static const char *dircmd=NULL;
-
-  if( dircmd == NULL ){
-    dircmd = getenv("DIRCMD");
-    if( dircmd==NULL ){
-      dircmd = "n";
-    }else{
-      for(;;){
-	if( *dircmd == '\0' ){
-	  dircmd = "n";
-	  break;
-	}else if( *dircmd++ =='/'  &&  (*dircmd=='O' || *dircmd=='o') ){
-	  ++dircmd;
-	  break;
-	}
-      }
-    }
-  }
-
-  /* nedsg */
-  const char *p=dircmd;
-  int sign=+1;
-  while( *p != '\0' && !is_space(*p) ){
-    int diff;
-    const char *q;
-    const char *period1,*period2;
-
-    if( *p == '-' ){
-      sign = -1;
-    }else{
-      switch( *p ){
-
-      case 'n':
-      case 'N':
-	diff = d1->name[0] - d2->name[0];
-	if( diff != 0 ) return sign*diff;
-	diff = strcmp(d1->name , d2->name );
-	if( diff != 0 ) return sign*diff;
-	break;
-
-      case 'g':
-      case 'G':
-	diff = 0;
-	if( d1->attr & A_DIR ) diff--;
-	if( d2->attr & A_DIR ) diff++;
-	if( diff != 0 ) return sign*diff;
-	break;
-
-      case 'S':
-      case 's':
-	if( d1->size < d2->size )
-	  return -sign;
-	else if( d1->size > d2->size )
-	  return +sign;
-	else
-	  break;
-
-      case 'D':
-      case 'd':
-	if( d1->date < d2->date ){
-	  return -sign;
-	}else if( d1->date > d2->date ){
-	  return sign;
-	}else if( d1->time < d2->time ){
-	  return -sign;
-	}else if( d1->time > d2->time ){
-	  return sign;
-	}
-	break;
-
-      case 'e':
-      case 'E':
-	period1 = period2 = NULL;
-	q=d1->name;
-	while( *q != '\0' ){
-	  if( is_kanji(*q) ){
-	    q++;
-	  }else if( *q == '/' || *q=='\\' ){
-	    period1 = NULL;
-	  }else if( *q=='.' ){
-	    period1 = q;
-	  }
-	  q++;
-	}
-	q=d2->name;
-	while( *q != '\0' ){
-	  if( is_kanji(*q) ){
-	    q++;
-	  }else if( *q == '/' || *q=='\\' ){
-	    period2 = NULL;
-	  }else if( *q=='.' ){
-	    period2 = q;
-	  }
-	  q++;
-	}
-	if( period1 == NULL ){
-	  if( period2 == NULL )
-	    break;
-	  else
-	    return sign;
-	}else if( period2 == NULL ){
-	  return -sign;
-	}
-	diff=strcmp(period1,period2);
-	if( diff != 0 ) return sign*diff;
-	break;
-
-      }/* end switch */
-      sign = +1;
-    }
-    p++;
-  }/* letter loop */
-  return +1;
-}
-#endif
 
 const char *Complete::errmsg[]={
   "no error(s)",
@@ -322,9 +235,17 @@ static int compare(struct filelist *X,struct filelist *Y,int method)
       }
       break;
     }
+  case SORT_BY_NAME_IGNORE:
+    if( stricmp(X->name,Y->name) == 0 ){
+      rc = 0;
+      break;
+    }
+    /* case less */
+
   case SORT_BY_NAME:
     rc = strcmp(X->name,Y->name);
     break;
+
   case SORT_BY_SIZE:
     rc = X->size - Y->size;
     break;
@@ -336,6 +257,8 @@ static int compare(struct filelist *X,struct filelist *Y,int method)
     rc = X->date - Y->date;
     if( rc == 0 )
       rc = X->time - Y->time;
+    if( rc == 0 )
+      rc = strcmp(X->name,Y->name);
     break;
     
   default:
@@ -370,8 +293,7 @@ struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp,
     }
     int diff=compare(tmp,cur,method);
     
-    if( diff==0 ){
-      /* 同じファイル名の場合、何もしない。 */
+    if( diff == 0 ){
       return first;
     }else if( diff < 0 ){
       prev->next = tmp;
@@ -390,7 +312,6 @@ struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp,
 int Complete::makelist_core(int command_complete, int is_with_dir)
 {
   common_length = strlen(fname);
-  struct dirent *dirbuf;
 
   for(Dir dir(directory) ; dir != NULL ; ++dir ){
     if( common_length == 0
@@ -418,25 +339,11 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
       if( dir[dir.get_name_length()-1]=='~' && complete_tail_tilda==0 )
 	continue;
       
-      struct filelist *tmp = (struct filelist *)
-	malloc(sizeof(struct filelist)+dir.get_name_length() );
-      assert(tmp != NULL);
-      if( tmp == NULL ){
-	status = ERROR;
-	return -1;
-      }
-      strcpy( tmp->name , dir.get_name() );
-
-      tmp->length = dir.get_name_length();
-      tmp->date   = dir.get_last_write_date_by_short();
-      tmp->time   = dir.get_last_write_time_by_short();
-      tmp->attr   = dir.get_attr();
-      tmp->size   = dir.get_size();
-	
       if( dir.get_name_length() > max_length )
 	max_length = dir.get_name_length();
       
-      list = fsort_and_insert(list,tmp,&nlists);
+      list = fsort_and_insert(list,new_filelist(dir),&nlists );
+			      
     }
   }
   return nlists;
@@ -456,6 +363,60 @@ int Complete::makelist(const char *path)
   return makelist_core(false,true);
 }
 
+struct filelist *path_cache=NULL;
+
+void make_command_cache()
+{
+  if( path_cache != NULL ){
+    struct filelist *tmp;
+    for( struct filelist *q=path_cache ; q != NULL ; q=tmp ){
+      tmp = q->next;
+      free( q );
+    }
+    path_cache=NULL;
+  }
+
+  int n=0;
+
+  const char *envpath=getenv("PATH");
+  if( envpath != NULL ){
+    char *env=(char*)alloca(strlen(envpath)+1);
+    strcpy(env,envpath);
+    
+    for(const char *dirname=strtok(env,";");
+	dirname != NULL ;
+	dirname = strtok(NULL,";") ){
+      
+      for(Dir dir(dirname); dir ; dir++ ){
+	if(   which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0
+	   && dir[dir.get_name_length()-1] != '~'
+	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
+
+	  path_cache = fsort_and_insert( path_cache , new_filelist(dir) 
+					, &n , SORT_BY_NAME_IGNORE );
+      }
+    }
+  }
+  envpath=getenv("SCRIPTPATH");
+  if( envpath != NULL ){
+    char *env=(char*)alloca(strlen(envpath)+1);
+    strcpy(env,envpath);
+    
+    for(const char *dirname=strtok(env,";");
+	dirname != NULL ;
+	dirname = strtok(NULL,";") ){
+      
+      for(Dir dir(dirname); dir ; dir++ ){
+	if(   dir[dir.get_name_length()-1] != '~'
+	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
+	  
+	  path_cache = fsort_and_insert( path_cache , new_filelist(dir) 
+					, &n , SORT_BY_NAME_IGNORE );
+      }
+    }
+  }
+}
+
 int Complete::makelist_with_path(const char *path)
 {
   status = COMMAND_COMPLETED;
@@ -467,8 +428,6 @@ int Complete::makelist_with_path(const char *path)
   if( typed_split_char == ':' )
     typed_split_char = 0;
 
-  int rc=makelist_core(true,true);
-
   const char *p=path;
   while( *p != '\0'){
     if( is_kanji(*p) ){
@@ -477,40 +436,44 @@ int Complete::makelist_with_path(const char *path)
       /* フルパスで記述されている場合、
        * PATHを検索するのは無意味なので、打ちきる
        */
-      return rc;
+      return makelist_core(true,true);
     }
     p++;
   }
   
   /* ASSERT : path には、ディレクトリ名が含まれていない。*/
   strcpy( fname , path );
+
+  if( path_cache == NULL )
+    make_command_cache();
   
-  /* 環境変数 PATH をたどる */
-  const char *envpath=getenv("PATH");
-  if( envpath != NULL ){
-    char *envpath2=(char*)alloca(strlen(envpath)+1);
-    strcpy(envpath2,envpath);
+  struct filelist **tail=&list;
+  common_length=strlen(fname);
+  
+  for(struct filelist *cur=path_cache ; cur != NULL ; cur=cur->next ){
+    if(   cur->length > common_length
+       && instrcmp(fname,cur->name,common_length ) == 0 ){
+      
+      struct filelist *tmp=dup_filelist(cur);
+      *tail = tmp;
+      tail = &tmp->next;
+      nlists++;
 
-    char *dir=strtok(envpath2,";");
-    while( dir != NULL ){
-      strcpy( directory , dir );
-
-      makelist_core(true,false);
-      dir=strtok(NULL,";");
+      if( cur->length > max_length )
+	max_length = cur->length;
     }
   }
-
-  /* 環境変数 SCRIPTPATH をたどる */
-  extern int scriptflag;
-  if( scriptflag && (envpath=getenv("SCRIPTPATH")) != NULL ){
-    char *envpath2=(char*)alloca(strlen(envpath)+1);
-    strcpy(envpath2,envpath);
-
-    char *dir=strtok(envpath2,";");
-    while( dir != NULL ){
-      strcpy( directory , dir );
-      makelist_core(false,false);
-      dir=strtok(NULL,";");
+  for(Dir dir(".") ; dir != NULL ; ++dir ){
+    if(   dir.get_name_length() >= common_length
+       && instrcmp( fname , dir.get_name() ,common_length )==0
+       && which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0
+       && dir[dir.get_name_length()-1] != '~'
+       && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  ){
+      
+      struct filelist *tmp=new_filelist(dir);
+      list = fsort_and_insert( list , tmp , &nlists );
+      if( tmp->length > max_length )
+	max_length = tmp->length;
     }
   }
   status = SIMPLE_COMMAND_COMPLETED;
@@ -521,8 +484,9 @@ int Complete::add_buildin_command(const char *name)
 {
   int length=strlen(name);
 
-  if( common_length == 0 || ( length >= common_length
-			     && instrcmp(fname,name,common_length)==0 )){
+  if(   length >= common_length
+     && instrcmp( fname , name ,common_length )==0 ){
+    
     struct filelist *tmp=
       (struct filelist *)malloc(sizeof(struct filelist)+length);
     
@@ -583,28 +547,3 @@ char *Complete::nextchar()
   }
   return buffer;
 }
-
-#if 0
-
-int main(int argc,char **argv)
-{
-  char dir[FILENAME_MAX],fn[FILENAME_MAX];
-
-  for(int i=1;i<argc;i++){
-    Complete complete; 
-
-    int n=complete.makelist( argv[i] );
-    const char *p=complete.nextchar();
-    printf("[%s][%s] *%d\n",argv[i], p ,n );
-
-    struct filelist *ptr=complete.findfirst();
-    while( ptr!=NULL ){
-      printf("[%s]\n",ptr->name);
-      ptr =complete.findnext();
-    }
-    complete.cleanup();
-  }
-  return 0;
-}
-
-#endif

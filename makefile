@@ -1,6 +1,6 @@
 # 
 #  Nihongo Yet Another Os/2 Shell
-#   (c) 1996,97 HAYAMA,Kaoru
+#   (c) 1996,97,98 HAYAMA,Kaoru
 #
 
 CC = gcc -O2
@@ -13,14 +13,17 @@ CC = gcc -O2
 NYAOS=	nyaos.o edlin.o edlin2.o complete.o eadir.o shell.o \
 	foreach.o script.o alias.o parse.o execute.o chdirs.o \
 	commands.o prepro.o bindkey.o open.o source.o search.o \
-	finds.o getkey.o
+	finds.o getkey.o dbcs.o hash.o command2.o prompt.o
 
 nyaos.exe : $(NYAOS)
 	$(CC) $(NYAOS) -o nyaos.out -lvideo -lwrap -Zcrtdll
 	emxbind nyaos.out
 	del nyaos.out
 
-getkey.o : getkey.c
+prompt.o : prompt.cc
+hash.o : hash.cc hash.h
+dbcs.o : dbcs.cc
+getkey.o : getkey.cc
 finds.o : finds.cc
 chdirs.o : chdirs.cc
 bindkey.o : bindkey.cc
@@ -33,12 +36,13 @@ eadir.o : eadir.cc finds.h
 source.o : source.cc
 shell.o : shell.cc edlin.h
 foreach.o : foreach.cc finds.h
-alias.o : alias.cc
+alias.o : alias.cc hash.h
 script.o : script.cc
 parse.o : parse.cc parse.h
-execute.o : execute.cc
+execute.o : execute.cc hash.h
 
 commands.o : commands.cc
+commadn2.o : command2.cc
 prepro.o : prepro.cc
 open.o : open.cc
 search.o : search.cc

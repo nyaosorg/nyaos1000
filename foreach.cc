@@ -7,9 +7,12 @@
 #include <process.h>
 #include <sys/video.h>
 
+#include <io.h> /* for dup,dup2 */
+
 #include "finds.h"
 #include "edlin.h"
 #include "nyaos.h"
+#include "parse.h"
 
 extern volatile int ctrl_c;
 
@@ -157,6 +160,9 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   dummyfirst.next = NULL;
 
   char buffer[1024];
+  int org_fd1 = -1;
+  Parse *args=NULL;
+
   /** 繰り返す命令群を全て入力させる。 **/
   if( isatty(fileno(srcfil)) ){
     /* キーボード入力 */
@@ -169,40 +175,47 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
       prompt[1] = ' ';
       prompt[2] = '\0';
     }
-
     int rc;
+    
     for(;;){
       if( promptenv != NULL )
 	setprompt(promptenv,prompt,&edlin);
       edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
-
-      if (!(   (rc=shell.line_input(prompt,32767)) >= 0 
-	    && (   (buffer[0] != 'e' && buffer[0] != 'E' )
-		|| (buffer[1] != 'n' && buffer[1] != 'N' )
-		|| (buffer[2] != 'd' && buffer[2] != 'D' )
-		||  buffer[3] !='\0'
-		)
-	    ))
+      
+      rc=shell.line_input(prompt,32767);
+      putchar('\n');
+      if( rc < 0 )
 	break;
       
-      putchar('\n');
+      if(   (buffer[0] == 'e' || buffer[0] == 'E' )
+	 && (buffer[1] == 'n' || buffer[1] == 'N' )
+	 && (buffer[2] == 'd' || buffer[2] == 'D' )
+	 && (   buffer[3] =='\0' || buffer[3] == '>'
+	     || buffer[3] == '|' || isspace(buffer[3] & 255) ) ){
+	args=new Parse(buffer);
+	FILE *fout=args->open_stdout();
+	if( fout != NULL && fout != stdout ){
+	  org_fd1 = dup(1);
+	  dup2( fileno(fout) , 1 );
+	}
+	break;
+      }
       if( buffer[0] != '\0' ){
 	cur = cur->next = 
 	  (struct Line*)alloca(sizeof(struct Line)+strlen(buffer));
 	strcpy( cur->buffer  , buffer );
       }
-    }
-    if( rc==Shell::ABORT ){
+    }/* end:for */
+    if( rc==Shell::ABORT || rc==RC_ABORT ){
       puts("^C");
-      return 0;
+      return 1;
     }
     if( rc==Shell::FATAL ){
       fputs("Unknown error occured.\n"
 	    "Please mail kaoru@ferrari6.cheme.kyoto-u.ac.jp!\n"
 	    ,stderr );
-      return 0;
+      return 1;
     }
-    putchar('\n');
   }else{
     /* ファイル入力 */
     for(;;){
@@ -217,8 +230,17 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
       if (   (sp[0] == 'e' || sp[0] == 'E' )
 	  && (sp[1] == 'n' || sp[1] == 'N' )
 	  && (sp[2] == 'd' || sp[2] == 'D' )
-	  && (sp[3] =='\0' || is_space(sp[3]) ) )
+	  && (sp[3] =='\0' || is_space(sp[3]) 
+	      || sp[3] == '>' || sp[3]=='|' ) ){
+	args = new Parse(sp);
+	FILE *fout=args->open_stdout();
+	if( fout != NULL && fout != stdout ){
+	  org_fd1 = dup(1);
+	  close(1);
+	  dup2( fileno(fout) , 1 );
+	}
 	break;
+      }
 
       if( *sp != '\0' ){
 	cur = cur->next =
@@ -230,34 +252,30 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
   cur->next   = NULL;
 
   /* 各引数毎にループ */
+  int rv=0;
   for(int i=2;i<argc;i++){
     /* 展開したファイル名ごとのループ */
-#if 0
-    Dir dir(argv[i]);
-    if( dir == NULL ){
-      eachcmd(srcfil,argv[1],argv[i],dummyfirst.next);
-    }else{
-      do{
-	int rc=eachcmd(srcfil , argv[1] , dir.get_name() , dummyfirst.next);
-	if( rc != 0 )
-	  return rc;
-      }while( ++dir != NULL );
-    }
-#else
     char **list = fnexplode2(argv[i]);
     if( list==NULL ){
       eachcmd(srcfil,argv[1],argv[i],dummyfirst.next);
     }else{
       for(char **listptr=list ; *listptr != NULL ; listptr++ ){
-	int rc=eachcmd(srcfil,argv[1],*listptr,dummyfirst.next);
-	if( rc != 0 ){
+	int rv=eachcmd(srcfil,argv[1],*listptr,dummyfirst.next);
+	if( rv != 0 ){
 	  fnexplode2_free(list);
-	  return rc;
+	  goto exit;
 	}
       }
       fnexplode2_free(list);
     }/* 展開後の名前ループ */
-#endif
   }/* パラメータループ */
-  return 0;
+
+ exit:
+  if( org_fd1 != -1 ){
+    close( 1 );
+    dup2( org_fd1 , 1 );
+    close( org_fd1 );
+    delete args;
+  }
+  return rv;
 }

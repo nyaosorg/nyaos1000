@@ -1,11 +1,8 @@
-#include <io.h>
-#include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
+#include <stdlib.h>
+#include <io.h>
 #include <ctype.h>
-#include <time.h>
-
-#define VERSION "1.34"
+#include <sys/video.h>
 
 // #define INCL_WINWINDOWMGR
 #define INCL_DOSFILEMGR
@@ -15,20 +12,13 @@
 #include "edlin.h"
 #include "nyaos.h"
 #include "complete.h"
-#include "finds.h"
-
-#define USE_VIDEO_H  1
-
-#if USE_VIDEO_H
-#  include <sys/video.h>
-#endif
 
 #define RED	"" /*"\x1B[31m"*/
 #define WHITE	"" /*"\x1B[37m"*/
 
 int do_rexx( const char *progname , LONG argc , RXSTRING *rx_argv );
 
-extern int nhistories;
+
 
 int prompt_myself=1;
 int screen_width=80;
@@ -94,256 +84,6 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   return dp;
 }
 
-/* ---- 大文字・小文字を区別した正確なファイル名を得る。
-   ---- src は見事に破壊される。 ---- */
-char *get_true_name(char *src,char *dst)
-{
-  /* 元の文字列は
-   *    x:\hoge\hoge
-   *    x:\
-   * のどちらかのケース。
-   */
-
-  char *dp=dst;
-
-  /* ドライブ文字処理 */
-  if( isalpha(*src & 255)  &&  *(src+1)==':' ){
-    *dp++ = *src++;
-    *dp++ = *src++;
-  }
-  /* ルートディレクトリ処理 */
-  if( *src=='\\' || *src=='/' ){
-    ++src;
-    *dp++ = '\\';
-  }
-  /* サブディレクトリ名を切り出す。*/
-  char *token=strtok(src,"\\/");
-  if( token != NULL ){
-    for(;;){
-      char *p=dp;
-      while( *token != '\0' )
-	*p++ = *token++;
-      *p = '\0';
-
-      Dir dir;
-      if( dir._findfirst(dst) == 0 ){
-	const char *q=dir.get_name();
-	while( *q != '\0' )
-	  *dp++ = *q++;
-	*dp = '\0';
-      }else{
-	dp = p;
-      }
-      if( (token=strtok(NULL,"\\/")) == NULL )
-	break;
-      *dp++ = '\\';
-    }
-  }
-  *dp = '\0';
-  return dp;
-}
-void truepath( char *dst , const char *src , int size )
-{
-  char *tmp=(char*)alloca(size);
-  _abspath( tmp , src , size );
-  get_true_name( tmp , dst );
-}
-
-/* ---- 現在のカレントディレクトリを大文字・小文字も正確に得る ---- */
-char *getcwd_case(char *dst)
-{
-  char cwd[ FILENAME_MAX ];
-
-  cwd[0] = _getdrive();
-  cwd[1] = ':';
-
-  if( _getcwd( cwd+2 , sizeof(cwd)-2 ) == NULL ){
-    *dst++ = cwd[0];
-    *dst++ = cwd[1];
-    return dst;
-  }
-  
-  get_true_name(cwd,dst);
-  
-  /* 最後にルートを「/」に戻す */
-  while( *dst != '\0' ){
-    if( *dst == '\\' )
-      *dst = '/';
-    else if( is_kanji(*dst) )
-      ++dst;
-    ++dst;
-  }
-  return dst;
-}
-
-void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
-{
-  const char *sp;
-  time_t now;
-  time( &now );
-  struct tm *thetime = localtime( &now );
-  if( edlin != NULL )
-    edlin->using_i_mark=0;
-  int a;
-  
-  while( *promptenv != '\0' ){
-    if( *promptenv == '$' ){
-      switch( promptenv++ , to_upper(*promptenv) ){
-	
-      case '!': /* ヒストリ番号 */
-	dp += sprintf(dp,"%d",nhistories );
-	break;
-      case '@': /* ボリュームラベル */
-	sp = _getvol(0);
-	if( sp != NULL ){
-	  while( *sp != '\0' )
-	    *dp++ = *sp++;
-	}
-	break;
-
-      case '$': *dp++ = '$';	  break;
-      case '_': *dp++ = '\n';	  break;
-      case 'A': *dp++ = '&';	  break;
-      case 'B': *dp++ = '|';	  break;
-      case 'C': *dp++ = '(';	  break;
-	
-      case 'D':/* 現在の日付 */
-	dp += sprintf(dp,"%4d-%02d-%02d" ,
-		      thetime->tm_year+1900 ,
-		      thetime->tm_mon+1 ,
-		      thetime->tm_mday );
-	break;
-	
-      case 'E': *dp++ = '\x1b'; break;
-      case 'F': *dp++ = ')';	  break;
-      case 'G': *dp++ = '>';	  break;
-      case 'H': *dp++ = '\b';	  break;
-	
-      case 'I':
-	if( option_vio_cursor_control )
-	  a = v_getattr();
-	
-	dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
-		      , screen_width ,
-		      " Nihongo Yet Another Os/2 Shell "VERSION
-		      " (c) 1996-98 HAYAMA,Kaoru "
-		      );
-	if( edlin != NULL )
-	  edlin->using_i_mark = 1;
-	if( option_vio_cursor_control )
-	  v_attrib(a);
-	break;
-
-      case '{':
-	{
-	  int curdrv=_getdrive();
-	  if( option_vio_cursor_control )
-	    a = v_getattr();
-	  
-	  dp += sprintf(dp,"\x1b[s\x1B[H" );
-	  for(int length=0; *++promptenv != '}' && *promptenv != '\0'
-	      && length < screen_width-1 ;){
-	    if( isalpha(*promptenv) ){
-	      int drv=toupper(*promptenv);
-	      dp += sprintf(dp,"\x1B[1;%s;37m%c:"
-			    ,(drv==curdrv ? "41" : "44")
-			    ,drv);
-	      length += 3;
-	      
-	      _getcwd1(dp,drv);
-	      int len=strlen(dp);
-	      if( length + len < screen_width-1 ){
-		length += len;
-		dp += len;
-	      }else{
-		for(int i=length ; i<screen_width-4 ; i++ ){
-		  if( is_kanji(*dp) ){
-		    ++dp;
-		    ++i;
-		  }
-		  ++dp;
-		}
-		if( length < 74 ){
-		  *dp++ = '.';
-		  *dp++ = '.';
-		  *dp++ = '.';
-		}
-		dp += sprintf(dp,"\x1b[0m ");
-		while( *promptenv != '}' && *promptenv != '\0' )
-		  ++promptenv;
-		goto driveloop;
-	      }
-	      dp += sprintf(dp,"\x1b[0m ");
-	    }
-	  }
-	driveloop:
-	  dp += sprintf(dp,"\x1b[K\x1b[u");
-	  if( edlin != NULL )
-	    edlin->using_i_mark = 1;
-	  if( option_vio_cursor_control )
-	    v_attrib(a);
-	  
-	  if( *promptenv == '\0' )
-	    goto promptend;
-	}
-	break;
-	
-      case 'L': *dp++ = '<';	  break;
-	
-      case 'N':/* カレントドライブ */
-	*dp++ = _getdrive();
-	break;
-	
-      case 'P':/* カレントディレクトリ */
-	dp = getcwd_case(dp);
-	break;
-	
-      case 'Q': *dp++ = '=';	  break;
-      case 'S': *dp++ = ' ';	  break;
-	
-      case 'T':/* 現在の時刻 */
-	dp += sprintf(dp,"%02d:%02d:%02d",
-		      thetime->tm_hour ,
-		      thetime->tm_min ,
-		      thetime->tm_sec );
-	break;
-      case 'V':/* OS/2のバージョン */
-	if( _osmode == OS2_MODE )
-	  dp += sprintf(dp,"The Operating System/2 Version is %d.%d"
-			, _osmajor/10 , _osminor );
-	else
-	  dp += sprintf(dp,"PC DOS Version is %d.%d"
-			, _osmajor , _osminor );
-	break;
-
-      case 'Z':
-	switch( ++promptenv , to_upper(*promptenv) ){
-	case 'H': /* ヒストリ番号 */
-	  dp += sprintf(dp,"%d",nhistories);
-	  break;
-
-	case 'V': /* ボリュームラベル */
-	  sp = _getvol(0);
-	  if( sp != NULL ){
-	    while( *sp != '\0' )
-	      *dp++ = *sp++;
-	  }
-	  break;
-	case '\0':
-	  goto promptend;
-	}
-	break;
-      }
-      promptenv++;
-    }else{
-      *dp++ = *promptenv++;
-    }
-  }
- promptend:    
-    *dp = '\0';
-}
-
-
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
@@ -360,13 +100,7 @@ int main(int argc, char **argv)
     fprintf(stderr,"nyaos: DBCS init error\n");
     return -1;
   }
-  memset( alias_hashtable , 0 , sizeof(alias_hashtable) );
   
-#ifdef CACHE
-  script_cache = new PathCache;
-  script_cache->rehash("SCRIPTPATH");
-#endif
-
   // ---- 画面表示は、fflush せずとも、ただちにやれ！ -----
   setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
 

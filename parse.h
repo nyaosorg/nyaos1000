@@ -4,7 +4,42 @@
 #include <stdio.h>
 #include <string.h>
 
-/* 部分文字列参照用クラス */
+/* SmartPtr : (char *)の互換クラス。
+ *	char buffer[1000];
+ *	SmartPtr dp(buffer,sizeof(buffer));
+ * と宣言すると、いくら ++dp しても、
+ * dp は buffer+10000 を絶対越えないことが保証される。
+ */
+
+class SmartPtr{
+  char *ptr;
+  char *border; /* ptr の上限 , *border には「\0」がおけるのみ。*/
+public:
+  SmartPtr(char *p,int max) : ptr(p) , border(p+max-1) { }
+
+  SmartPtr &operator++()
+    { if( ptr<border ) ++ptr; return *this; }
+  char *operator++(int)
+    { return ptr<border ? ptr++ : ptr ; }
+  char &operator*()
+    { return *ptr; }
+  operator const char*() const
+    { return ptr; }
+  SmartPtr &operator += (int n)
+    { if( n+ptr < border ) ptr+=n ; else ptr=border; return *this; }
+  SmartPtr operator + (int n) const
+    { SmartPtr tmp(*this); return tmp += n ; }
+  char *rawptr()
+    { return ptr; }
+  int operator !() const
+    { return ptr >= border; }
+  int ok() const
+    { return ptr < border; }
+  void set(char *p,int max)
+    { ptr=p ; border = p+max-2; }
+};
+
+/* Substr : 部分文字列参照用クラス(Pascal型文字列) */
 class Substr{
  public:
   int len;
@@ -24,6 +59,10 @@ class Substr{
   /* 単純コピー */
   void operator >> (char *dp) const
     { memcpy(dp,ptr,len); dp[len] = '\0'; }
+  
+  void operator >> (SmartPtr dp) const;
+
+  char *dup() const;
 
   /* 単一文字列の空白分離による切り出し 
    *   const char *sp = ソース文字列 ;
@@ -66,9 +105,9 @@ class Parse{
 
   Substr argbase[30],*args;
   Substr redirect[3]; /* 0:stdin  1:stdout  2:stderr */
-  int appendflag[3];
 
-  /* FILE *redirect_fp[3]; */
+ protected:
+  int appendflag[3];
   FILE *output_fp , *input_fp;
   enum{ STD , PIPE , REDIRECT } pipemode;
 
@@ -81,7 +120,7 @@ public:
     : args(argbase) , argc(0) , sp(source) , terminal(NOT_TERMINAL) 
       , limit(30) ,err(0)
 	, output_fp(stdout) , input_fp(stdin) , pipemode(STD)
-	{ check(); }
+	  { check(); }
 
   ~Parse();
   
@@ -100,20 +139,25 @@ public:
   const char *get_tail(){ return tail; }
   const char *get_nextcmds(){ return nextcmds; }
   Terminal get_terminal(){ return terminal; }
-
+  
   int get_argc(){ return argc; }
   const char *get_argv(int n){ return n < argc ? args[n].ptr : NULL; }
   int   get_length(int n){ return n < argc ? args[n].len : 0; }
-
-  char *copy   (int n, char *dp, int flag=0 );
-  char *copyall(int n, char *dp, int flag=QUOTE_COPY);
-
-  /* 何も置換せずに、そのまま、ベタでコピーする。*/
-  char *betacopy(char *dp,int n=0);
-
+  
   int get_length_later(int n){ return n < argc ? sp-args[n].ptr : 0; }
   const char *get_parameter(){ return args[1].ptr; }
   const char *get_source(){ return args[0].ptr; }
+
+  SmartPtr copy(int n, SmartPtr dp,int flag=0 );
+  SmartPtr copyall(int n,SmartPtr dp,int flag=QUOTE_COPY);
+  SmartPtr betacopy(SmartPtr dp,int n=0);
+
+  char *copy   (int n, char *dp, int flag=0 )
+    { return copy(n,SmartPtr(dp,10000),flag).rawptr(); }
+  char *copyall(int n, char *dp, int flag=QUOTE_COPY)
+    { return copyall(n,SmartPtr(dp,10000),flag).rawptr(); }
+  char *betacopy(char *dp,int n=0)
+    { return betacopy(SmartPtr(dp,10000),n).rawptr(); }
 
   int call_as_main(int (*routine)(int argc,char **argv));
   int call_as_main(int (*routine)(int argc,char **argv,FILE *fp));
