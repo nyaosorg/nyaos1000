@@ -549,6 +549,7 @@ int Edlin::completeFirst()
       return 0;
     }
   }
+  com.sort();
 
   /* basesize は、総フルパス分の長さとなる。
    * com.get_fname_common_length() は、ファイル名の共通部分の長さ。
@@ -655,6 +656,8 @@ int Edlin::complete()
     alert();
     return 0;
   }
+
+  com.sort();
 
   backward( basesize );
   

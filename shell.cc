@@ -114,6 +114,8 @@ void Shell::complete_list()
        || (nfiles+=com.makelist_with_wildcard( buffer )) <= 0 )
       return;
   }
+
+  com.sort();
   
   Complete::Cursor cur(com);
   putchr('\n');

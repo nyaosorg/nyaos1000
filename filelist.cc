@@ -212,8 +212,8 @@ static int compare(FileListT *X,FileListT *Y,int method)
       rc = strcmp(X->name,Y->name);
     break;
     
-  default:
-    rc = -1;
+  default: // unsort
+    rc = +1;
     break;
   }
 
@@ -229,7 +229,9 @@ FileListT *fsort_and_insert(FileListT *first , FileListT *tmp ,
   assert( tmp != NULL );
 
   int diff;
-  if( first == NULL || (diff=compare(tmp,first,method)) < 0 ){
+  if(   method == UNSORT 
+     || first == NULL 
+     || (diff=compare(tmp,first,method)) < 0 ){
     if( nfiles != NULL )
       ++ *nfiles;
     tmp->next = first;
@@ -269,12 +271,80 @@ FileListT *fsort_and_insert(FileListT *first , FileListT *tmp ,
   return first;
 }
 
+FileListT *merge_sort(FileListT *list,int method=0) throw()
+{
+  if( list == NULL  || list->next == NULL )
+    return list;
+
+  /* まずは、リストを二分割 */
+  FileListT *tail=list , *half=list;
+  while( tail != NULL ){
+    tail = tail->next;
+    if( tail == NULL )
+      break;
+    half = half->next;
+    tail = tail->next;
+  }
+  FileListT *list2=half;
+  half->prev->next = NULL;
+  half->prev = NULL;
+
+  /* ソート */
+  list  = merge_sort( list  , method );
+  list2 = merge_sort( list2 , method );
+  if( list == NULL )
+    return list2;
+  if( list2 == NULL )
+    return list;
+  
+  /* マージ */
+  FileListT *merge;
+  if( compare(list,list2,method) < 0 ){
+    merge = list;
+    list = list->next;
+  }else {
+    merge = list2;
+    list2 = list2->next;
+  }
+  merge->prev = NULL;
+
+  FileListT *result=merge;
+  for(;;){
+    if( list == NULL ){
+      merge->next = list2;
+      if( list2 != NULL )
+	list2->prev = merge;
+      return result;
+    }else if( list2 == NULL ){
+      merge->next = list;
+      if( list != NULL )
+	list->prev = merge;
+      return result;
+    }else if( compare(list,list2,method) < 0 ){
+      list->prev = merge;
+      merge = merge->next = list;
+      list = list->next;
+    }else{
+      list2->prev = merge;
+      merge = merge->next = list2;
+      list2 = list2->next;
+    }
+  }
+}
+
+
+
 /** ------ Files class ------ **/
 
 void Files::insert( FileListT *newone , int sort )
 {
   assert( newone != NULL );
-  top = fsort_and_insert( top , newone , &n , sort );
+  top = fsort_and_insert( top , newone , &n , UNSORT );
+}
+
+void Files::sort( int method )
+{
+  top = merge_sort( top , method );
 }
 
 void Files::setDirName( const char *name )

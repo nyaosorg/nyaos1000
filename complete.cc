@@ -212,7 +212,9 @@ int Complete::makelist(const char *path)
   if (typed_split_char == ':' )
      typed_split_char = 0;
 
-  return makelist_core(false,true);
+  int rc=makelist_core(false,true);
+  this->sort();
+  return rc;
 }
 
 /* 1KB 単位で malloc して、malloc用ヘッダ分のメモリを節約するクラス。
@@ -455,7 +457,8 @@ int Complete::makelist_with_path(const char *path)
       /* フルパスで記述されている場合、
        * PATHを検索するのは無意味なので、打ちきる
        */
-      return makelist_core(true,true);
+      int rc=makelist_core(true,true);
+      return rc;
     }
     p++;
   }

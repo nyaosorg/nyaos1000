@@ -135,6 +135,12 @@ void fnexplode2_free(char **buffer)
   }
 }
 
+static int strcmp2( const void *x , const void *y )
+{
+  return *(char**)x-*(char**)y ?: strcmp( *(char**)x , *(char**)y );
+}
+
+
 /* emx ä÷êîÇÃ _fnexplode ÇÃì∆é©î≈
  */
 char **fnexplode2(const char *path)
@@ -226,6 +232,9 @@ char **fnexplode2(const char *path)
     free(result);
     return NULL;
   }
+
+  qsort(result,nfiles,sizeof(char*),strcmp2);
+
   return result;
 }
 

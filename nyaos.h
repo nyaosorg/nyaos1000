@@ -3,7 +3,7 @@
 #define NYAOS_H
 
 #include "macros.h"
-#define VERSION "1.59"
+#define VERSION "1.60"
 
 class Parse;
 

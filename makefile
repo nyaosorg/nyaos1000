@@ -65,17 +65,25 @@ nyaos.tar :
 
 # 「make package=XX」と呼び出せば、
 #	nyaos1XX.lzh	   (バイナリパッケージ)
-#	nyaos-1.XX.tar.bz2 (ソースパッケージ)
+#	nyaos-1.XX.tar.gz  (ソースパッケージ)
 # が出来る。
 
+LZH=nyaos1$(VER).lzh
+TGZ=nyaos-1.$(VER).tar.gz 
+
+upload :
+	cp $(LZH) $(TGZ) $(HOME)/www/warp/.
+	mv $(LZH) $(TGZ) $(HOME)/src/package/nyaos/.
+
 package : 
-	lha a nyaos1$(VER).lzh readme.1$(VER) nyaos.doc nyaosdoc.html \
+	lxlite nyaos.exe
+	lha a $(LZH) readme.1$(VER) nyaos.doc nyaosdoc.html \
 		nyaos.exe nyaos.rc nyaos1.ico nyaos2.ico nyaos-fc.ico \
 		nyaos-fo.ico sample.err install.cmd
-	tar --zip=bzip2 -zcvf nyaos-1.$(VER).tar.bz2 -C .. \
-		$(foreach A, \
-		Makefile pknyaos.cmd $(NYAOS_HDR) $(NYAOS_SRC) \
-		mkbtable.cmd readme.1$(VER) $(NYAOS_TBL),nyaos/$(A))
+	cd .. && tar cvf - $(foreach A, \
+		Makefile pknyaos.cmd $(NYAOS_HDR) $(NYAOS_SRC) mkbtable.cmd \
+		$(NYAOS_TBL) readme.1$(VER) install.cmd,nyaos/$(A)) \
+	| gzip > nyaos/$(TGZ)
 
 # ------------- 実行ファイル作成 ----------------
 

@@ -178,7 +178,11 @@ char *get_asciitype_ea( const char *fname , const char *eatype , int *pLen=0 )
   _ea_free( &ea );
   if( pLen != 0 )
     *pLen = sbuf.getLength();
-  return sbuf.finish();
+
+  if( sbuf.getLength() <= 0 )
+    return NULL;
+  else
+    return sbuf.finish();
 }
 
 /* ポインタ配列と、その中のポインタの示すHeapを全て解放する。
@@ -205,32 +209,39 @@ char **get_ea_comments( const char *fname )
      || ea.size <= 0 || ea.value == NULL )
     return NULL;
 
-  ptr.value = ea.value;
-  if( *ptr.word++ != 0xFFDF ){
-    _ea_free( &ea );
-    return NULL;
-  }
+  { // tiny try block.
 
-  ptr.word++; /* コードページを読みとばす */
+    ptr.value = ea.value;
+    if( *ptr.word++ != 0xFFDF )
+      goto errpt;
+    
+    ptr.word++; /* コードページを読みとばす */
   
-  int n=*ptr.word++;
-  char **table=(char**)malloc( sizeof(char*) * (n+1) );
-  if( table == NULL ){
+    int n=*ptr.word++;
+    if( n==0 )
+      goto errpt;
+      
+    char **table=(char**)malloc( sizeof(char*) * (n+1) );
+    if( table == NULL )
+      goto errpt;
+    
+    for(int i=0;i<n;i++){
+      ++ptr.word; /* ASCII を表す 0xFFFD を読みとばす */
+      int size=*ptr.word++;
+      char *dp = table[i] = (char*)malloc( size+1 );
+      while( size-- > 0 )
+	*dp++ = *ptr.byte++;
+      *dp = '\0';
+    }
+    table[n] = NULL;
     _ea_free( &ea );
-    return NULL;
-  }
+    return table;
 
-  for(int i=0;i<n;i++){
-    ++ptr.word; /* ASCII を表す 0xFFFD を読みとばす */
-    int size=*ptr.word++;
-    char *dp = table[i] = (char*)malloc( size+1 );
-    while( size-- > 0 )
-      *dp++ = *ptr.byte++;
-    *dp = '\0';
-  }
-  table[n] = NULL;
+  }// tiny try block.
+
+ errpt:
   _ea_free( &ea );
-  return table;
+  return NULL;
 }
 
 /* 一行の文字列で与えられた ls カラーオプションを
@@ -605,7 +616,8 @@ void dir1(  const FileListT *flist , int max_length
 	fputs( ls_end_code , fout );
       }
     }else  if(   ls_flag[ LS_LONGNAME ] 
-	      && (longname=get_asciitype_ea(fullpath,".LONGNAME",&length))!=0){
+	      && (longname=get_asciitype_ea(fullpath,".LONGNAME",&length))
+	      != NULL ){
 	
       /* ⇒ EA のロングネームを表示する
        * ロングネームとサブジェクトは同時に表示できない */
@@ -800,6 +812,8 @@ int the_dir(const char *dirname, FILE *fout )
       files.insert( tmp , ls_flag[LS_SORT] );
     }
   }
+
+  files.sort( ls_flag[LS_SORT] );
 
   /* カレントディレクトリのファイルを表示する。*/
   if( files.get_num() >= 0 ){

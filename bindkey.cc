@@ -646,6 +646,8 @@ struct functable_tg {
 
 Shell::Status Shell::hotkey()
 {
+  extern int option_cmdlike_crlf;
+
   if( 0 < ch && ch < 0x200  &&  bindmap_usage_func[ ch ] != NULL ){
     clean_up();
     changed = false;
@@ -655,7 +657,14 @@ Shell::Status Shell::hotkey()
     execute( stdin , bindmap_usage_func[ch] );
     // spawnlp(P_WAIT, bindmap_usage_func[ch],bindmap_usage_func[ch],NULL);
     // system( bindmap_usage_func[ ch ] );
-    return ABORT;
+
+    if( option_cmdlike_crlf )
+      putc( '\n' , fp );
+    fputs( prompt , fp );
+    int i=0;
+    while( i < len )
+      putnth( i++ );
+    putbs( i - pos );
   }
   return CONTINUE;
 }

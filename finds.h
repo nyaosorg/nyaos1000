@@ -164,7 +164,8 @@ class Files{
   char *dirname;
   int n;
 public:
-  void insert( FileListT *newone , int sort=0 );
+  void insert( FileListT *newone , int sort=UNSORT );
+  void sort( int method=0 );
 
   void setDirName(const char *name);
   const char *getDirName() const { return dirname; }
