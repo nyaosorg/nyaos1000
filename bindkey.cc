@@ -56,9 +56,23 @@ static struct bind_t{
   { CTRL('U') , Shell::cancel,"CTRL_U","kill_whole_line  (default)" },
   { '\x1B'    , Shell::cancel,"ESC","kill_whole_line  (default)" },
   { CTRL('C') , Shell::abort, "CTRL_C","abort (default)" },
+}, nyaos_bind_table[]={
+  { CTRL('P') , Shell::vz_prev_history,"CTRL_P","vz_prev_history  (nyaos)"},
+  { CTRL('N') , Shell::vz_next_history,"CTRL_N","vz_next_history  (nyaos)" },
+  { CTRL('F') , Shell::forward,"CTRL_F","forward_char  (nyaos)" },
+  { CTRL('B') , Shell::backward,"CTRL_B","backward_char  (nyaos)" },
+  { CTRL('D') , Shell::tcshlike_ctrl_d,"CTRL_D","delete_char_or_list  (nyaos)" },
+  { CTRL('K') , Shell::eraseline,"CTRL_K","kill_line  (nyaos)" },
+  { CTRL('A') , Shell::go_ahead,"CTRL_A","beginning_of_line  (nyaos)" },
+  { KEY(ALT_F), Shell::forward_word,"ALT_F","forward_word  (nyaos)" },
+  { KEY(ALT_B), Shell::backward_word,"ALT_B","backward_word  (nyaos)" },
+  { CTRL('E') , Shell::go_tail,"CTRL_E","end_of_line  (nyaos)" },
+  { CTRL('S') , Shell::i_search,"CTRL_S","i_search (nyaos)" },
+  { CTRL('R') , Shell::rev_i_search,"CTRL_R","rev_i_search (nyaos)" },
+  { CTRL('T') , Shell::swapchars,"CTRL_T","swapchars (nyaos)" },
 }, tcsh_bind_table[]={
-  { CTRL('P') , Shell::vz_prev_history,"CTRL_P","vz_prev_history  (tcsh)"},
-  { CTRL('N') , Shell::vz_next_history,"CTRL_N","vz_next_history  (tcsh)" },
+  { CTRL('P') , Shell::previous_history,"CTRL_P","previous_history  (tcsh)"},
+  { CTRL('N') , Shell::next_history,"CTRL_N","next_history  (tcsh)" },
   { CTRL('F') , Shell::forward,"CTRL_F","forward_char  (tcsh)" },
   { CTRL('B') , Shell::backward,"CTRL_B","backward_char  (tcsh)" },
   { CTRL('D') , Shell::tcshlike_ctrl_d,"CTRL_D","delete_char_or_list  (tcsh)" },
@@ -110,6 +124,16 @@ void Shell::bindkey_base()
     bindmap[ base_bind_table[i].key ] = base_bind_table[i].method;
     bindmap_usage_key[ base_bind_table[i].key ] = base_bind_table[i].name;
     bindmap_usage_func[ base_bind_table[i].key] = base_bind_table[i].funcname;
+  }
+}
+
+void Shell::bindkey_nyaos()
+{
+  bindkey_base();
+  for(int i=0;i<numof(nyaos_bind_table);i++){
+    bindmap[ nyaos_bind_table[i].key ] = nyaos_bind_table[i].method;
+    bindmap_usage_key[ nyaos_bind_table[i].key ] = nyaos_bind_table[i].name;
+    bindmap_usage_func[ nyaos_bind_table[i].key ]= nyaos_bind_table[i].funcname;
   }
 }
 
@@ -286,6 +310,8 @@ Shell::Status Shell::input_terminate()
   }
 #endif
   /* Edlin2::canna_to_alnum(); */
+  ed.go_tail();
+
   return TERMINATE;
 }
 Shell::Status Shell::repaint()

@@ -313,7 +313,12 @@ static void more( FILE *fout )
       fputs("\x1B[3A",fout);
     }
   }
-  fprintf(fout,"%s\x1B[K\n",ls_end_code);
+
+  if( ls_flag[ LS_NOCOLOR] ){
+    putc('\n',fout );
+  }else{
+    fprintf(fout,"%s\x1B[K\n",ls_end_code);
+  }
   if( ls_flag[LS_NOCOLOR]==0  &&  ls_flag[LS_MORE]
      && (nprintlines+=(1 + ncolumns / screen_width ))>= screen_height-2 ){
     
@@ -565,7 +570,6 @@ int print_filelist(Files &files , FILE *fout)
      *     nlists ÅÜ files_per_line Å~ files_per_column
      */
     int files_per_column = (nlists+files_per_line-1)/files_per_line;
-
     
     FileListT **row = (FileListT **)alloca(files_per_line*sizeof(FileListT *));
     

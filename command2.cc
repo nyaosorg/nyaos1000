@@ -16,6 +16,7 @@ int cmd_bind(FILE *source, Parse &param )
     void (*func)();
     const char *usage;
   } table2[]={
+    { "nyaos" , Shell::bindkey_nyaos    , "like tcsh but ^P,^N like Vz." },
     { "emacs" , Shell::bindkey_tcshlike , "key-bindings like emacs" },
     { "tcsh"  , Shell::bindkey_tcshlike , "same as emacs" },
     { "ws"    , Shell::bindkey_wordstar , "key-bindings like wordstar" },

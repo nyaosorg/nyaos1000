@@ -257,6 +257,7 @@ public:
   static int ctrl_z_eof;
   static void bindkey_wordstar();
   static void bindkey_tcshlike();
+  static void bindkey_nyaos();
   static int bindkey(const char *key,const char *funcname);
   static void bindlist(FILE *fp);
 

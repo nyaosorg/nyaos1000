@@ -115,7 +115,7 @@ char **fnexplode2(const char *path)
   int lendir = 0;
   char *dirname = "";
   if( lastroot != NULL ){
-    assert( lastroot > path );
+    assert( lastroot >= path );
     lendir=lastroot-path+1;
 
     // alloca ‚É‚Í•¡G‚Èˆø”‚ğ“n‚µ‚Ä‚Í‚¢‚¯‚È‚¢B

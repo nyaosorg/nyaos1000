@@ -124,7 +124,7 @@ int main(int argc, char **argv)
   setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
 
   // ---- とりあえず、キーバインドを好評の tcsh ライクにする -----
-  Shell::bindkey_tcshlike();
+  Shell::bindkey_nyaos();
 
   // ----------------------------------------
   // COMSPEC に、NYAOS自身が設定されていると、
