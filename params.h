@@ -43,8 +43,8 @@ public:
   const char *get_argv(int n){ return n < argc ? args[n].pointor : NULL; }
   int   get_length(int n){ return n < argc ? args[n].length : 0; }
 
-  char *copy(int n, char *dp);
-  char *copyall(int n,char *dp);
+  char *copy   (int n, char *dp, bool quote_copy_flag=false );
+  char *copyall(int n, char *dp, bool quote_copy_flag=true  );
 
   int get_length_later(int n){ return n < argc ? sp-args[n].pointor : 0; }
   const char *get_parameter(){ return args[1].pointor; }

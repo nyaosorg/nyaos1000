@@ -35,6 +35,15 @@ int column=0;
 
 int nprintlines=0;
 
+void kill_filelist(struct filelist *p)
+{
+  while( p != NULL ){
+    struct filelist *nxt = p->next;
+    free(p);
+    p = nxt;
+  }
+}
+
 void more(int flag,FILE *fout)
 {
   putc('\n',fout);
@@ -48,6 +57,7 @@ void more(int flag,FILE *fout)
     nprintlines=0;
   }
 }
+
 
 void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 {
@@ -228,7 +238,9 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
 void dir1(const char *filename,int max_length,int flag,FILE *fout)
 {
   struct stat stbuf;
-  stat( filename , &stbuf );
+  if( stat( filename , &stbuf ) != 0 ){
+    return;
+  }
 
   int length=strlen(filename);
 
@@ -261,6 +273,64 @@ int is_file_print(struct filelist *f,int flag)
   return 1;
 }
 
+int print_filelist(struct filelist *cur, int nlists,
+		   int max_length ,int flag, FILE *fout)
+{
+  if( cur == NULL )
+    return 0;
+
+  if( (flag & PRINT_MASK)==LS_MODE ){
+
+    int files_per_line   = (screen_width-1)/(max_length+2);
+    int files_per_column = (nlists+files_per_line-1)/files_per_line; /* >= 1 */
+    
+    struct filelist **ptr =
+      (struct filelist**)alloca(files_per_line*sizeof(struct filelist *));
+    for(int i=0 ; i<files_per_line; i++ ){
+      ptr[i] = NULL;
+    }
+    
+    assert( ptr != NULL );
+    
+    while( cur != NULL && !is_file_print(cur,flag) )
+      cur=cur->next;
+    
+    for(int i=0; i<files_per_line-1 && cur != NULL ; i++ ){
+      ptr[i] = cur;
+      for(int j=0 ; cur != NULL && j<files_per_column ; j++){
+	cur = cur->next;      
+	while( cur !=NULL && !is_file_print(cur,flag) )
+	  cur=cur->next;
+      }
+    }
+    ptr[files_per_line-1] = cur;
+    
+    for(int j=0; j<files_per_column ; j++ ){
+      for(int i=0; i<files_per_line  &&  ptr[i] != NULL ; i++ ){
+	if( ctrl_c )
+	  return nlists;
+	
+	dir1(ptr[i], max_length , flag , fout );
+	ptr[i] = ptr[i]->next;
+	
+	while( ptr[i] != NULL && !is_file_print(ptr[i],flag) )
+	  ptr[i] = ptr[i]->next;
+      }
+      more(flag,fout);
+      column=0;
+    }
+  }else{
+    while( cur != NULL ){
+      dir1(cur , max_length , flag , fout );
+      cur=cur->next;
+      if( ctrl_c )
+	return nlists;
+    }
+  }
+  return 0;
+}
+
+
 int the_dir(const char *dir,int flag , FILE *fout )
 {
   DIR *dirp=opendir(dir);
@@ -288,84 +358,19 @@ int the_dir(const char *dir,int flag , FILE *fout )
     if( tmp->length > max_length )
       max_length = tmp->length;
 
-    if( first == NULL || dircompare(tmp,first) < 0 ){
-      tmp->next = first;
-      first = tmp;
-    }else{
-      struct filelist *prev=first,*cur=first->next;
-      for(;;){
-	if( cur == NULL ){
-	  prev->next = tmp;
-	  tmp->next  = NULL;
-	  break;
-	}
-	if( dircompare(tmp,cur) < 0 ){
-	  tmp ->next = cur;
-	  prev->next = tmp;
-	  break;
-	}
-	prev = cur;
-	cur = cur->next;
-      }
-    }
+    first = fsort_and_insert(first,tmp);
+
     if( is_file_print(tmp,flag) )
       nlists++;
   }
   closedir(dirp);
 
   column=0;
-  struct filelist *cur=first;
-
   if( nlists == 0 )
     return 0;
 
-  if( (flag & PRINT_MASK)==LS_MODE ){
-    int files_per_line   = (screen_width-1)/(max_length+2);
-    int files_per_column = (nlists+files_per_line-1)/files_per_line; /* >= 1 */
+  print_filelist(first,nlists,max_length,flag,fout);
 
-    struct filelist **ptr =
-      (struct filelist**)alloca(files_per_line*sizeof(struct filelist *));
-    for(int i=0 ; i<files_per_line; i++ ){
-      ptr[i] = NULL;
-    }
-
-    assert( ptr != NULL );
-
-    while( cur != NULL && !is_file_print(cur,flag) )
-      cur=cur->next;
-
-    for(int i=0; i<files_per_line-1 && cur != NULL ; i++ ){
-      ptr[i] = cur;
-      for(int j=0 ; cur != NULL && j<files_per_column ; j++){
-	cur = cur->next;      
-	while( cur !=NULL && !is_file_print(cur,flag) )
-	  cur=cur->next;
-      }
-    }
-    ptr[files_per_line-1] = cur;
-    
-    for(int j=0; j<files_per_column ; j++ ){
-      for(int i=0; i<files_per_line  &&  ptr[i] != NULL ; i++ ){
-	if( ctrl_c )
-	  return nlists;
-
-	dir1(ptr[i], max_length , flag , fout );
-	ptr[i] = ptr[i]->next;
-
-	while( ptr[i] != NULL && !is_file_print(ptr[i],flag) )
-	  ptr[i] = ptr[i]->next;
-      }
-      more(flag,fout);
-      column=0;
-    }
-  }else{
-    while( cur != NULL ){
-      dir1(cur , max_length , flag , fout );
-      cur=cur->next;
-      if( ctrl_c )
-	return nlists;
-    }
-  }
   column=0;
   return nlists;
 }
@@ -408,7 +413,6 @@ void eadir1(const char *cmdname,const char *arg,int max_length,
   }
 }
 
-
 int eadir( int argc, char **argv,FILE *fout=stdout)
 {
   int flag=0;
@@ -426,27 +430,19 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 
   column=0;
 
+  int filefault=0;
   int filecount=0;
+  int dircount=0;
   int max_length=0;
 
-  for(int i=1;i<argc;i++){
-    if( argv[i][0] != '-' ){
-      char **list=_fnexplode(argv[i]);
-      if( list != NULL ){
-	for(char **ptr=list; *ptr != NULL ; ptr++ ){
-	  int len=strlen(*ptr);
-	  if( len > max_length ){
-	    max_length = len;
-	  }
-	}
-	_fnexplodefree(list);
-      }
-    }
-  }
+  struct filelist *files=NULL;
+  struct filelist *dirs =NULL;
 
   if( argc > 1 ){
     column=0;
     for( int i=1 ; i<argc ; i++ ){
+      assert( argv[i] != NULL );
+
       /* オプション文字列 */
       if( argv[i][0] == '-' ){
 	for( const char *p=&argv[i][1] ;  *p != '\0' ; p++ ){
@@ -472,18 +468,71 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  }/* end switch */
 	}/* end for */
 
-      }else{ /* オプションでない文字列 ... ファイル名 */
-	char **list=_fnexplode(argv[i]);
+      }else{
+	/* オプションでない文字列 ... ファイル名 */
 
-	if( list == NULL ){
-	  filecount++;
-	  eadir1(argv[0],argv[i],max_length,flag,fout);
-	}else{
-	  for(char **listptr=list ; *listptr != NULL ; listptr++ ){
-	    filecount++;
-	    eadir1(argv[0],*listptr,max_length,flag,fout);
+	char **list=_fnexplode(argv[i]);
+	if( list != NULL ){
+	  for(char **ptr=list; *ptr != NULL ; ptr++ ){
+	    struct stat stbuf;
+	    int len=strlen(*ptr);
+	    
+	    if( stat( *ptr , &stbuf ) == 0 ){
+	      struct filelist *node=
+		(struct filelist*)alloca(sizeof(struct filelist)+len);
+	      strcpy( node->name , *ptr );
+	      node->attr   = stbuf.st_attr;
+	      node->length = len;
+	      node->size   = stbuf.st_size;
+	      
+	      if( stbuf.st_attr & A_DIR ){
+		dirs  = fsort_and_insert(dirs ,node);
+		dircount++;
+	      }else{
+		files = fsort_and_insert(files,node);
+		if( len > max_length )
+		  max_length = len;
+		filecount++;
+	      }
+	    }else{
+	      fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
+	      filefault++;
+	    }
 	  }
 	  _fnexplodefree(list);
+	}else{
+	  struct stat stbuf;
+	  int len=strlen(argv[i]);
+	  char *fn=argv[i];
+
+	  /*「ls A:」にも対応させるため、ドットを末尾に追加する。*/
+	  if( argv[i][1]==':' && argv[i][2]=='\0' ){
+	    static char drv[]="@:.";
+	    drv[0]=argv[i][0];
+	    fn = drv;
+	  }
+
+	  if( stat( fn , &stbuf ) == 0 ){
+	    struct filelist *node=
+	      (struct filelist*)alloca(sizeof(struct filelist)+len);
+	    strcpy( node->name , argv[i] );
+	    node->attr   = stbuf.st_attr;
+	    node->length = len;
+	    node->size   = stbuf.st_size;
+	    
+	    if( stbuf.st_attr & A_DIR ){
+	      dirs  = fsort_and_insert(dirs ,node);
+	      dircount++;
+	    }else{
+	      files = fsort_and_insert(files,node);
+	      if( len > max_length )
+		max_length = len;
+	      filecount++;
+	    }
+	  }else{
+	    fprintf(stderr,"%s: no such file or directory\n",argv[i]);
+	    filefault++;
+	  }
 	}
       }/* argv loop */
     }
@@ -494,7 +543,32 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
       return 0;
     }
   }
-  if( filecount == 0 ){
+
+  if( filecount > 0 || dircount > 0  ){
+    /* ファイル名が指定された */
+    if( filecount > 0 ){
+      print_filelist( files , filecount , max_length , flag , fout );
+      if( dircount > 0 )
+	putc('\n',fout);
+    }
+    struct filelist *p=dirs;
+    if( p != NULL ){
+      for(;;){
+	if( dircount+filecount > 1 )
+	  fprintf(fout,"\x1b[0m%s : \n",p->name);
+	
+	the_dir( p->name , flag , fout );
+	
+	if( (p=p->next) == NULL ) break;
+	
+	putc('\n',fout);
+      }
+    }
+    fprintf(fout,"\x1b[0m" );
+
+  }else if( filefault <= 0 ){
+    /* ファイル名が指定されていない ---> カレントディレクトリ */
+
     the_dir( "." , flag , fout );
     if( ctrl_c ){
       fputs("\nCtrl-C Hit.\n",fout);
@@ -504,9 +578,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     }
   }
   if( flag & COLOR_MODE )
-    fputs("\x1B[0m\n",fout);
-  else
-    putc('\n',fout);
+    fputs("\x1B[0m",fout);
 
   fflush(fout);
   return 0;

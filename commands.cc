@@ -77,8 +77,8 @@ int cmd_comment(FILE *source, Params &params)
     *ptr.word++ = 932;
     *ptr.word++ = 1;
     *ptr.word++ = 0xFFFD;
-    *ptr.word++ = size;
-    params.copyall( 2 , ptr.byte );
+    *ptr.word++ = (unsigned short)
+      ( params.copyall( 2 , ptr.byte+2 , false ) - (ptr.byte+2) );
     printf("%s --> %s\n",fname,ptr.byte);
   }
   
@@ -99,10 +99,13 @@ struct{
   { "echo"          , &echoflag                         , 1  , 0 },
   { "script"        , &scriptflag                       , 1  , 0 },
   { "ctrl_d_eof"    , &Edlin::ctrl_d_eof                , 1  , 0 },
+  { "ctrl_z_eof"    , &Edlin::ctrl_z_eof                , 1  , 0 },
   { "cd_goto_home"  , &option_cd_goto_home              , 1  , 0 },
   { "ls_tail_slash" , &Complete::directory_split_char   ,'/','\\'},
   { "complete_tail_slash",&Edlin::complete_tail_char    ,'/','\\'}, 
   { "tilda_home"    , &option_tilda_is_home             , 1  , 0 },
+  { "beep"          , &ShellEdlin::beep_ok              , 1  , 0 },
+  { "vio"           , &option_vio_cursor_control        , 1  , 0 },
 };
 
 int cmd_option(FILE *source, Params &params)
@@ -145,4 +148,3 @@ int cmd_option(FILE *source, Params &params)
   }
   return 0;
 }
-

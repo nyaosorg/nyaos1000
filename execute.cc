@@ -291,50 +291,57 @@ static int cmd_echo(FILE *srcfil, Params &params )
     fputs("echo : cannot make a pipe or file\n",stderr);
     return 0;
   }
-  int quote=0;
-    
+  bool quote=false;
+  
   const char *sp=params.get_argv(1);
-
-  while( *sp != '\0'  &&  sp < params.get_tail() ){
-    if( _nls_is_dbcs_lead(*sp) ){
-      putc(*sp++,fout);
-      putc(*sp,fout);
-    }else if( *sp=='^' ){
-      switch( *++sp ){
-      case 't':
-	putc('\t',fout); break;
-      case 'n':
-	putc('\n',fout); break;
-      case 'v':
-	putc('\v',fout); break;
-      case 'r':
-	putc('\r',fout); break;
-      case 'f':
-	putc('\v',fout); break;
-      case 'e':
-	putc('\033',fout); break;
-      case 'c':
-	return 0;
-      default:
-	if( isdigit(*sp) ){
-	  int n = (*sp++ - '0');
-	  for(int i=0 ; i<3 && isdigit(*sp) ; i++ ){
-	    n = n*8 + (*sp++ - '0');
+  if( sp != NULL ){
+    while( *sp != '\0'  &&  sp < params.get_tail() ){
+      if( _nls_is_dbcs_lead(*sp) ){
+	putc(*sp++,fout);
+	putc(*sp,fout);
+      }else if( *sp=='^' ){
+	switch( *++sp ){
+	case '"':
+	  quote = !quote;
+	  putc('^',fout);
+	  break;
+	case 't':
+	  putc('\t',fout); break;
+	case 'n':
+	  putc('\n',fout); break;
+	case 'v':
+	  putc('\v',fout); break;
+	case 'r':
+	  putc('\r',fout); break;
+	case 'f':
+	  putc('\v',fout); break;
+	case 'e':
+	  putc('\033',fout); break;
+	case 'q':
+	  putc('"',fout); break;
+	case 'c':
+	  return 0;
+	default:
+	  if( isdigit(*sp) ){
+	    int n = (*sp++ - '0');
+	    for(int i=0 ; i<3 && isdigit(*sp) ; i++ ){
+	      n = n*8 + (*sp++ - '0');
+	    }
+	    putc( n , fout );
+	    continue;
+	  }else{
+	    putc( *sp , fout);
 	  }
-	  putc( n , fout );
-	  continue;
-	}else{
-	  putc( *sp , fout);
 	}
+      }else if( !quote && (*sp == '<' || *sp == '>') ){
+	break;
+      }else if( *sp == '"' ){
+	quote = !quote;
+      }else{
+	putc( *sp , fout );
       }
-    }else if( !quote && (*sp == '<' || *sp == '>') ){
-      break;
-    }else if( *sp == '"' ){
-      quote ^= 1;
-    }else{
-      putc( *sp , fout );
+      sp++;
     }
-    sp++;
   }
   putc( '\n' , fout );
   return 0;

@@ -28,6 +28,7 @@ struct filelist{
   char name[1]; /* ‰Â•Ï’· */
 };
 
+struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp);
 int dircompare(struct filelist *d1,struct filelist *d2);
 int pathsplit( const char *path, char *dir, char *fname );
 
@@ -39,19 +40,23 @@ class Complete {
   int common_length;
 
   struct filelist *list , *findptr ;
-
   static const char *errmsg[];
+
+  int makelist_core(const char *path,int command_complete);
+
 public:
   enum{
     NO_PROBLEM,
     MEMORY_ERROR,
   } err ;
 
-  Complete() : common_length(0) , nlists(NULL) , err(NO_PROBLEM)
-    ,  list(NULL)
-    { /*\(^^)/*/ }
+  Complete() : common_length(0) , nlists(0) , err(NO_PROBLEM) 
+    , list((struct filelist*)0) {  }
   ~Complete(){ cleanup(); }
-  int makelist(const char *path);
+
+  int makelist          (const char *path);
+  int makelist_with_path(const char *path);
+
   void cleanup();
   char *nextchar();
   int get_fname_common_length()const{ return common_length; }

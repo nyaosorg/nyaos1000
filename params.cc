@@ -118,7 +118,7 @@ int Params::check()
 
     if( *sp == '&' || *sp == '|' || *sp == '\0' )
       return terminal = *sp;
-    
+
     if( *sp == '<' || *sp == '>' ){
       int rc=check_redirect();
       if( rc != 0 )
@@ -137,22 +137,36 @@ int Params::check()
       }
     }
     args[ argc ].pointor = sp;
-    do{
+
+    while( !isspace( *sp & 255 ) ){
+      
+      if( *sp == '\0' || *sp=='|' || *sp=='&' ){
+	goto exit;
+      }else if( *sp == '^' && *(sp+1) != '\0' ){
+	/* キャレットはヌル以外の次の機能文字を無効化する。*/
+	if( _nls_is_dbcs_lead(*++sp & 255) )
+	  sp++;
+	sp++;
+      }else if( *sp == '"' ){
+	/* クォ－トは次のクォ－トが来るまで、
+	 * ヌルとクォ－ト以外の全ての機能文字を無効化する。
+	 * キャレットも無効化される。
+	 */
+	do{
+	  if( _nls_is_dbcs_lead(*sp & 255) )
+	    ++sp;
+	  ++sp;
+	  if( *sp=='\0' )
+	    goto exit;
+	}while( *sp != '"' );
+      }
+
       /* ANKなら2byte,漢字なら1byteずらす */
       if( _nls_is_dbcs_lead(*sp & 255) )
 	++sp;
       ++sp;
-      if( *sp=='&' || *sp=='|' || *sp=='\0' ){
-	goto exit;
-      }else if( *sp=='"' ){
-	do{
-	  ++sp;
-	  if( *sp == '\0' )
-	    goto exit;
-	}while( *sp != '"' );
-	sp++; /* quot分だけ、跳ばす */
-      }
-    }while( !isspace( *sp & 255 ) );
+    }
+
     args[ argc ].length = sp - args[argc].pointor;
     ++argc;
   }
@@ -226,22 +240,39 @@ int Params::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
   return (*routine)(argc,argv,fout);
 }
 
-
-char *Params::copy(int n, char *dp)
+char *Params::copy(int n, char *dp, bool quote_copy_flag )
 {
   if( n < argc ){
-    const char *sp=args[n].pointor;
+    const char *sp   = args[n].pointor ;
+    const char *tail = sp + args[n].length ;
 
-    for(int i=0 ; i<args[n].length ; i++ ){
-      if( _nls_is_dbcs_lead(*sp & 255) ){
-	*dp++ = *sp++;
-	*dp++ = *sp++;
-	i++;
+    /* 基本的に引用符とキャレットはコピ－しない。
+     * 二重キャレット「^^」は「^」としてコピ－する。
+     * ただし、引用符に囲まれたキャレットはそのままコピ－する。
+     */
+
+    bool quote=false;
+
+    while( sp < tail ){
+      
+      if( *sp == '"' ){
+	/* 引用符の場合は、フラグを反転させて、ポインタを進めるだけ。*/
+	quote = !quote;
+	++sp;
+	if( quote_copy_flag )
+	  *dp++ = '"';
+
+      }else if( *sp == '^' && *(sp+1) != '\0' && !quote ){
+	/* 引用符の中ではない、キャレットは、ポインタを進めるだけ。
+	 * 二重キャレットは「^」としてコピーする。*/
+	if( *++sp == '^' )
+	  *dp++ = *sp++;
       }else{
-	if( *sp != '"' ){
-	  *dp++ = *sp;
+	/* それ以外はコピ－ */
+	if( _nls_is_dbcs_lead(*sp & 255 ) ){
+	  *dp++ = *sp++;
 	}
-	sp++;
+	*dp++ = *sp++;
       }
     }
     *dp = '\0';
@@ -249,17 +280,45 @@ char *Params::copy(int n, char *dp)
   return dp;
 }
 
-char *Params::copyall(int n,char *dp)
+char *Params::copyall(int n, char *dp, bool quote_copy_flag )
 {
   if( n < argc ){
+    
+    /* 基本的に引用符は普通の文字と同様にコピ－する。
+     * ただし、キャレットは引用符の中にない限りコピ－しない。
+     * 二重キャレット「^^」は「^」としてコピ－する。
+     */
+    
     const char *ssp=args[n].pointor;
-    while( ssp < sp )
-      *dp++ = *ssp++;
+    bool quote=false;
+
+    while( ssp < sp ){
+      if( *ssp == '"' ){
+	/* 引用符は、フラグを反転させる。*/
+	quote = !quote;
+	++ssp;
+	if( quote_copy_flag )
+	  *dp++ = '"';
+
+      }else if( *ssp=='^' && !quote ){
+	/* 引用符の中にないキャレットはポインタを進めるだけ。
+	 * ただし、二重キャレットは「^」としてコピーする。
+	 */
+	if( *++ssp == '^' )
+	  *dp++ = *ssp++;
+	
+      }else{
+	/* それ以外はコピ－ */
+	if( _nls_is_dbcs_lead(*ssp & 256) ){
+	  *dp++ = *ssp++;
+	}
+	*dp++ = *ssp++;
+      }
+    }
     *dp = '\0';
   }
   return dp;
 }
-
 
 #if 0
 

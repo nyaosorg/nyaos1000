@@ -22,6 +22,7 @@ protected:
   void repaint(int termclear=-1);         /* 全行 repaint               */
   void right(int n=1);                    /* 右へスクロール             */
   void left(int n=1);                     /* 左へスクロール             */
+  int  seek_word_top();
   void complete_core(int fntop,int basesize);
 
 /* デフォルトでは 次のエスケープシーケンス を使う。
@@ -32,6 +33,7 @@ protected:
   virtual void putchr(int c)=0; /* 一文字出力               */
   virtual void putel()=0;       /* カーソル位置以降をクリア */
   virtual void putbs(int i)=0;  /* カーソルをｎ桁戻す       */
+  virtual void alert()=0;       /* 警告(普通はbeep音)       */
 public:
   enum{ SBC , DBC1ST , DBC2ND };
   struct History{
@@ -39,6 +41,7 @@ public:
     char buffer[1];
   };
 private:
+  /* ヒストリは本来はこのクラスから分離すべき */
   History *history;
 protected:
   /**** 継承用コンストラクタ ****/
@@ -60,8 +63,8 @@ public:
   void insert(int ch1,int ch2);            /*    全角文字挿入       */
   void insert_and_forward(const char *s);  /*    文字列挿入         */
   void erase();                            /* ^D 一文字削除         */
-  void forward();                          /* ^F カーソル右移動     */
-  void backward();                         /* ^B カーソル左移動     */
+  int  forward();                          /* ^F カーソル右移動     */
+  int  backward();                         /* ^B カーソル左移動     */
   void forward_word();                     /* @F カーソル右単語移動 */
   void backward_word();                    /* @B カーソル左単語移動 */
   void go_ahead();                         /* ^A 先頭へ             */
@@ -82,9 +85,10 @@ public:
   int position() const { return pos; }  /* カーソルの位置(bytes) */
   int gettype(int nth) const { return atrbuf[nth]; }
 
+  /* 以下は、本来 Edlinクラスから分離すべき静的メンバ */
   int simple_line_input();
-
   static int ctrl_d_eof;
+  static int ctrl_z_eof;
   static int complete_tail_char;
 };
 
@@ -97,6 +101,7 @@ class EscEdlin : public Edlin {
   void putchr(int c);
   void putel();
   void putbs(int i);
+  void alert(){ putchr('\a'); }
  public:
   EscEdlin(char *buffer, int max, int windowsize=32767, FILE *Fp=stdout )
     : Edlin(buffer,max,windowsize),fp(Fp),cursor_on(NULL),cursor_off(NULL)
@@ -110,6 +115,10 @@ class EscEdlin : public Edlin {
 class ShellEdlin : public EscEdlin {
   const char *prompt;
   int promptlen;
+ public:
+  static int beep_ok;
+ protected:
+  void alert(){ if( beep_ok ) putchr('\a'); }
  public:
   int setprompt(const char *prompt);
 

@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <stdlib.h>
+#include "Edlin.h"
 
 int option_tilda_is_home=0;
 
@@ -28,8 +29,14 @@ void replace_envvar(const char *sp, char *dp )
       if( option_tilda_is_home  &&  !quote  &&  isspace(prevchar & 255) ){
 	/* isspace ‚Å _nls_is_dbcs_lead ‚àŒ“‚Ë‚Ä‚¢‚éB*/
 	dp = insert_env("HOME",dp);
-	++sp;
-	prevchar = '~';
+	if( *++sp != '/' && *sp != '\\' && *sp != '\0' && !isspace(*sp) ){
+	  *dp++ = Edlin::complete_tail_char;
+	  *dp++ = '.';
+	  *dp++ = '.';
+	  prevchar = *dp++ = Edlin::complete_tail_char;;
+	}else{
+	  prevchar = '~';
+	}
 	continue;
       }
       break;

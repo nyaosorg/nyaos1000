@@ -58,4 +58,6 @@ int replace_script( const char *source , char *destinate );
 extern int option_tilda_is_home;
 int replace_envvar( const char *source , char *destinate );
 
+extern int option_vio_cursor_control;
+
 #endif

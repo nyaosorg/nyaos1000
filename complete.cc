@@ -1,8 +1,10 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/nls.h>
 #include <ctype.h>
+#include <fnmatch.h>
 #include "complete.h"
 
 int Complete::directory_split_char='\\';
@@ -12,6 +14,9 @@ int Complete::directory_split_char='\\';
 int pathsplit( const char *path, char *dir, char *fname )
 {
   const char *lastroot=NULL;
+  if( path[0]=='~' ){
+    lastroot = path;
+  }
   for(const char *p=path ; *p != '\0' ; p++ ){
     if( _nls_is_dbcs_lead( *p & 255 ) ){
       ++p;
@@ -21,7 +26,20 @@ int pathsplit( const char *path, char *dir, char *fname )
   }
 
   const char *p=path;
+
   if( lastroot != NULL ){
+    if( *p == '~' ){
+      const char *home=getenv("HOME");
+      while( *home != '\0' )
+	*dir++ = *home++;
+
+      if( *++p != '/' && *p != '\\' ){
+	*dir++ = '\\';
+	*dir++ = '.';
+	*dir++ = '.';
+	*dir++ = '\\';
+      }
+    }
     while( p <= lastroot )
       *dir++ = *p++;
   }
@@ -172,33 +190,47 @@ void Complete::cleanup()
 
 static int instrcmp(const char *s1,const char *s2,int n)
 {
-  int kanji2nd=0;
   while( n-- > 0 ){
-    int x1=*s1++;
-    int x2=*s2++;
-
-    if( ! kanji2nd ){ /* Š¿š‚Ì2byte–Ú‚Å‚È‚¢ */
-      x1 = toupper(x1);
-      x2 = toupper(x2);
-      if( _nls_is_dbcs_lead(x1) )
-	kanji2nd = 1;
-    }else{            /* Š¿š‚Ì2byte–Ú */
-      kanji2nd = 0;   /* Ÿ‚Ì•¶š‚ÍAANK‚©AŠ¿š‚Ì1byte–Ú */
+    if( _nls_is_dbcs_lead( *s1 ) ){
+      if( *s1 != *s2 )
+	return *s1-*s2;
+      if( *++s1 != *++s2 )
+	return *s1-*s2;
+      n--;
+    }else if( toupper(*s1) != toupper(*s2) ){
+       return *s1-*s2;
     }
-
-    if( x1 != x2 )
-      return x1-x2;
-
-    if( x1 == '\0' )
-      return 0;
+    s1++;
+    s2++;
+  }
+}
+struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp)
+{
+  if( first == NULL || dircompare(tmp,first) < 0 ){
+    tmp->next = first;
+    return tmp;
+  }else{
+    struct filelist *prev=first,*cur=first->next;
+    for(;;){
+      if( cur == NULL ){
+	prev->next = tmp;
+	tmp->next  = NULL;
+	break;
+      }
+      if( dircompare(tmp,cur) < 0 ){
+	tmp ->next = cur;
+	prev->next = tmp;
+	break;
+      }
+      prev = cur;
+      cur = cur->next;
+    }
+    return first;
   }
 }
 
-int Complete::makelist(const char *path)
+int Complete::makelist_core(const char *path,int command_complete)
 {
-  list = NULL;
-  nlists = 0;
-
   pathsplit( path , directory , fname );
   
   DIR *dirp=opendir(directory);
@@ -207,13 +239,19 @@ int Complete::makelist(const char *path)
   
   common_length = strlen(fname);
   struct dirent *dirbuf;
-  max_length=0;
 
   while( (dirbuf=readdir(dirp)) != NULL ){
     if( common_length == 0
        || ( dirbuf->d_namlen >= common_length
 	   && instrcmp( fname , dirbuf->d_name , common_length ) == 0 
 	   ) ){
+
+      if( command_complete
+	 && _fnmatch("*.EXE",dirbuf->d_name,_FNM_IGNORECASE |_FNM_OS2 )!=0
+	 && _fnmatch("*.CMD",dirbuf->d_name,_FNM_IGNORECASE |_FNM_OS2 )!=0
+	 && _fnmatch("*.BAT",dirbuf->d_name,_FNM_IGNORECASE |_FNM_OS2 )!=0
+	 && _fnmatch("*.COM",dirbuf->d_name,_FNM_IGNORECASE |_FNM_OS2 )!=0 )
+	continue;
       
       struct filelist *tmp =
 	(struct filelist *)malloc(sizeof(struct filelist)+dirbuf->d_namlen );
@@ -234,30 +272,64 @@ int Complete::makelist(const char *path)
       if( dirbuf->d_namlen > max_length )
 	max_length = dirbuf->d_namlen;
 
-      if( list==NULL || dircompare(tmp,list) < 0 ){
-	tmp->next = list;
-	list = tmp;
-      }else{
-	struct filelist *cur=list->next , *prev=list ;
-	for(;;){
-	  if( cur==NULL ){
-	    prev->next = tmp;
-	    tmp->next  = NULL;
-	    break;
-	  }
-	  if( dircompare(tmp,list) < 0 ){
-	    tmp ->next = prev->next;
-	    prev->next = tmp;
-	    break;
-	  }
-	  prev = cur;
-	  cur = cur->next;
-	}
-      }
+      list = fsort_and_insert(list,tmp);
       nlists++;
     }
   }
   closedir(dirp);
+  return nlists;
+}
+
+int Complete::makelist(const char *path)
+{
+  max_length=0;
+  list = NULL;
+  nlists = 0;
+  return makelist_core(path,false);
+}
+
+int Complete::makelist_with_path(const char *path)
+{
+  max_length=0;
+  list = NULL;
+  nlists = 0;
+
+  const char *p=path;
+  while( *p != '\0'){
+    if( _nls_is_dbcs_lead(*p) )
+      p++;
+    else if( *p==':' || *p=='/' || *p=='\\')
+      return makelist_core(path,true);
+    p++;
+  }
+
+  makelist_core(path,true);
+  char cwdsave[FILENAME_MAX];
+  _getcwd2(cwdsave,sizeof(cwdsave) );
+
+  const char *envpath=getenv("PATH");
+  if( envpath != NULL ){
+    char *envpath2=(char*)alloca(strlen(envpath)+1);
+    strcpy(envpath2,envpath);
+    char *dir=strtok(envpath2,";");
+    while( dir != NULL ){
+      _chdir2(dir);
+      makelist_core(path,true);
+      dir=strtok(NULL,";");
+    }
+  }
+  extern int scriptflag;
+  if( scriptflag && (envpath=getenv("SCRIPTPATH")) != NULL ){
+    char *envpath2=(char*)alloca(strlen(envpath)+1);
+    strcpy(envpath2,envpath);
+    char *dir=strtok(envpath2,";");
+    while( dir != NULL ){
+      _chdir2(dir);
+      makelist_core(path,false);
+      dir=strtok(NULL,";");
+    }
+  }
+  _chdir2(cwdsave);
   return nlists;
 }
 

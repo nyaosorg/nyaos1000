@@ -8,6 +8,7 @@
 #define KEY(a)  (K_##a | 0x100)
 
 int Edlin::ctrl_d_eof=0;
+int Edlin::ctrl_z_eof=1;
 
 /* 帰り値は、文字数。キャンセルの時は (-1)を返す。 */
 
@@ -54,7 +55,9 @@ int Edlin::simple_line_input()
       break;
 
     case CTRL('Z'):case EOF:
-      return -1;
+      if( ctrl_z_eof )
+	return -1;
+      break;
 
     case CTRL('f'):case KEY(RIGHT):
       forward();

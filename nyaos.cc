@@ -21,7 +21,7 @@
 
 int screen_width=80;
 int screen_height=25;
-
+int option_vio_cursor_control=1;
 int cursor_start;
 int cursor_end;
 char *cursor_on_color_str=NULL;
@@ -48,9 +48,6 @@ int main(int argc, char **argv)
   char thename[FILENAME_MAX];
 
   setvbuf(stdout,NULL,_IOLBF,BUFSIZ);
-#if USE_VIDEO_H
-  v_init();
-#endif
 
   for(int i=1;i<argc;i++){
     if( argv[i][0] == '-' ){
@@ -126,25 +123,29 @@ int main(int argc, char **argv)
     }
 
   }
+  if( option_vio_cursor_control ){
+    v_init();
+  }
+
   char cmdlin[1024]="";
   if( isatty(fileno(stdin)) ){
+    printf("\x1b[2J\x1b[1m"
+	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
+	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
+	   "    Os/2 Shell 1.15    ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
+	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
+	   "                                                          \n"
+	   "    This version is compiled on " __DATE__ " " __TIME__"  \n"
+	   "    Comments, suggestions, and bug reports are welcome.   \n"
+	   "    Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp     \n"
+	   "\x1b[0m\n"
+	   );
+
     /* DOSの場合、^Hで折り返した前の行へ戻れないので、
      * 一行のみの Window モードにする。
      */
     ShellEdlin edlin("NYAOS>",cmdlin,sizeof(cmdlin) );
-
-    printf("\x1b[1m"
-	   "     Free Software     ::  :: ::  ::  ::::   ::::   ::::. \n"
-	   "  Nihongo Yet Another  ::: :: ::  :: ::  :: ::  :: ::   ' \n"
-	   "    Os/2 Shell 1.14    ::::::  ::::  :::::: ::  ::  ::::  \n"
-	   "         (C)           :: :::   ::   ::  :: ::  :: ..  :: \n"
-	   "  1996,97 HAYAMA,Kaoru ::  ::   ::   ::  ::  ::::   ::::  \n"
-	   "                                                          \n"
-	   "      This version is compiled on " __DATE__ " " __TIME__"\n"
-	   "      Comments, suggestions, and bug reports are welcome. \n"
-	   "      Please mail to kaoru@ferrari6.cheme.kyoto-u.ac.jp   \n"
-	   "\x1b[0m\n"
-	   );
 
     for(;;){
       char promptstr[256],*dp=promptstr,*sp;
@@ -242,10 +243,10 @@ int main(int argc, char **argv)
 
       edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
       
-#if USE_VIDEO_H
-      v_getctype( &cursor_start , &cursor_end );
-      v_ctype( cursor_start , cursor_end );
-#endif
+      if( option_vio_cursor_control ){
+	v_getctype( &cursor_start , &cursor_end );
+	v_ctype( cursor_start , cursor_end );
+      }
       
       int rc=edlin.simple_input(promptstr,
 				_osmode==OS2_MODE ? 32767:screen_width-1 );

@@ -132,93 +132,116 @@ void Edlin::insert_and_forward(const char *s)
   after_repaint(0);  /* 挿入したときは、右へ動くので末端のクリアはいらない */
 }
 
+int Edlin::seek_word_top()
+{
+  int wrdtop=0;
+  int p=0;
+
+  for(;;){
+    while( isspace(strbuf[p]) ){
+      if( p >= pos ){
+	return wrdtop;
+      }
+      if( atrbuf[p] != SBC )
+	p++;
+      p++;
+    }
+    wrdtop = p;
+    while( !isspace(strbuf[p]) ){
+      if( p >= pos ){
+	return wrdtop;
+      }
+      if( strbuf[p] == '"' ){
+	do{
+	  if( atrbuf[p] != SBC )
+	    p++;
+	  p++;
+	  if( p >= pos ){
+	    return wrdtop;
+	  }
+	}while( strbuf[p] != '"' );
+      }
+      if( atrbuf[p] != SBC )
+	p++;
+      p++;
+    }
+  }
+}
+
 void Edlin::complete_core(int fntop,int basesize)
 {
   Complete com;
 
   char *buffer=(char*)alloca(basesize+1);
-  char *bp=buffer;
-  int topchar = strbuf[fntop];
+  int  command_complete = (fntop <= 1);
+  int  quoted=false;
 
-  if( topchar == '"' ){
-    while( ++fntop < pos )
-      *bp++ = strbuf[fntop];
-  }else{
-    while( !isspace(strbuf[++fntop]) && fntop < pos )
-      *bp++ = strbuf[fntop];
+  if( strbuf[fntop] == '"' ){
+    fntop++;
+    basesize--;
+    quoted = 1;
   }
+
+  char *bp=buffer;
+  while( fntop < pos )
+    *bp++ = strbuf[fntop++];
   *bp = '\0';
-  int nfiles=com.makelist( buffer );
-  if( nfiles <= 0 )
+
+  int nfiles = ( command_complete
+		? com.makelist_with_path( buffer ) 
+		: com.makelist( buffer ) );
+
+  if( nfiles <= 0 ){
+    alert();
     return;
+  }
 
   if( nfiles == 1 ){
     const char *nextstr=com.nextchar();
 
-    for(int i=0 ; i<basesize ; i++ )
-      backward();
+    for(int i=0 ; i<basesize ;  )
+      i += backward();
 
-    if( topchar != '"' && strchr(nextstr,' ') != NULL ){
+    if( !quoted && (   strchr(nextstr,' ') != NULL
+		    || strchr(nextstr,'^') != NULL) ){
       insert('"');
+      quoted = 1;
       forward();
     }
 
-    for(int i=0 ; i<basesize-com.get_fname_common_length() ; i++ )
-      forward();
+    for(int i=0 ; i<basesize-com.get_fname_common_length() ;  )
+      i +=forward();
 
     const char *realname=com.get_real_name1();
     for(int i=0 ; i<com.get_fname_common_length(); i++ )
       putchr( strbuf[pos++] = *realname++ );
 
-#if 0    
-    if( topchar != '"'  &&  strchr(nextstr,' ') != NULL ){
-      for(int i=0 ; i<basesize ; i++ )
-	backward();
-      insert('"');
-      for(int i=-1 ; i<basesize ; i++ )
-	forward();
-    }
-#endif
     insert_and_forward(nextstr);
 
     if( com.findfirst()->attr & A_DIR ){
       insert( complete_tail_char );
     }else{
-      if( topchar == '"' )
+      if( quoted ){
 	insert('"');
+	forward(); 
+      }
       insert(' ');
     }
     forward();
   }else{
-    insert_and_forward(com.nextchar());
+    const char *nxtstr = com.nextchar();
+    if( nxtstr == NULL || nxtstr[0]=='\0' )
+      alert();
+    else
+      insert_and_forward(nxtstr);
   }
 }
 
 void Edlin::complete()
 {
-  int lastquote=-1; /* (-1)の時、引用符は無いか、閉じていることを示す */
-  for(int i=0 ; i<pos ;i++ ){
-    if( strbuf[i] == '"' ){
-      if( lastquote == -1 )
-	lastquote = i;
-      else
-	lastquote = -1;
-    }
-  }
-  if( lastquote != -1 ){
-    complete_core( lastquote , pos-1-lastquote );
-    return;
-  }
-  int basesize=0;
-  
-  for( int fntop=pos-1 ;; fntop--,basesize++ ){
-    if(   fntop == -1         || isspace(strbuf[fntop])
-       || strbuf[fntop]=='"'  || strbuf[fntop]=='\''    ){
-      
-      complete_core(fntop,basesize);
-      return;
-    }
-  }
+  int fntop=seek_word_top();
+  int basesize=pos-fntop;
+  complete_core(fntop,basesize);
 }
 
 void Edlin::insert(int ch1,int ch2)
@@ -390,7 +413,7 @@ void Edlin::backward_word()
   }
 }
 
-void Edlin::forward()
+int Edlin::forward()
 {
   if( pos+1 <= len  &&  atrbuf[pos] == SBC ){
     if( pos+1 >= top+windowsize )
@@ -398,29 +421,34 @@ void Edlin::forward()
     
     /* 同じ文字の二度打ちによる右移動 */
     putchr( strbuf[pos++] );
-
+    return 1;
   }else if( pos+2 <= len ){
     if( pos+2 >= top+windowsize )
       right(2);
 
     putchr( strbuf[pos++] );
     putchr( strbuf[pos++] );
+    return 2;
   }
+  return 0;
 }
 
-void Edlin::backward()
+int Edlin::backward()
 {
   if( 0 < pos  &&  atrbuf[pos-1] == SBC ){
     if( pos-1 < top )
       left(1);
     --pos;
     putbs(1);
+    return 1;
   }else if( 2 <= pos ){
     if( pos-2 < top )
       left(2);
     pos -= 2;
     putbs(2);
+    return 2;
   }
+  return 0;
 }
 
 void Edlin::go_ahead()

@@ -28,4 +28,4 @@ commands.o : commands.cc
 prepro.o : prepro.cc
 
 clean :
-	rm -f *.o *.exe *~
+	rm -f *.o *~
