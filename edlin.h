@@ -27,6 +27,7 @@ protected:
 
   int msgsize;     /* 入力文字列以外のメッセージが表示されている場合、
 		    * その文字列の長さが入る。*/
+  int bottom_msgsize;
 public:
   void after_repaint(int termclear=-1);   /* カーソル位置移行を repaint */
   void repaint(int termclear=-1);         /* 全行 repaint               */
@@ -46,7 +47,7 @@ public:
 	char *buffer, int max_, int windowsize_)
     : strbuf(buffer),atrbuf(new char[max_])
       ,top(top_),pos(pos_),len(len_),max(max_),windowsize(windowsize_)
-	,msgsize(0)
+	,msgsize(0) , bottom_msgsize(0)
         { /* no-operation */ }
 
 public:
@@ -54,12 +55,12 @@ public:
     : strbuf(buffer),atrbuf(new char[max_])
       ,top(0),pos(0),len(0),max(max_),windowsize(windowsize_)
 	,msgsize(0)
-        { buffer[0]='\0'; }
-
+	  { buffer[0]='\0'; }
+  
   virtual ~Edlin(){ delete atrbuf; }
 
   enum{ SBC , DBC1ST , DBC2ND };
-
+  
   void init(){ top=pos=len=0; strbuf[0]='\0'; atrbuf[0]=SBC; putel(); }
   void insert(int ch);                     /*    半角文字挿入       */
   void insert(int ch1,int ch2);            /*    全角文字挿入       */
@@ -88,6 +89,10 @@ public:
   /* 入力文字列以外のメッセージを表示するメソッド */
   int message(const char *fmt,...);
   void cleanmsg();
+
+  void bottom_message( const char *fmt , ...);
+  void clean_bottom();
+
   void locate(int x);
 
 #if 0
@@ -100,16 +105,60 @@ public:
   /* リポート関数 */
   int length() const { return len; }    /* 現在入力されている文字列のbytes */
   int position() const { return pos; }  /* カーソルの位置(bytes) */
-  int gettype(int nth) const { return atrbuf[nth]; }
+  
+  int operator[](int nth) const { return strbuf[nth]; }
+  int gettype(int nth)    const { return atrbuf[nth]; }
+
   const char *getbuffer() const { return strbuf; }
 
   static int complete_tail_char;
   static int option_conversion_complete;
   
   int simple_line_input();
+
+#if 0 /* 現在、クラス構造改変中につき..本ブロック未使用 */
+  enum Status{
+    CONTINUE,
+    TERMINATE,
+    QUIT = -1,
+    ABORT = -2,
+    FATAL = -3,
+  };
+
+  /* キーバインド用関数 */
+  Status bind_self_insert(int);
+  Status bind_forward(int){ forward(); return CONTINUE; }
+  Status bind_backward(int){ backward(); return CONTINUE; }
+  Status bind_simple_delete(int){ erase(); return CONTINUE; }
+  Status bind_backspace(int);
+
+  /* 未実装 */
+  Status bind_i_search(int);
+  Status bind_rev_i_search(int);
+  Status bind_previous_history(int);
+  Status bind_next_history(int);
+  Status bind_bye(int);
+  Status tcshlike_ctrl_d(int);
+
+  Status tcshlike_complete(int);
+  Status input_terminate(int);
+  Status repaint(int);
+  Status go_ahead(int);
+  Status go_forward(int);
+  Status go_tail(int);
+  Status cancel(int);
+  Status eraseline();
+  Status forward_word(int);
+  Status backward_word(int);
+
+  Status abort(int){ return ABORT; }
+  Status swapchars(int){ swapchars(); return CONTINUE; }
+#endif
 };
 
 /* ANSI エスケープシーケンス/かんな 版 Edlin */
+
+class jrKanjiStatus;
 
 class Edlin2 : public Edlin {
   static int canna_inited;       /* 初期化されていたら not 0 */
@@ -134,6 +183,9 @@ protected:
 
   static int option_canna;
   static void canna_to_alnum();  /* 強制的に英数モードへ  */
+private:
+  void clear_bottom( int n );
+  int print_bottom( jrKanjiStatus &status , const char *mode_string );
 };
 
 extern char dbcstable[256];
@@ -172,6 +224,8 @@ public:
 /* 実際にキ－入力などをうけて、ShellEdlinのメソッドを呼び出すクラス
  *  ShellEdin と統合すべきかもしれない。(bindkey.cc)
  */
+struct WHist;
+
 class Shell{
 public:
   enum Status {
@@ -235,10 +289,10 @@ public:
   Status simple_delete();
   Status abort(){ return ABORT; }
   Status swapchars(){ ed.swapchars(); return CONTINUE; }
-#if 0
   Status vz_prev_history();
   Status vz_next_history();
-#endif
+private:
+  int vz_history_core(struct WHist *);
 };
 
 /* TERMCAP & エスケープシーケンス メモ

@@ -12,11 +12,13 @@
 #include "complete.h"
 #include "nyaos.h"
 
+extern int option_complete_etc;
 extern int option_single_quote;
 extern int option_cd_goto_home;
 extern int option_debug_echo;
 static int option_dir_tail_is_forward_slash;
 
+extern int option_history_in_doublequote;
 extern int option_amp_start;
 extern int option_tilda_is_home;
 extern int option_tcshlike_history;
@@ -60,6 +62,13 @@ int cmd_mode( FILE *source , Parse &args )
   if( option_vio_cursor_control ){
     v_getctype( &cursor_start , &cursor_end );
   }
+  return 0;
+}
+
+int cmd_ver( FILE *source , Parse &argv )
+{
+  spawnl(P_WAIT,cmdexe_path,"CMD","/C","ver",NULL);
+  puts( "Nihongo Yet Another Os/2 Shell is "VERSION );
   return 0;
 }
 
@@ -186,6 +195,7 @@ struct Option{
   { "complete_hidden"      , &Complete::complete_hidden_file   , 1  , 0 },
   { "complete_tail_slash"  , &Edlin::complete_tail_char        ,'/','\\'}, 
   { "complete_tilda"       , &Complete::complete_tail_tilda    , 1  , 0 },
+  { "complete_etc"         , &option_complete_etc              , 1  , 0 },
   { "conv_complete"        , &Edlin::option_conversion_complete, 1  , 0 },
   { "ctrl_d_eof"           , &Shell::ctrl_d_eof                , 1  , 0 },
   { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
@@ -194,7 +204,10 @@ struct Option{
   { "debug"                , &option_debug_echo                , 1  , 0 },
   { "dots"                 , &option_dots                      , 1  , 0 },
   { "echo"                 , &echoflag                         , 1  , 0 },
+  { "history_in_doublequote" , &option_history_in_doublequote  , 1  , 0 },
+#if 0
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
+#endif
   { "prompt_even_piped"    , &option_prompt_even_piped         , 1  , 0 },
   { "script"               , &scriptflag                       , 1  , 0 },
   { "script_cache"         , &option_script_cache              , 1  , 0 },
@@ -205,6 +218,7 @@ struct Option{
   { "slash_to_backslash_after_tilda"
       , &option_replace_slash_to_backslash_after_tilda , 1 , 0 },
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
+  { NULL , NULL , 1 , 0 }
 };
 
 int cmd_option(FILE *source, Parse &params)
@@ -212,12 +226,8 @@ int cmd_option(FILE *source, Parse &params)
   FILE *fout=params.open_stdout();
 
   if( params.get_argc() < 2 ){
-    for(int i=0;i<numof(optlist);i++){
-      fprintf(fout,"%c%s\n",
-	      (*optlist[i].pointor == optlist[i].true_value) ? '+' : '-' ,
-	      optlist[i].name
-	      );
-    }
+    for(const Option *p=optlist ; p->name != NULL ; p++ )
+      fprintf(fout,"%c%s\n", *p->pointor == p->true_value ?'+':'-',p->name );
     return 0;
   }
   
@@ -233,10 +243,9 @@ int cmd_option(FILE *source, Parse &params)
       name++;
     }
     
-    for(int i=0; i<numof(optlist); i++){
-      if( strcmp(optlist[i].name,name)==0 ){
-	*optlist[i].pointor = 
-	  ( value ? optlist[i].true_value : optlist[i].false_value );
+    for(const Option *p=optlist ; p->name != NULL ; p++ ){
+      if( strcmp(p->name,name)==0 ){
+	*p->pointor = ( value ? p->true_value : p->false_value );
 	goto next;
       }
     }

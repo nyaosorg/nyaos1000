@@ -12,6 +12,9 @@ class Substr{
   int len;
   const char *ptr;
 
+  int operator[](int n) const
+    { return ptr[n] & 255; }
+
   /* ‰Šú‰» */
   Substr(void) : ptr(NULL) , len(0) { }
   Substr(const char *p,int l) : ptr(p) , len(l) { }

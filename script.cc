@@ -254,6 +254,8 @@ static int insert_interpretor(const char *cache,const char *fname,SmartPtr &dp)
   return 0;
 }
 
+extern int suffix( const char *path , SmartPtr &dp );
+
 int replace_script( const char *sp , char *dst, int max  )
 {
   SmartPtr dp(dst,max);
@@ -331,17 +333,32 @@ int replace_script( const char *sp , char *dst, int max  )
 	copyargs(sp,dp,&sp,&dp);
       }else if( type==FILE_EXISTS ){
 	// --- おそらく、スクリプト ---
-	insert_interpretor(fname,path,dp);
-	/* dp = strcpy_tail(dp,path); */
-	copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
+	if( insert_interpretor(fname,path,dp) < 0 ){
+	  /* -- ext文によるスクリプトの可能性あり */
+	  suffix(path,dp);
+	  copy_filename(path,dp,NULL,&dp,BACKSLASH_DEMILITOR);
+	}else{
+	  /* -- #!によるスクリプトである -- */
+	  copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
+	}
 	copyargs(sp,dp,&sp,&dp);
-      }else if( type != COM_FILE  || sos(sp,dp,path) != 0 ){
+
+      }else if(  type != COM_FILE || sos(sp,dp,path) != 0 ){
 	// --- OS/2 の実行ファイル ---
 	copy_filename(fname,dp,NULL,&dp, BACKSLASH_DEMILITOR );
 	copyargs(sp,dp,&sp,&dp);
       }
     }else{
-      copy_filename(sp,dp,&sp,&dp);
+      if( suffix(sp,dp) == 0 ){
+	char path[FILENAME_MAX];
+	char fname[FILENAME_MAX];
+
+	copy_filename(sp,SmartPtr(path,sizeof(fname)),&sp,NULL);
+	SearchEnv(fname,"SCRIPTPATH",path);
+	copy_filename(path,dp,NULL,&dp);
+      }else{
+	copy_filename(sp,dp,&sp,&dp);
+      }
       copyargs(sp,dp,&sp,&dp);
     }
     if( *sp == '\0' )

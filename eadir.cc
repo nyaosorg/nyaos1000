@@ -1,8 +1,3 @@
-/* eadir.cc $Id: eadir.cc 1.3 1997/08/15 19:24:11 kaoru Exp kaoru $
- *   color-ls や .COMMENT,.LONGNAME 表示機能付dir(eadir)
- *   を実際に実行するモジュール。
- */
-
 #include <process.h>
 #include <assert.h>
 #include <ctype.h>
@@ -20,6 +15,8 @@
 
 #include <sys/video.h>	/* 3行スクロールモード用 */
 
+#include "SmartPtr.h"
+
 #define INCL_DOSNLS
 #include "nyaos.h"
 #include "complete.h"
@@ -33,24 +30,22 @@ extern int screen_width;
 extern int screen_height;
 
 enum{
-  LS_MODE	= 0,
-  DIR_MODE	= 1,
-  EADIR_MODE	= 2,
-  INDEX_MODE	= 3,
-
-  PRINT_MASK	= 3,
-
-  MORE_MODE	= 4,
-  COLOR_MODE	= 8,
-  HIDDEN_MODE	= 0x10, /* HIDDEN属性も表示する。*/
-  HALF_MODE	= 0x20,
-  IGNORE_BACKUP	= 0x40,
-  RECURSIVE_MODE= 0x80,
-  
-  LAST_COLUMNS  = 0x200,
-
-  SORT_MODES	= 16, /* bit */
+  LS_LONG ,
+  LS_MORE ,
+  LS_NOCOLOR ,
+  LS_ALL , 
+  LS_RECURSIVE ,
+  LS_IGNORE_UNDERBAR ,
+  LS_IGNORE_BACKUP ,
+  LS_LAST_COLUMN ,
+  LS_COMMENT ,	/* 0:表示しない  1:inline  2:multi-line */
+  LS_LONGNAME ,	/* 0:表示しない  1:左よせ  2:右よせ */
+  LS_SORT ,
+  LS_SORT_REVERSE ,
+  LS_ViRGE ,
+  NUM_LS ,
 };
+static char ls_flag[ NUM_LS ];
 
 static char *ls_left_code="\033[";
 static char *ls_right_code="m";
@@ -59,14 +54,16 @@ static char *ls_end_code="\033[0m";
 static char *ls_normal_file="1";	/* 白 */
 static char *ls_directory="32;1";	/* 緑 */
 static char *ls_system_file="31;1";	/* 青 */
-static char *ls_read_only_file="33;1";	/* 黄 */
 static char *ls_hidden_file="44;37;1";	/* 青地の白 */
 static char *ls_executable_file="35;1"; /* 紫 */
 
+static char *ls_read_only_file="33;1";	/* 背景が黄 */
 static char *ls_comment="44;37;1";	/* 青地に白 */
 static char *ls_longname="41;37;1";     /* 赤字に白 */
 
-struct {
+static int thisyear=0;
+
+static struct {
   const char *xx;
   char **where_to_code;
 } ls_color_table[]= {
@@ -83,8 +80,108 @@ struct {
   { "ln",&ls_longname} ,
 };
 
+union MultiPtr {
+  void *value;
+  const char *byte;
+  const unsigned short *word;
+};
 
-void set_ls_color_table(const char *s)
+char *get_ea_longname( const char *fname )
+{
+  /* 拡張属性のロングネームを取得する。
+     返り値は free する必要がある。 */
+  
+  struct _ea ea;
+  union MultiPtr ptr;
+  
+  if( _ea_get( &ea , fname , 0 , ".LONGNAME" ) != 0 
+     || ea.size <= 0 || ea.value == NULL )
+    return NULL;
+
+  ptr.value = ea.value;
+  int type = *ptr.word++;
+  if( type != 0xFFFD ){
+    _ea_free(&ea);
+    return NULL;
+  }
+    
+  int size = *ptr.word++; /* 実際のサイズ */
+  int n = 0;              /* ctrl-codeを ^N などと変形した後のサイズ*/
+  char *s=(char*)malloc(size*2); /* 変形後の文字列が入る */
+  
+  for(int i=0 ; i<size ; i++ ){
+    if( *ptr.byte == '\r' ){
+      ptr.byte++;
+    }else if( *ptr.byte == '\n' ){
+      s[n++] = ' ';
+      ptr.byte++;
+    }else if( 0 <= *ptr.byte  && *ptr.byte < ' ' ){
+      s[n++] = '^';
+      s[n++] = '@'+*ptr.byte++ ;
+    }else{
+      s[n++] = *ptr.byte++ ;
+    }
+  }/* for(int i...) */
+  s[n++] = '\0';
+  
+  _ea_free( &ea );
+  return s = (char*)realloc(s,n);
+}
+
+void free_pointors(char **table)
+{
+  /* ポインタ配列を free する。
+     下の get_ea_comments の返り値に用いる */
+
+  while( *table != NULL )
+    free( *table++ );
+}
+
+
+char **get_ea_comments( const char *fname )
+{
+  /* 拡張属性のコメントを取得する。
+     返り値は、上の free_pointors で解放する必要がある。*/
+
+  struct _ea ea;
+  union MultiPtr ptr;
+
+  if(   _ea_get( &ea , fname , 0 , ".COMMENTS" ) != 0
+     || ea.size <= 0 || ea.value == NULL )
+    return NULL;
+
+  ptr.value = ea.value;
+  if( *ptr.word++ != 0xFFDF ){
+    _ea_free( &ea );
+    return NULL;
+  }
+
+  ptr.word++; /* コードページを読みとばす */
+  
+  int n=*ptr.word++;
+  char **table=(char**)malloc( sizeof(char*) * (n+1) );
+  if( table == NULL ){
+    _ea_free( &ea );
+    return NULL;
+  }
+
+  for(int i=0;i<n;i++){
+    ++ptr.word; /* ASCII を表す 0xFFFD を読みとばす */
+    int size=*ptr.word++;
+    char *dp = table[i] = (char*)malloc( size+1 );
+    while( size-- > 0 )
+      *dp++ = *ptr.byte++;
+    *dp = '\0';
+  }
+  table[n] = NULL;
+  _ea_free( &ea );
+  return table;
+}
+
+/* 一行の文字列で与えられた ls カラーオプションを
+   各属性ごとの変数へ代入する。 */
+
+static void set_ls_color_table(const char *s)
 {
   if( s==NULL )
     return;
@@ -155,21 +252,31 @@ int column=0;
 
 int nprintlines=0;
 
-void kill_filelist(struct filelist *p)
-{
-  while( p != NULL ){
-    struct filelist *nxt = p->next;
-    free(p);
-    p = nxt;
-  }
-}
-
 extern "C" {
   unsigned short VioGetCurPos(unsigned short *pusRow ,
 			      unsigned short *pusColumn ,
 			      unsigned short hvio );
 }
 
+/* そのファイルは、フラグと照合して、表示してよいかを判定する */
+
+static int is_file_print(FileListT *f)
+{
+  const char *top=f->name;
+  for(const char *p=f->name ; *p != '\0' ; p++ ){
+    if( *p=='/' || *p=='\\' )
+      top=p+1;
+  }
+  if( ls_flag[LS_ALL]==0  &&  ( *top == '.' || (f->attr & Dir::HIDDEN) ))
+    return 0;
+  if( f->name[f->length-1] == '~' &&  ls_flag[LS_IGNORE_BACKUP] )
+    return 0;
+  if( *top == '_' &&  ls_flag[LS_IGNORE_UNDERBAR] )
+    return 0;
+  return 1;
+}
+
+/* 英字モードの時に、DBCS 文字を「?」に変換して表示する。*/
 static int dbcs_fputs(const char *s,FILE *fout)
 {
   int i=0;
@@ -199,9 +306,10 @@ static int dbcs_fputs(const char *s,FILE *fout)
   return i;
 }
 
-static void more(int flag,FILE *fout)
+static int ncolumns=0;
+static void more( FILE *fout )
 {
-  if( (flag & HALF_MODE)!=0 && (fout==stdout || fout==stderr) ){
+  if( ls_flag[LS_ViRGE]  &&  (fout==stdout || fout==stderr) ){
     fflush(fout);
     USHORT X,Y;
     VioGetCurPos(&Y,&X ,0 );
@@ -210,11 +318,11 @@ static void more(int flag,FILE *fout)
       fputs("\x1B[3A",fout);
     }
   }
-  putc('\n',fout);
-  if(   (flag & COLOR_MODE)  &&  (flag & MORE_MODE) 
-     && ++nprintlines >= screen_height-1 ){
-
-    fprintf(fout,"%s[more]",ls_end_code);
+  fprintf(fout,"%s\x1B[K\n",ls_end_code);
+  if( ls_flag[LS_NOCOLOR]==0  &&  ls_flag[LS_MORE]
+     && (nprintlines+=(1 + ncolumns / screen_width ))>= screen_height-2 ){
+    
+    fputs("[more]",fout);
     fflush(fout);
     raw_mode();
     if( getkey() == ('C' & 0x1F) )
@@ -223,75 +331,100 @@ static void more(int flag,FILE *fout)
     fputs("\r      \r",fout);
     nprintlines=0;
   }
+  ncolumns = 0;
 }
 
-void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
+static void smart_copy( SmartPtr &dp , const char *sp )
+{
+  while( *sp != '\0' )
+    *dp++ = *sp++;
+  *dp = '\0';
+}
+
+
+/* 「ls -l」形式で、一ファイルを表示する */
+
+void dir1(FileListT *flist , int max_length , FILE *fout)
 {
   int tailchar = ' ';
-  const char *headstr;
 
-  char attrstr[]="-rw--";
-  /*              drwxa 
-   *              01234 */
+  char headstr[ 128 ];
+  SmartPtr headstrp(headstr,sizeof(headstr));
 
+  enum{
+    AS_DIR , AS_READ , AS_WRITE , AS_EXEC , AS_ARCHIVE ,
+    AS_HIDDEN , AS_SYSTEM , AS_EA , NUM_AS ,
+  };
+
+  char attrstr[ NUM_AS+1 ];
+  for(int i=0 ; i<NUM_AS ; i++ )
+    attrstr[ i ] = '-';
+
+  attrstr[ NUM_AS   ] = '\0';
+  attrstr[ AS_READ  ] = 'r';
+  attrstr[ AS_WRITE ] = 'w';
+  
   const char *top=flist->name;
   for(const char *p=flist->name ; *p != '\0' ; p++ ){
     if( *p == '\\' || *p == '/' )
       top = p+1 ;
   }
 
-  /* ドットで始まるもの */
-  if( (HIDDEN_MODE & flag)==0  &&  *top=='.' )
-    return;
-
-  /* チルダで終わるもの */
-  if( (flag & IGNORE_BACKUP) != 0  && flist->name[flist->length-1] == '~' )
+  /* 隠しファイルは表示せず、終了 */
+  if( is_file_print(flist)==0 )
     return;
 
   if( flist->attr & A_DIR ){
-    headstr = ls_directory;
-    attrstr[0] = 'd';
-    tailchar = Complete::directory_split_char;
+    smart_copy( headstrp , ls_directory );
+    attrstr[ AS_DIR ] = 'd';
+    tailchar = '/';
   }else if( flist->attr & A_HIDDEN ){
-    if( (flag & HIDDEN_MODE)==0 )
+    if( ! ls_flag[ LS_ALL ] )
       return;
-    headstr = ls_hidden_file;
+    for(const char *sp=ls_hidden_file ; *sp != '\0' ; sp++ )
+      *headstrp++ = *sp;
+    smart_copy( headstrp , ls_hidden_file );
+    attrstr[ AS_HIDDEN ] = 'h';
   }else if( flist->attr & A_SYSTEM ){
-    headstr = ls_system_file;
-  }else if( flist->attr & A_RONLY ){
-    headstr = ls_read_only_file;
-    attrstr[2] = '-';
+    smart_copy( headstrp , ls_system_file );
+    attrstr[ AS_SYSTEM ] = 's';
   }else if( flist->attr & A_LABEL ){
-    headstr = ls_system_file;
+    smart_copy( headstrp , ls_system_file );
+    attrstr[ AS_SYSTEM ] = 'L' ;
   }else if( which_suffix(flist->name,"EXE","COM","CMD","BAT",NULL) != 0 ){
-    headstr = ls_executable_file;
+    smart_copy( headstrp , ls_executable_file );
     tailchar = '*';
-    attrstr[3] = 'x';
+    attrstr[ AS_EXEC ] = 'x';
+  }else if( flist->attr & A_RONLY ){
+    smart_copy( headstrp , ls_read_only_file );
+    attrstr[ AS_WRITE ] = '-';
   }else{
-    headstr = ls_normal_file;
+    smart_copy( headstrp , ls_normal_file );
   }
   
   if( flist->attr & A_ARCHIVE )
-    attrstr[4] = 'a';
+    attrstr[ AS_ARCHIVE ] = 'a';
+
+  if( flist->easize > 4 ) /* EA がなくても、サイズ情報で最低 4bytes は要る */
+    attrstr[ AS_EA ] = 'e';
   
-  if( flag & COLOR_MODE )
+  if( ! ls_flag[ LS_NOCOLOR] )
     fputs(ls_end_code,fout);
 
-  int ncolumns=0;
-
-  /* lsモードの時は、このブロックだけで return する */
-  if( (flag & PRINT_MASK) == LS_MODE ){
-    if( flag & COLOR_MODE )
+  ncolumns=0;
+  
+  /* ls モードの時は、このブロックだけで return する */
+  if( ! ls_flag[ LS_LONG] ){
+    if( ! ls_flag[ LS_NOCOLOR] )
       fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
     
     dbcs_fputs(flist->name,fout);
-    /* fputs(flist->name , fout ); */
-    if( flag & COLOR_MODE )
+    if( ! ls_flag[ LS_NOCOLOR ] )
       fputs(ls_end_code,fout);
     putc(tailchar,fout);
 
     int i=strlen(flist->name);
-    if( (flag & LAST_COLUMNS)==0 ){
+    if( ! ls_flag[ LS_LAST_COLUMN ] ){
       while( i < max_length+1 ){
 	++i;
 	putc(' ',fout);
@@ -301,275 +434,254 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
     return;
   }
 
-  if( (flag & PRINT_MASK) != INDEX_MODE ){
-    ncolumns += fprintf(fout,"%s %8ld %4d-%02d-%02d %02d:%02d "
-			, attrstr
-			, flist->size
-			, flist->d.year+1980
-			, flist->d.month
-			, flist->d.day
-			, flist->t.hour
-			, flist->t.minute
-			/* , flist->t.second*2 */
-			);
+  static const char *month[]={
+    "Jan","Feb","Mar","Apr","May","Jun",
+    "Jul","Aug","Sep","Oct","Nov","Dec",
+  };
+    
+  ncolumns += fprintf(fout,"%s %8ld %3s %2d "
+		      , attrstr
+		      , flist->size
+		      , month[ flist->write.d.month-1 ]
+		      , flist->write.d.day
+		      );
+  
+  if( flist->write.d.year+1980 != thisyear ){
+    ncolumns += fprintf(fout," %4d " ,flist->write.d.year+1980 );
+  }else{
+    ncolumns += fprintf( fout
+			,"%02d:%02d " 
+			, flist->write.t.hour ,flist->write.t.minute );
   }
   
-  if( flag & COLOR_MODE ){
+  if( ! ls_flag[ LS_NOCOLOR ] )
     fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
-  }
+  
   ncolumns += dbcs_fputs(flist->name,fout);
-  /* ncolumns += fprintf(fout,"%s",flist->name); */
-  if( flag & COLOR_MODE )
+
+  if( ! ls_flag[ LS_NOCOLOR ] )
     fputs(ls_end_code,fout);
   
   putc(tailchar,fout);
   ncolumns++;
-
-  if( (flag & PRINT_MASK)==DIR_MODE ){
-    more(flag,fout);
-    return;
-  }
-
-  struct _ea ea;
-  union{
-    void  *value;
-    const char *byte;
-    const unsigned short *word;
-  }ptr;
-
-  if( (flag & PRINT_MASK)==EADIR_MODE ){
-    /* EAの LONGNAME を表示する */
-    if( _ea_get( &ea , flist->name , 0 , ".LONGNAME" ) == 0 ){
-      if( ea.size > 0  &&  ea.value != NULL  ){
-      
-	ptr.value = ea.value;
-	int type = *ptr.word++;
-	if( type == 0xFFFD ){
-	  int size = *ptr.word++; /* 実際のサイズ */
-	  int n = 0;              /* ctrl-codeを ^N などと変形した後のサイズ*/
-	  char *s=(char*)alloca(size*2); /* 変形後の文字列が入る */
-	  
-	  for(int i=0 ; i<size ; i++ ){
-	    if( *ptr.byte == '\r' ){
-	      ptr.byte++;
-	    }else if( *ptr.byte == '\n' ){
-	      s[n++] = ' ';
-	      ptr.byte++;
-	    }else if( 0 <= *ptr.byte  && *ptr.byte < ' ' ){
-	      if( flag & COLOR_MODE )
-		s[n++] = '^';
-	      s[n++] = '@'+*ptr.byte++ ;
-	    }else{
-	      s[n++] = *ptr.byte++ ;
-	    }
-	  }/* for(int i...) */
-	  s[n++] = '\0';
-	  
-	  int nspaces = screen_width - ncolumns - n ;
-	  if( nspaces < 0 ){
-	    more(flag,fout);
-	    nspaces = screen_width - n;
-	  }
-	  
-	  while( nspaces-- > 0 )
-	    putc( ' ' , fout );
-	  
-	  if( flag & COLOR_MODE ){
-	    fputs( ls_left_code , fout );
-	    fputs( ls_longname , fout );
-	    fputs( ls_right_code , fout );
-	    dbcs_fputs( s , fout );
-	    fputs( ls_end_code , fout );
-	  }else{
-	    while( *s != '\0' )
-	      putc( *s++ , fout );
-	  }
+  
+  /* ---- EA のロングネームを表示する ---- */
+  char *longname;
+  if(    ls_flag[ LS_LONGNAME ] 
+     &&  flist->easize > 4
+     &&  (longname=get_ea_longname(flist->name))!=NULL ){
+    
+    if( strcmp( flist->name , longname ) != 0 ){
+      int longname_length = strlen(longname);
+      int nspaces = screen_width - ncolumns - longname_length;
+      if( ls_flag[ LS_LONGNAME] == 2 ){
+	if( nspaces < 0 ){
+	  more(fout);
+	  nspaces = screen_width - longname_length;
 	}
-	_ea_free( &ea );
+	while( nspaces-- > 0 )
+	  putc( ' ' , fout );
+      }
+      
+      putc(' ',fout);
+      putc('(',fout);
+      if( ls_flag[ LS_NOCOLOR] ){
+	fputs( longname , fout );
+      }else{
+	fputs( ls_left_code , fout );
+	fputs( ls_longname , fout );
+	fputs( ls_right_code , fout );
+	dbcs_fputs( longname , fout );
+	fputs( ls_end_code , fout );
+      }
+      putc(')',fout);
+      ncolumns += 3 + longname_length;
+    }
+    free( longname );
+  }
+
+  /* ----- EAのコメントを表示する ------ */
+  char **comments;
+  if(   flist->easize > 4
+     && ls_flag[LS_COMMENT]
+     && (comments=get_ea_comments(flist->name)) != NULL ){
+      
+    if( ls_flag[LS_COMMENT] == 1 ){
+      /* ---- インラインコメント ----- */
+      if( ! ls_flag[LS_NOCOLOR] )
+	fprintf(fout,".. %s%s%s%s%s"
+		,ls_left_code,ls_comment,ls_right_code
+		,comments[0],ls_end_code);
+      else
+	fprintf(fout,".. %s",comments[0]);
+
+      ncolumns += 3 + strlen(comments[0]);
+    }else{
+      /* ---- マルチコメント ---- */
+      for(char **pp=comments;*pp != NULL;pp++){
+	more(fout);
+	if( ! ls_flag[LS_NOCOLOR] )
+	  fprintf(fout,"\t%s%s%s%s%s"
+		  ,ls_left_code,ls_comment,ls_right_code
+		  ,*pp,ls_end_code);
+	else
+	  fprintf(fout,"\t%s",*pp);
       }
     }
-    more(flag,fout);
+    free_pointors( comments );
   }
-
-  /* EAのコメントを表示する */
-  if(   (flag & PRINT_MASK)!=DIR_MODE
-     && _ea_get( &ea , flist->name , 0 , ".COMMENTS" ) == 0 ){
-    if( ea.size > 0  &&  ea.value != NULL ){
-      ptr.value = ea.value;
-      if( *ptr.word++ == 0xFFDF ){
-	ptr.word++; /* code page は要らない */
-	int nentries = *ptr.word++;
-	while( nentries-- > 0 ){
-	  if( *ptr.word++ == 0xFFFD ){
-	    int size = *ptr.word++;
-	    if( (flag & PRINT_MASK)== INDEX_MODE &&  ncolumns < 8 )
-	      putc('\t',fout);
-	    putc('\t',fout);
-	    if( flag & COLOR_MODE ){
-	      fprintf(fout,"%s%s%s",ls_left_code,ls_comment,ls_right_code);
-	    }
-	    while( size-- > 0 ){
-	      putc( *ptr.byte++ , fout );
-	    }
-	    if( flag & COLOR_MODE )
-	      fputs(ls_end_code,fout);
-	    if( (flag & PRINT_MASK ) == INDEX_MODE )
-	      break;
-	    more(flag,fout);
-	  }else{
-	    ptr.byte += (*ptr.word + 2);
-	  }
-	  if( (flag & PRINT_MASK) == INDEX_MODE ) break;
-	}/* end while */
-      }
-    }
-    _ea_free( &ea );
-  }
-  if( (flag & PRINT_MASK) == INDEX_MODE )
-    more(flag,fout);
+  more(fout);
 }
 
-int is_file_print(struct filelist *f,int flag)
-{
-  if( flag & HIDDEN_MODE )
-    return 1;
-  const char *top=f->name;
-  for(const char *p=f->name ; *p != '\0' ; p++ ){
-    if( *p=='/' || *p=='\\' )
-      top=p+1;
-  }
-  if( *top == '.' || (f->attr & A_HIDDEN) )
-    return 0;
-  if( f->name[f->length-1] == '~' && flag & IGNORE_BACKUP )
-    return 0;
-  return 1;
-}
 
-int print_filelist(struct filelist *cur, int nlists,
-		   int max_length ,int flag, FILE *fout)
+/* 複数のファイル名を表示する。
+   ファイル名はリスト構造で与える */
+
+int print_filelist(Files &files , FILE *fout)
 {
+  FileListT *cur=files.get_top();
+
   if( cur == NULL )
     return 0;
 
+  /* --- 表示可能なファイルの数と、ファイル名の最大長を求める。--- */
+  int nlists=0;
+  int max_length=2;
+  for(FileListT *p=files.get_top() ; p != NULL ; p=p->next ){
+    if( is_file_print(p) ){
+      nlists++;
+      if( p->length > max_length )
+	  max_length = p->length;
+    }
+  }
+
   /* 「-l」が無い場合の ls */
-  if( (flag & PRINT_MASK)==LS_MODE ){
+  if( ! ls_flag[ LS_LONG] ){
+    
+    /* --- 一行あたりに表示するファイルの数 ---- */
     int files_per_line;
     if( screen_width-1 < max_length+2 || !isatty(fileno(fout)) )
       files_per_line = 1;
     else
       files_per_line = (screen_width-1)/(max_length+2);
+
     
-    int files_per_column = (nlists+files_per_line-1)/files_per_line; /* >= 1 */
+    /* --- 一列あたりに表示するファイルの数  ----
+     *     nlists ≧ files_per_line × files_per_column
+     */
+    int files_per_column = (nlists+files_per_line-1)/files_per_line;
+
     
-    struct filelist **ptr =
-      (struct filelist**)alloca(files_per_line*sizeof(struct filelist *));
-    for(int i=0 ; i<files_per_line; i++ ){
-      ptr[i] = NULL;
-    }
+    FileListT **row = (FileListT **)alloca(files_per_line*sizeof(FileListT *));
     
-    assert( ptr != NULL );
+    for(int i=0 ; i<files_per_line; i++ )
+      row[i] = NULL;
     
-    while( cur != NULL && !is_file_print(cur,flag) )
+    assert( row != NULL );
+    
+    while( cur != NULL && !is_file_print(cur) )
       cur=cur->next;
     
     for(int i=0; i<files_per_line-1 && cur != NULL ; i++ ){
-      ptr[i] = cur;
+      row[i] = cur;
       for(int j=0 ; cur != NULL && j<files_per_column ; j++){
-	cur = cur->next;      
-	while( cur !=NULL && !is_file_print(cur,flag) )
-	  cur=cur->next;
+	do{
+	  cur = cur->next;      
+	}while( cur != NULL && !is_file_print(cur) );
       }
     }
-    ptr[files_per_line-1] = cur;
+    row[files_per_line-1] = cur;
     
     for(int j=0; j<files_per_column ; j++ ){
-      for(int i=0; i<files_per_line  &&  ptr[i] != NULL ; i++ ){
+      for(int i=0; i<files_per_line  &&  row[i] != NULL ; i++ ){
 	if( ctrl_c )
 	  return nlists;
 	
-	dir1(ptr[i], max_length 
-	     , (i+1)==files_per_line || ptr[i+1] == NULL
-	     ? (flag | LAST_COLUMNS) : flag 
-	     , fout );
-	ptr[i] = ptr[i]->next;
+	int saveflag = ls_flag[ LS_LAST_COLUMN ];
+	if( (i+1)==files_per_line || row[i+1] == NULL )
+	  ls_flag[ LS_LAST_COLUMN ] = 1;
+	else
+	  ls_flag[ LS_LAST_COLUMN ] = 0;
 	
-	while( ptr[i] != NULL && !is_file_print(ptr[i],flag) )
-	  ptr[i] = ptr[i]->next;
+	dir1(row[i] , max_length , fout );
+	ls_flag[ LS_LAST_COLUMN ] = saveflag;
+
+	row[i] = row[i]->next;
+	
+	while( row[i] != NULL && !is_file_print(row[i]) )
+	  row[i] = row[i]->next;
       }
-      more(flag,fout);
+      more(fout);
       column=0;
     }
   }else{
     /* -l モード */
     while( cur != NULL ){
-      dir1(cur , max_length , flag , fout );
+      dir1(cur , max_length , fout );
       cur=cur->next;
       if( ctrl_c )
-	return nlists;
+	return 1;
     }
   }
   return 0;
 }
 
-int the_dir(const char *dirname,int flag , FILE *fout )
+/* 一ディレクトリー下のファイルを表示する。*/
+
+int the_dir(const char *dirname, FILE *fout )
 {
-  int nlists=0;
+  Files files , dirs;
   int max_length=0;
-  struct filelist *first=NULL;
-  struct filelist *dirlist=NULL;
   
   for(Dir dir(dirname) ; dir != NULL ; ++dir ){
-    struct filelist *tmp;
-    int alcsiz=sizeof(struct filelist)+dir.get_name_length();
-
-    tmp = (struct filelist *)alloca( alcsiz );
-    assert( tmp != NULL );
-
-    strcpy( tmp->name , dir.get_name() );
-    tmp->length = dir.get_name_length();
-    tmp->date   = dir.get_last_write_date_by_short();
-    tmp->time   = dir.get_last_write_time_by_short();
-    tmp->attr   = dir.get_attr();
-    tmp->size   = dir.get_size();
-
+    FileListT *tmp=new_filelist(dir);
+    assert(tmp != NULL );
+    
     if( tmp->length > max_length )
       max_length = tmp->length;
     
-    if( is_file_print(tmp,flag) ){
-      if( (flag & RECURSIVE_MODE)!=0  &&  (tmp->attr & A_DIR )!= 0 
+    if( is_file_print(tmp) ){
+      if(   ls_flag[ LS_RECURSIVE ]
+	 && (tmp->attr & A_DIR )!= 0 
 	 && tmp->name[0] != '.' ){
-	struct filelist *tmp2=(struct filelist*)alloca( alcsiz );
-	memcpy( tmp2 , tmp , alcsiz );
-	dirlist = fsort_and_insert(dirlist,tmp2,NULL,flag >> SORT_MODES );
-      }
 
-      first = fsort_and_insert(first,tmp,NULL,flag >> SORT_MODES );
-      nlists++;
+
+	dirs.insert( dup_filelist(tmp) , ls_flag[LS_SORT] );
+      }
+      files.insert( tmp , ls_flag[LS_SORT] );
     }
   }
 
   column=0;
-  if( nlists == 0 )
+  if( files.get_num() == 0 )
     goto next;
 
+#if 0 /* フラグ形式を変更にした際、ここの分岐の意味が分からなくなったので
+	 とりあえず、分岐を無効にした */
   if( flag & EADIR_MODE ){
     char cwd[FILENAME_MAX];
 
     _getcwd2(cwd,sizeof(cwd));
     _chdir2( dirname );
     _rfnlwr();
-    print_filelist(first,nlists,max_length,flag,fout);
+    print_filelist( files , fout);
     _chdir2( cwd );
     _rfnlwr();
 
   }else{
-    print_filelist(first,nlists,max_length,flag,fout);
+#endif
+    print_filelist( files , fout);
+#if 0
   }
+#endif
 
   column=0;
 
  next:
-  while( dirlist != NULL  &&  ctrl_c == 0 ){
+  for(  FileListT *dirlist=dirs.get_top()
+      ; dirlist != NULL  &&  ctrl_c==0 
+      ; dirlist = dirlist->next ){
+
     char fullpathbuffer[512];
     char *fullpath;
     if( dirname[0] == '.' && dirname[1] == '\0' )
@@ -577,21 +689,17 @@ int the_dir(const char *dirname,int flag , FILE *fout )
     else
       sprintf(fullpath=fullpathbuffer,"%s/%s",dirname,dirlist->name);
 
-    if( flag & COLOR_MODE ){
+    if( ! ls_flag[ LS_NOCOLOR ] ){
       fprintf( fout, "\n%s%s:\n",ls_end_code , fullpath );
     }else{
-      more(flag,fout);
+      more(fout);
       dbcs_fputs(fullpath,fout);
       putc(':',fout);
-      more(flag,fout);
-      /* fprintf( fout, "\n%s:\n", fullpath ); */
+      more(fout);
     }
-
-    the_dir( fullpath , flag , fout );
-    
-    dirlist = dirlist->next;
+    the_dir( fullpath , fout );
   }
-  return nlists;
+  return files.get_num();
 }
 
 static int exit_with_ctrl_c()
@@ -618,31 +726,61 @@ int call_original_ls( char **argv,FILE *fout=stdout)
   return rc;
 }
 
+
+static void on_inline_comment()
+{  ls_flag[ LS_COMMENT ] = 1 ; ls_flag[ LS_LONG ] = 1; }
+static void on_multi_comment()
+{  ls_flag[ LS_COMMENT ] = 2 ; ls_flag[ LS_LONG ] = 1; }
+static void on_longname()
+{  ls_flag[ LS_LONGNAME ] = 1 ; ls_flag[ LS_LONG ] = 1; }
+
+static void on_all()
+{  ls_flag[ LS_ALL ] = 1; }
+static void on_ignore_backup()
+{  ls_flag[ LS_IGNORE_BACKUP ] = 1; }
+static void on_ignore_underbar()
+{  ls_flag[ LS_IGNORE_UNDERBAR ] = 1; }
+static void on_color()
+{  ls_flag[ LS_NOCOLOR ] = 0; }
+static void on_nocolor()
+{  ls_flag[ LS_NOCOLOR ] = 1; }
+static void on_more()
+{  ls_flag[ LS_MORE ] = 1; }
+static void on_virge()
+{  ls_flag[ LS_ViRGE ] = 1; }
+
+static void on_numeric_sort()
+{
+  ls_flag[ LS_SORT ] 
+    = (ls_flag[ LS_SORT] & SORT_REVERSE) | SORT_BY_NUMERIC ;
+}
+
+static void on_sort_reverse()
+{  ls_flag[ LS_SORT ] |= SORT_REVERSE;  }
+
+ 
 int eadir( int argc, char **argv,FILE *fout=stdout)
 {
-  int rc=0;
-  int flag=0;
-  nprintlines=0;
-
-  if( argv[0][0] == 'l' ){
-    flag = LS_MODE;
-  }else if( argv[0][0] == 'e' ){
-    flag = EADIR_MODE;
-  }else{
-    flag = DIR_MODE;
-  }
-  if( isatty(fileno(fout) ) )
-    flag |= COLOR_MODE;
-
+  /* ------ ファイルスコープのグローバル変数を初期化する ---- */
   column=0;
+  /* --- フラグを全て初期化する --- */
+  memset( ls_flag , 0 , sizeof(ls_flag) );
 
-  int filefault=0;
-  int filecount=0;
-  int dircount=0;
-  int max_length=0;
+  /* --- 西暦の年数を前もって取得 --- */
+  time_t now;
+  struct tm *date;
+  time(&now);
+  thisyear = localtime(&now)->tm_year + 1900;
+  /* --------------------------------------------------------- */
+
+  int rc=0;
+  nprintlines=0;
   
-  struct filelist *files=NULL;
-  struct filelist *dirs =NULL;
+  if( ! isatty(fileno(fout) ) )
+    ls_flag[ LS_NOCOLOR ] = 1;
+  
+  int filefault=0;
+  Files files,dirs;
 
   set_ls_color_table( getenv("LS_COLORS") );
 
@@ -651,66 +789,87 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     
     /* オプション文字列 */
     if( argv[i][0] == '-' ){
-      for( const char *p=argv[i]+1 ; *p != '\0' ; p++ ){
+      /* long option */
+      if( argv[i][1] == '-' ){
+	struct longoption_tg {
+	  const char *name;
+	  void (*func)();
+	} option_table[]={
+	  { "inline-comment"	, on_inline_comment },
+	  { "multi-comment"	, on_multi_comment },
+	  { "longname"          , on_longname },
+	  { "all"		, on_all },
+	  { "ignore-backups"	, on_ignore_backup },
+	  { "ignore-underbar"	, on_ignore_underbar },
+	  { "color"		, on_color },
+	  { "no-color"		, on_nocolor },
+	  { "more"		, on_more },
+	  { "virge"		, on_virge },
+	  { "numeric-sort"	, on_numeric_sort },
+	  { "reverse"		, on_sort_reverse },
+	  { NULL , (void (*)())0 },
+	};
+
+	for(struct longoption_tg *op=option_table ; ; op++){
+	  if( op->name == NULL ){
+	    fprintf(stderr,"builtin-ls: %s: no such option.\n", argv[i]);
+	    return 0;
+	  }
+	  if( *op->name==argv[i][2]  &&  strcmp(op->name+1,&argv[i][3])==0 ){
+	    (*op->func)();
+	    break;
+	  }
+	}
+
+      }else for( const char *p=argv[i]+1 ; *p != '\0' ; p++ ){
 	switch( *p ){
 	  /* ------- 互換オプション ------ */
 	case 'a':
-	  flag |= HIDDEN_MODE;
-	  break;
+	  ls_flag[ LS_ALL ] = 1; break;
 	case 'l':
-	  flag = ((flag & ~PRINT_MASK) | DIR_MODE );
-	  break;
+	  ls_flag[ LS_LONG ] = 1 ; break;
 	case 'R':
-	  flag |= RECURSIVE_MODE;
-	  break;
+	  ls_flag[ LS_RECURSIVE ] = 1; break;
 
 	  /* ------- ソートオプション ------- */
-	     
+	case '2':
+	  ls_flag[ LS_SORT ] = SORT_BY_NUMERIC ; break;
 	case 'c':
-	  flag |= (SORT_BY_CHANGE_TIME << SORT_MODES);
-	  break;
+	  ls_flag[ LS_SORT ] = SORT_BY_CHANGE_TIME; break;
 	case 'S':
-	  flag |= (SORT_BY_SIZE << SORT_MODES);
-	  break;
+	  ls_flag[ LS_SORT ] = SORT_BY_SIZE; break;
 	case 'u':
-	  flag |= (SORT_BY_LAST_ACCESS_TIME << SORT_MODES);
-	  break;
+	  ls_flag[ LS_SORT ] = SORT_BY_LAST_ACCESS_TIME; break;
 	case 'X':
-	  flag |= (SORT_BY_SUFFIX << SORT_MODES);
-	  break;
+	  ls_flag[ LS_SORT ] = SORT_BY_SUFFIX ; break;
 	case 'U':
-	  flag |= (UNSORT << SORT_MODES);
-	  break;
+	  ls_flag[ LS_SORT ] = UNSORT; break;
 	case 'r':
-	  flag |= (SORT_REVERSE << SORT_MODES);
-	  break;
+	  ls_flag[ LS_SORT ] = SORT_REVERSE ; break;
 	case 't':
-	  flag |= (SORT_BY_MODIFICATION_TIME << SORT_MODES);
-	  break;
-
+	  ls_flag[ LS_SORT ] = SORT_BY_MODIFICATION_TIME ; break;
+	case '_':
+	  ls_flag[ LS_IGNORE_UNDERBAR ] = 1; break;
 	case 'B':
-	  flag |= IGNORE_BACKUP;
-	  break;
+	  ls_flag[ LS_IGNORE_BACKUP ] = 1; break;
 	case 'E':
-	  /* case 'e': */
-	  flag = ((flag & ~PRINT_MASK) | EADIR_MODE );
-	  break;
-	case '0':
-	  flag = ((flag & ~PRINT_MASK) | INDEX_MODE );
+	  ls_flag[ LS_LONG ] = 1;
+	  ls_flag[ LS_LONGNAME ] = 1;
+	  ls_flag[ LS_COMMENT ] = 1;
 	  break;
 	case 'P':
-	  /* case 'p': */
-	  flag |= MORE_MODE;
-	  break;
+	  ls_flag[ LS_MORE ] = 1; break;
 	case 'O':
-	  flag &= ~COLOR_MODE;
-	  break;
+	  ls_flag[ LS_NOCOLOR ] = 1;  break;
 	case 'o':
-	  flag |= COLOR_MODE;
-	  break;
+	  ls_flag[ LS_NOCOLOR ] = 0; break;
 	case '3':
-	  flag |= HALF_MODE;
+	  ls_flag[ LS_ViRGE ] = 1 ; break ;
+	case 'H':
+	  ls_flag[ LS_LONG ] = 1;
+	  ls_flag[ LS_COMMENT ] = 1;
 	  break;
+
 	case 'F':
 	  break;
 
@@ -725,34 +884,12 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
       char **list=fnexplode2(argv[i]);
       if( list != NULL ){
 	for(char **ptr=list; *ptr != NULL ; ptr++ ){
-	  
-	  struct stat stbuf;
-	  int len=strlen(*ptr);
-	  
-	  if( stat( *ptr , &stbuf ) == 0 ){
-	    struct filelist *node=
-	      (struct filelist*)alloca(sizeof(struct filelist)+len);
-	    strcpy( node->name , *ptr );
-	    node->attr   = stbuf.st_attr;
-	    node->length = len;
-	    node->size   = stbuf.st_size;
-	    
-	    struct tm *tmbuf=localtime(&stbuf.st_mtime);
-	    node->t.second = tmbuf->tm_sec/2;   /* 0..59 --> 0..29  */
-	    node->t.minute = tmbuf->tm_min;     /* 0..59  */
-	    node->t.hour   = tmbuf->tm_hour;    /* 0..23  */
-	    node->d.day    = tmbuf->tm_mday;    /* 1..31  */
-	    node->d.month  = tmbuf->tm_mon+1;   /* 0..11 --> 1..12   */
-	    node->d.year   = tmbuf->tm_year-80; /* 0:1900 --> 0:1980 */
-	    
-	    if( stbuf.st_attr & A_DIR ){
-	      dirs  = fsort_and_insert(dirs ,node,&dircount
-				       , flag >> SORT_MODES );
+	  FileListT *node=new_filelist( *ptr );
+	  if( node != NULL ){
+	    if( node->attr & A_DIR ){
+	      dirs.insert( node , ls_flag[ LS_SORT ] );
 	    }else{
-	      files = fsort_and_insert(files,node,&filecount
-				       , flag >> SORT_MODES );
-	      if( len > max_length )
-		max_length = len;
+	      files.insert( node , ls_flag[ LS_SORT ] );
 	    }
 	  }else{
 	    fprintf(stderr,"%s: no such file or directory.\n",argv[i]);
@@ -762,41 +899,14 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	}
 	fnexplode2_free(list);
       }else{ // _fnexplode で展開できない場合
-	struct stat stbuf;
-	int len=strlen(argv[i]);
-	char *fn=argv[i];
-	
-	/*「ls A:」にも対応させるため、ドットを末尾に追加する。*/
-	if( argv[i][1]==':' && argv[i][2]=='\0' ){
-	  static char drv[]="@:.";
-	  drv[0]=argv[i][0];
-	  fn = drv;
-	}
-	
-	if( stat( fn , &stbuf ) == 0 ){
-	  struct filelist *node=
-	    (struct filelist*)alloca(sizeof(struct filelist)+len);
-	  strcpy( node->name , argv[i] );
-	  node->attr   = stbuf.st_attr;
-	  node->length = len;
-	  node->size   = stbuf.st_size;
-	      
-	  struct tm *tmbuf=localtime(&stbuf.st_mtime);
-	  node->t.second = tmbuf->tm_sec/2;   /* 0..59  --> 0..29 */
-	  node->t.minute = tmbuf->tm_min;     /* 0..59  */
-	  node->t.hour   = tmbuf->tm_hour;    /* 0..23  */
-	  node->d.day    = tmbuf->tm_mday;    /* 1..31  */
-	  node->d.month  = tmbuf->tm_mon+1;   /* 0..11  --> 1..12  */
-	  node->d.year   = tmbuf->tm_year-80; /* 0:1900 --> 0:1980 */
-	  
-	  if( stbuf.st_attr & A_DIR ){
-	    dirs  = fsort_and_insert(dirs ,node,&dircount
-				     , flag >> SORT_MODES );
+
+	FileListT *node = new_filelist(argv[i]);
+
+	if( node != NULL ){
+	  if( node->attr & A_DIR ){
+	    dirs.insert( node , ls_flag[ LS_SORT] );
 	  }else{
-	    files = fsort_and_insert(files,node,&filecount
-				     , flag >> SORT_MODES );
-	    if( len > max_length )
-	      max_length = len;
+	    files.insert( node , ls_flag[ LS_SORT] );
 	  }
 	}else{
 	  fprintf(stderr,"%s: no such file or directory\n",argv[i]);
@@ -810,42 +920,42 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
   if( ctrl_c )
     return exit_with_ctrl_c();
   
-  if( filecount > 0 || dircount > 0  ){
+  if( files.get_num() > 0 || dirs.get_num() > 0  ){
     /* ファイル名が指定された */
-    if( filecount > 0 ){
-      assert( files != NULL );
-
+    if( files.get_num() > 0 ){
       /* dotfile や Hidden属性があっても、直接コマンドラインで指定しているの
        * だから、表示させる 
        */
-      print_filelist( files , filecount , max_length 
-		     , flag | HIDDEN_MODE , fout );
+      
+      int flagsave=ls_flag[ LS_ALL ];
+      ls_flag[ LS_ALL ] = 1;
+      print_filelist( files , fout );
+      ls_flag[ LS_ALL ] = flagsave;
 
-      if( dircount > 0 )
-	more(flag,fout);
+      if( dirs.get_num() > 0 )
+	more(fout);
     }
-    struct filelist *p=dirs;
+
+    FileListT *p=dirs.get_top();
     if( p != NULL ){
       for(;;){
-	if( dircount+filecount > 1 ){
-	  if( flag & COLOR_MODE ){
+	if( dirs.get_num()+files.get_num() > 1 ){
+	  if( ! ls_flag[ LS_NOCOLOR ] ){
 	    fputs( ls_end_code , fout);
 	    dbcs_fputs(p->name,fout);
 	    fputs( " : \n",fout);
 	  }else{
 	    dbcs_fputs(p->name,fout);
 	    fputs(" : ",fout);
-	    more(flag,fout);
+	    more(fout);
 	  }
 	}
-	
-	the_dir( p->name , flag , fout );
+	the_dir( p->name , fout );
 	if( ctrl_c )
 	  return exit_with_ctrl_c();
 
 	if( (p=p->next) == NULL ) break;
-	
-	more(flag,fout);
+	more(fout);
       }
     }
 
@@ -855,14 +965,13 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
   }else if( filefault <= 0 ){
     /* ファイル名が指定されていない ---> カレントディレクトリ */
 
-    the_dir( "." , flag , fout );
+    the_dir( "." ,  fout );
     if( ctrl_c )
       return exit_with_ctrl_c();
-
   }
-  if( (flag & COLOR_MODE) && isatty(fileno(fout)) )
+  if( ! ls_flag[ LS_NOCOLOR ]  &&  isatty(fileno(fout)) )
     fputs( ls_end_code ,fout);
-
+  
   fflush(fout);
   return rc;
 }

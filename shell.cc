@@ -12,6 +12,11 @@
 
 int ShellEdlin::beep_ok=1;
 
+/* 1.39 で追加した <WP_CONFIG> などを、補完対象に加えるオプション。
+ * しかし、使ってみると、実際、使いにくくなるだけなので、デフォルトオフ。
+ */
+int option_complete_etc=0;
+
 int ShellEdlin::complete_hook(Complete &com)
 {
   int n=0;
@@ -27,6 +32,33 @@ int ShellEdlin::complete_hook(Complete &com)
 
     for(HashIndex<Alias> hi(alias_hash) ; *hi != NULL ; hi++ ){
       if( com.add_buildin_command(hi->name) == 0 )
+	n++;
+    }
+  }else if( option_complete_etc ){
+    const char *workplace[]={
+      "<WP_CONFIG>",	/* システム設定 */
+      "<WP_DESKTOP>",	/* デスクトップ */
+      "<WP_DRIVE>",	/* ドライブ設定 */
+      "<WP_INFO>",	/* 情報 */
+      "<WP_NOWHERE>",	/* その他 */
+      "<WP_START>",	/* 始動 */
+      "<WP_SYSTEM>",	/* システム */
+      "<WP_TEMPS>",	/* テンプレート */
+      NULL,
+    };
+    for(const char **p=workplace ; *p != NULL ; p++ ){
+      if( com.add_buildin_command(*p) == 0 )
+	n++;
+    }
+    struct Option{
+      const char *name;
+      int *pointor;
+      int true_value;
+      int false_value;
+    } extern optlist[];
+    
+    for(const Option *p=optlist; p->name != NULL ; p++ ){
+      if( com.add_buildin_command(p->name) == 0 )
 	n++;
     }
   }

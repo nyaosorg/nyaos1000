@@ -163,3 +163,72 @@ char **fnexplode2(const char *path)
   }
   return result;
 }
+
+void numeric_sort(char **array)
+{
+  if( *array == NULL )
+    return;
+
+  /* 最も添字の小さいものから確定させてゆく、選択ソート法 */
+  while( *(array+1) != NULL ){
+    if( isdigit(**array & 255) ){
+      /* 数値ソートをする場合がある時 */
+      for( char **cur=array+1 ; *cur != NULL ; ++cur ){
+	if(  isdigit(**cur & 255)
+	   ? strnumcmp(*array,*cur) >= 0
+	   : (**array >= **cur && strcmp(*array,*cur) >= 0 ) ){
+	  char *tmp = *array;
+	  *array = *cur;
+	  *cur   = tmp;
+	}
+      }
+    }else{
+      /* 数値ソートはありえない場合 */
+      for( char **cur=array+1 ; *cur != NULL ; ++cur ){
+	if( **array >= **cur  &&  strcmp(*array,*cur) >= 0 ){
+	  char *tmp = *array;
+	  *array = *cur;
+	  *cur   = tmp;
+	}
+      }
+    }
+    ++array;
+  }
+}
+
+int strnumcmp(const char *s1,const char *s2)
+{
+  const unsigned char *p1=(const unsigned char *)s1;
+  const unsigned char *p2=(const unsigned char *)s2;
+
+  for(;;){
+    if( isdigit(*p1) && isdigit(*p2) ){
+      int n1=0,len1=0;
+      do{
+	n1 = n1*10+(*p1-'0');
+	len1++;
+      }while( isdigit(*++p1) );
+
+      int n2=0,len2=0;
+      do{
+	n2 = n2*10+(*p2-'0');
+	len2++;
+      }while( isdigit(*++p2) );
+
+      if( n1 != n2 ){
+	return n1-n2;
+      }else if( len1 != len2 ){
+	/* 文字数が長い方が先頭の 0 の数が多いと考えられるので、
+	 * 逆順扱いする。*/
+	return len1-len2;
+      }else if( *p1 == '\0' || *p2 == '\0' )
+	return 0;
+    }else{
+      if( *p1 != *p2 )
+	return *p1 - *p2;
+      if( *p1 == '\0' )
+	return 0;
+    }
+    ++p1;++p2;
+  }
+}

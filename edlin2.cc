@@ -16,6 +16,38 @@
 #define TOP_CLEAN_STR "\x1b[s\x1b[H\x1b[K\x1b[u"
 #define KEY(x) (0x100 | K_##x )
 
+static void euc2sjis(const char *sp , char *dp )
+{
+  while( *sp != '\0' ){
+    if( (*sp & 255) == 0x8E ){ /* 半角カナ */
+      ++sp; /* Prefix文字を読みとばす */
+      *dp++ = *sp++;
+    }else if( *sp & 0x80 ){ /* 漢字 */
+      int c1=*sp++ & 0x7F;
+      int c2=*sp++ & 0x7F;
+      
+      if( c1 & 1 ){
+	c1 = (c1 >> 1 ) + 0x71;
+	c2 += 0x1f;
+	if( c2 >= 0x7f )
+	  c2++;
+      }else{
+	c1 = (c1 >> 1 ) + 0x70;
+	c2 += 0x7e;
+      }
+      if( c1 > 0x9F )
+	c1 += 0x40;
+      
+      *dp++ = c1;
+      *dp++ = c2;
+    }else{
+      *dp++ = *sp++;
+    }
+  }
+  *dp = '\0';
+}
+
+#if 0
 static void euc2jms(int c1,int c2,SmartPtr &dp)
 {
   if( (c1 & 255) == 0x8E ){ /* 半角かな処理 */
@@ -40,7 +72,7 @@ static void euc2jms(int c1,int c2,SmartPtr &dp)
   *dp++ = c1;
   *dp++ = c2;
 }
-
+#endif
 
 /* -------- CANNA Dynamic Load ------- */
 
@@ -50,6 +82,16 @@ static int (*DLL_jrKanjiControl)(int,int,char*) = 0;
 static HMODULE module_handle;
 static void release_canna()
 {
+  char **warning;
+  (*DLL_jrKanjiControl)(0,KC_FINALIZE,(char*)&warning);
+  if( warning ){
+    while( *warning != NULL ){
+      char buffer[256];
+      euc2sjis( *warning++ , buffer );
+      fputs( buffer , stderr);
+      putc( '\n' , stderr );
+    }
+  }
   DosFreeModule(module_handle);
 }
 
@@ -80,6 +122,10 @@ int canna_init()
   if( warning != NULL ){
     for( ; *warning != NULL ; warning ++ ){
       char buffer[256];
+      euc2sjis(*warning , buffer );
+      fputs(buffer,stderr);
+      putc('\n',stderr);
+#if 0
       SmartPtr dp(buffer,sizeof(buffer));
       for(const char *sp=*warning ; *sp != '\0' ; sp++ ){
 	if( *sp & 0x80 ){
@@ -92,10 +138,11 @@ int canna_init()
       *dp++ = '\n';
       *dp   = '\0';
       fputs(buffer,stderr);
+#endif
     }
     return 1;
   }
-  (*DLL_jrKanjiControl)( 0 , KC_SETMODEINFOSTYLE , (char*)1 );
+  /* (*DLL_jrKanjiControl)( 0 , KC_SETMODEINFOSTYLE , (char*)1 ); */
 
   return 0;
 }
@@ -180,6 +227,73 @@ void Edlin2::canna_to_alnum()
 
 int Edlin2::option_canna=1;
 
+/* message が NULL なら *mark を、さもなければ message の内容を dp にコピー */
+static void copy_message( const char *message , int mark , SmartPtr &dp )
+{
+  if( message != NULL ){
+    *dp++ = '\033';
+    *dp++ = '[';
+    while( *message != '\0' )
+      *dp++ = *message++;
+    *dp++ = 'm';
+  }else{
+    *dp++ = mark ;
+  }
+}
+
+void Edlin2::clear_bottom( int n )
+{
+  char *buffer=(char*)alloca(n+1);
+  memset(buffer,' ',n);
+  buffer[n] = '\0';
+  bottom_message("%s",buffer);
+}
+
+int Edlin2::print_bottom( jrKanjiStatus &status , const char *mode_string )
+{
+  /* 何らかの表示を行ったら 文字数、さもなければ 0 を表示する。 */
+
+  if(  (status.info & KanjiGLineInfo)==0
+     || status.gline.length <= 0 || status.gline.line == NULL )
+    return 0;
+
+  int column=0;
+  int standout=0;
+
+  char *buffer=(char*)alloca(status.gline.length+10);
+  SmartPtr dp(buffer,status.gline.length+10);
+
+  for( const unsigned char *sp=status.gline.line; *sp != '\0' ; ++sp ){
+      /* 反転部分の処理 */
+    if( column == status.gline.revPos ){
+      copy_message( cursor_on , '<' , dp );
+      standout = 1;
+    }else if( column == status.gline.revPos + status.gline.revLen ){
+      copy_message( cursor_off , '>' , dp );
+      standout = 0;
+    }
+#if 0
+    if( *sp & 0x80 ){
+      euc2jms( sp[0] , sp[1] , dp );
+      sp++;
+      column += 2;
+    }else{
+#endif
+      *dp++ = *sp;
+      column++;
+#if 0
+    }
+#endif
+  }
+  if( standout )
+    copy_message( cursor_off , '>' , dp );
+  *dp = '\0';
+  euc2sjis(buffer,buffer);
+
+  bottom_message("%s%s",mode_string , buffer );
+  return column;
+}
+
 int Edlin2::getkey()
 {
   if( !canna_loaded )
@@ -205,9 +319,15 @@ int Edlin2::getkey()
   }
   jrKanjiStatus status;
 
+  static const unsigned char *mode_string=NULL;
+  static char mode_buf[20];
+  int use_bottom=0;
+
   char localbuf[256]="\0";
+
+  if( mode_string != NULL  &&  mode_string[0] != '\0' )
+    bottom_message( "%s",mode_string );
   
-  int use_top_line = 0;
   /* 「かんな」の変換ループ */
   for(;;){
     int orgkey,key;
@@ -247,8 +367,10 @@ int Edlin2::getkey()
     /* ローカルバッファが空で、特殊キーが入力されたら、
      * そのキーコードをそのまま返す。*/
     if( localbuf[0] == '\0' && orgkey > 0xFF ){
-      if( use_top_line )
-	fputs(TOP_CLEAN_STR,stdout);
+      if( mode_string != NULL )
+	bottom_message( "%s",mode_string );
+      else
+	clean_bottom();
       return orgkey;
     }
 
@@ -282,6 +404,24 @@ int Edlin2::getkey()
     /* 「かんな」にお任せ */
     char eucbuf[256];
     int kakutei=(*DLL_jrKanjiString)(0 ,key ,eucbuf ,sizeof(eucbuf),&status );
+    
+    /* モードが変更されているならば、それを表示する */
+    if(  status.info & KanjiModeInfo  ){
+#if 0
+      SmartPtr dp(mode_buf,sizeof(mode_buf));
+      for(const unsigned char *sp=status.mode ; *sp != '\0' ; sp++ ){
+	if( *sp & 0x80 ){
+	  euc2jms(sp[0],sp[1],dp);
+	  ++sp;
+	}else{
+	  *dp++ = *sp;
+	}
+      }
+      *dp = '\0';
+#endif
+      euc2sjis( (const char *)status.mode ,mode_buf);
+      bottom_message( "%s", mode_string = (unsigned char*)mode_buf );
+    }
 
     /* 確定文字列の処理 */
     if( kakutei > 0 ){
@@ -318,7 +458,16 @@ int Edlin2::getkey()
 	    break;
 	    
 	  default:
+	    {
+	      char tinybuf[3]={ eucbuf[i] , eucbuf[i+1] , 0 };
+	      euc2sjis( tinybuf , tinybuf );
+	      *dp++ = tinybuf[0];
+	      if( tinybuf[1] != '\0' )
+		*dp++ = tinybuf[1];
+	    }
+#if 0
 	    euc2jms(eucbuf[i],eucbuf[i+1],dp);
+#endif
 	    i++;
 	    break;
 	  }
@@ -341,9 +490,11 @@ int Edlin2::getkey()
 	return kakbuf[kakpos++] & 0xFF;
       }
     }
-
-    if( status.length <= 0 )
+    
+    if( status.length <= 0 ){
+      cleanmsg();
       continue;
+    }
 
     /* local echo */
 
@@ -351,97 +502,39 @@ int Edlin2::getkey()
     int quote=0;
     for(int i=0; i < status.length; i++ ){
       if( i== status.revPos ){
-	if( cursor_on != NULL ){
-	  *dp++ = '\x1b';
-	  *dp++ = '[';
-	  for(const char *sp=cursor_on ; *sp != '\0' ; sp++ )
-	    *dp++ = *sp;
-	  *dp++ = 'm';
-	}else{
-	  *dp++ = '<';
-	}
+	copy_message( cursor_on , '<' , dp );
 	quote = 1;
       }else if( i == status.revPos + status.revLen ){
-	if( cursor_off != NULL ){
-	  *dp++ = '\x1b';
-	  *dp++ = '[';
-	  for( const char *sp=cursor_off ; *sp != '\0' ; sp++ )
-	    *dp++ = *sp;
-	  *dp++ = 'm';
-	}else{
-	  *dp++ = '>';
-	}
+	copy_message( cursor_off , '>' , dp );
 	quote = 0;
       }
-
+#if 0
       if( status.echoStr[i] & 0x80 ){
 	euc2jms( status.echoStr[i] , status.echoStr[i+1] , dp );
 	i++;
       }else{
+#endif
 	*dp++ = status.echoStr[i];
+#if 0
       }
+#endif
     }
-    if( quote ){
-      if( cursor_on != NULL ){
-	*dp++ = '\x1b';
-	*dp++ = '[';
-	for(const char *sp=cursor_off ; *sp != '\0' ; sp++ )
-	  *dp++ = *sp;
-	*dp++ = 'm';
-      }else{
-	*dp++ = '>';
-      }
-    }
-    *dp = '\0';
-    message( "|%s|",localbuf);
+    if( quote )
+      copy_message( cursor_off , '>' , dp );
 
+    *dp = '\0';
+    euc2sjis( localbuf , localbuf );
+    message( "|%s|",localbuf);
+    
     /* 画面最上段に、変換候補などを表示する */
-    if(   (status.info & KanjiGLineInfo) != 0
-       &&  status.gline.length > 0  &&  status.gline.line != NULL ){
-      fputs("\x1b[s\x1b[H",stdout);
-      int column=0;
-      int standout=0;
-      for(const unsigned char *p=status.gline.line ; *p != '\0' ; p++ ){
-	/* 反転部分の処理 */
-	if( column == status.gline.revPos ){
-	  if( cursor_on != NULL ){
-	    printf("\x1B[%sm",cursor_on );
-	  }else{
-	    putchar('<');
-	  }
-	  standout = 1;
-	}else if( column == status.gline.revPos + status.gline.revLen ){
-	  if( cursor_off != NULL ){
-	    printf("\x1B[%sm",cursor_off );
-	  }else{
-	    putchar('>');
-	  }
-	  standout = 0;
-	}
-	if( *p & 0x80 ){
-	  char buf[10];
-	  SmartPtr tmp(buf,10);
-	  euc2jms( p[0] , p[1] , tmp );
-	  putchar( buf[0] );
-	  putchar( buf[1] );
-	  p++;
-	  column += 2;
-	}else{
-	  putchar( *p );
-	  column++;
-	}
-      }
-      if( standout ){
-	if( cursor_off != NULL )
-	  printf("\x1B[%sm",cursor_off );
-	else
-	  putchar('>');
-      }
-      fputs("\x1b[K\x1b[u",stdout);
-      use_top_line = 1;
+    if( print_bottom( status , (char*)mode_string ) <= 0  &&  use_bottom ){
+      if( mode_string != NULL )
+	bottom_message("%s" , mode_string);
+      else
+	clean_bottom();
+      use_bottom=0;
     }else{
-      fputs(TOP_CLEAN_STR,stdout);
-      use_top_line = 0;
+      use_bottom=1;
     }
-  }
+  }/* 「かんな」の変換ループ */
 }

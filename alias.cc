@@ -6,8 +6,103 @@
 #include "hash.h"
 #include "nyaos.h"
 #include "parse.h"
+#include "finds.h"
 
 Hash <Alias> alias_hash(1024);
+
+static void translate_copy( const Substr &arg , SmartPtr &dp )
+{
+  if( arg[0] == '-' )
+    *dp++ = '/';
+  else
+    *dp++ = arg[0];
+
+  int quote=(arg[0] == '"' ? 1 : 0);
+  for(int i=1;i<arg.len;i++){
+    if( arg[i] == '"' )
+      quote ^= 1;
+
+    if( quote && arg[i] == '/' )
+      *dp++ = '\\';
+    else
+      *dp++ = arg[i];
+  }
+
+  if( arg[arg.len-1] == '/' || arg[arg.len-1] == '\\' )
+    *dp++ = '.';
+  
+  *dp = '\0';
+}
+static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp 
+				 ,int translate_flag )
+{
+  int quote=0;
+  int wildcard=0;
+  
+  for(int i=0;i<arg.len;i++){
+    if( arg[i] == '"' )
+      quote ^= 1;
+    
+    if( quote==0  && (arg[i] == '*' || arg[i] == '?') ){
+      wildcard = 1;
+      break;
+    }
+  }
+  if( wildcard == 0 ){
+    /* ワイルドカード展開無しの場合 */
+    if( translate_flag ){
+      translate_copy( arg , dp );
+    }else{
+      for(int i=0;i<arg.len ; i++)
+	*dp++ = arg[i];
+      *dp = '\0';
+    }
+    return;
+  }
+  char *buffer=(char*)alloca(arg.len+1);
+  {
+    char *q=buffer;
+    for(int i=0;i<arg.len;i++){
+      if( arg[i] != '"' )
+	*q++ = arg[i];
+    }
+    *q = '\0';
+  }
+  char **filelist=fnexplode2(buffer);
+  if( filelist == NULL ){
+    if( translate_flag ){
+      translate_copy( arg , dp );
+    }else{
+      for(int i=0 ; i<arg.len ; i++)
+	*dp++ = arg[i];
+      *dp = '\0'; 
+    }
+    return;
+  }
+  numeric_sort(filelist);
+  for(char **ptr=filelist ; *ptr != NULL ; ++ptr ){
+    int need_quote=0;
+    for(const char *sp=*ptr ; *sp != '\0' ; ++sp ){
+      if( isspace(*sp & 255) ){
+	need_quote = 1;
+	*dp++ = '"';
+	break;
+      }
+    }
+    for(const char *sp=*ptr ; *sp != '\0' ; ++sp ){
+      if( translate_flag  &&  *sp == '/' )
+	*dp++ = '\\';
+      else
+	*dp++ = *sp;
+    }
+    if( need_quote )
+      *dp++ = '"';
+    *dp++ = ' ';
+  }
+  *dp = '\0';
+  fnexplode2_free(filelist);
+  return;
+}
 
 void replace_alias(const char *sp , char *destinate , int max )
 {
@@ -40,7 +135,13 @@ void replace_alias(const char *sp , char *destinate , int max )
       
       while( *spa != '\0' ){
 	if( *spa == '%' ){
-	  switch( *++spa ){
+	  int wildcard_flag = 0;
+	  if( *++spa == '+' ){
+	    wildcard_flag = 1;
+	    ++spa;
+	  }
+
+	  switch( *spa ){
 	  default:
 	    if( is_digit(*spa) ){
 	      percent_used = 1;
@@ -49,19 +150,30 @@ void replace_alias(const char *sp , char *destinate , int max )
 		n *= 10;
 		n += (*spa-'0');
 	      }while( is_digit(*++spa) );
-	      if( n < params.get_argc() )
-		dp = params.copy(n,dp);
+
+	      if( n < params.get_argc() ){
+		if( wildcard_flag )
+		  wildcard_expand_copy( params[n] , dp , *spa=='@' ? 1 : 0 );
+		else
+		  dp = params.copy(n,dp);
+	      }
 	      
 	      if( *spa == '*' ){
 		while( ++n < params.get_argc() ){
 		  *dp++ = ' ';
-		  dp = params.copy(n,dp);
+		  if( wildcard_flag )
+		    wildcard_expand_copy( params[n] , dp , 0 );
+		  else
+		    dp = params.copy(n,dp);
 		}
 		++spa;
 	      }else if( *spa == '@' ){
 		while( ++n < params.get_argc() ){
 		  *dp++ = ' ';
-		  dp = params.copy(n,dp,Parse::QUOTE_COPY);
+		  if( wildcard_flag )
+		    wildcard_expand_copy( params[n] , dp , 1 );
+		  else
+		    dp = params.copy(n,dp,Parse::QUOTE_COPY);
 		}
 		++spa;
 	      }
@@ -71,20 +183,30 @@ void replace_alias(const char *sp , char *destinate , int max )
 	  case '*':
 	    percent_used = 1;
 	    spa++;
-	    dp = params.copyall(1,dp);
+	    if( wildcard_flag ){
+	      for(int i=1;i<params.get_argc();i++)
+		wildcard_expand_copy( params[i] , dp , 0 );
+	    }else{
+	      dp = params.copyall(1,dp);
+	    }
 	    break;
 	    
 	  case '@':
 	    percent_used = 1;
 	    spa++;
-	    dp = params.copyall(1,dp,Parse::REPLACE_SLASH);
+	    if( wildcard_flag ){
+	      for(int i=1;i<params.get_argc() ; i++)
+		wildcard_expand_copy( params[i] , dp , 1 );
+	    }else{
+	      dp = params.copyall(1,dp,Parse::REPLACE_SLASH);
+	    }
 	    break;
 	    
 	  case '%':
 	    spa++;
 	    *dp++ = '%';
 	    break;
-	    
+
 	  case '\\':case '/':
 	    if( dp==destinate || (dp[-1] != '\\' && dp[-1] != '/') )
 	      *dp++ = *spa;
@@ -163,7 +285,7 @@ static int print_one_alias(const char *name,FILE *fout=stdout)
 {
   Alias *ptr=alias_hash[ name ];
   if( ptr != NULL ){
-    fprintf(fout,"%s=%s\n",ptr->name,ptr->base);
+    fprintf(fout,"%s=\"%s\"\n",ptr->name,ptr->base);
     return 0;
   }
   return 1;
@@ -182,7 +304,7 @@ int cmd_alias(FILE *fp, Parse &params)
     }
     for( HashPtr hp(alias_hash) ; *hp != NULL ; hp++ ){
       Alias *cur = (Alias*)*hp;
-      fprintf(fout,"%s=%s\n",cur->name,cur->base);
+      fprintf(fout,"%s=\"%s\"\n",cur->name,cur->base);
     }
   }else{
     int length=strlen(sp);

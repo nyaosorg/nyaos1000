@@ -22,6 +22,8 @@ extern char tolower_table[128+256];
 #undef numof
 #define numof(A) (sizeof(A)/sizeof((A)[0]))
 
+#define alloca_char(n) ((char*)alloca(n))
+
 enum{
   NO_FILE = 0,           /* ファイルは存在しない        */
   EXE_FILE = 1,          /* バイナリ実行ファイル	*/

@@ -259,6 +259,7 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
     if( list==NULL ){
       eachcmd(srcfil,argv[1],argv[i],dummyfirst.next);
     }else{
+      numeric_sort(list);
       for(char **listptr=list ; *listptr != NULL ; listptr++ ){
 	int rv=eachcmd(srcfil,argv[1],*listptr,dummyfirst.next);
 	if( rv != 0 ){

@@ -4,59 +4,19 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-struct filelist{
-  struct filelist *next;
-  long size;
-  unsigned short attr;
-  union{
-    unsigned short time;
-    struct{
-      unsigned second:5;
-      unsigned minute:6;
-      unsigned hour:5;
-    }t;
-  };
-  union{
-    unsigned short date;
-    struct{
-      unsigned day:5;
-      unsigned month:4;
-      unsigned year:7;
-    }d;
-  };
-  int length;
-  char name[1]; /* ‰Â•Ï’· */
-};
+#include "finds.h"
 
-enum{
-  SORT_BY_NAME,
-  SORT_BY_CHANGE_TIME,
-  SORT_BY_LAST_ACCESS_TIME,
-  SORT_BY_SIZE,
-  SORT_BY_SUFFIX,
-  SORT_BY_MODIFICATION_TIME,
-  SORT_BY_NAME_IGNORE,
-  UNSORT,
-  SORT_REVERSE = 0x100 ,
-};
-  
-struct filelist *fsort_and_insert(struct filelist *first,
-				  struct filelist *tmp,
-				  int *count ,
-				  int method = 0 );
-int dircompare(struct filelist *d1,struct filelist *d2);
 int pathsplit( const char *path, char *dir, char *fname );
 int which_suffix(const char *path,...);
 
-class Complete {
+class Complete : public Files {
   char directory[ 256 ];
   char fname[ 256 ];
   int common_length;
-  int nlists;
   int max_length;
   int typed_split_char ; /* “ü—Í‚³‚ê‚½ƒpƒX•ª—£•¶Žš ( 0 , / or \ ) */
+  FileListT *findptr ;
 
-  struct filelist *list , *findptr ;
   static const char *errmsg[];
 
   int makelist_core(int command_complete, int is_with_dir );
@@ -69,23 +29,22 @@ public:
     ERROR
   } status;
 
-  Complete() : common_length(0) , nlists(0) , typed_split_char(0)
-     , list((struct filelist*)0) , status(NOT_COMPLETED) {  }
-  ~Complete(){ cleanup(); }
+  Complete() : common_length(0) , typed_split_char(0) 
+    , status(NOT_COMPLETED) {  }
+  ~Complete(){ clear(); }
 
   int makelist          (const char *path);
   int makelist_with_path(const char *path);
   int add_buildin_command(const char *name); /* after makelist only */
-
-  void cleanup();
+  
   char *nextchar();
   int get_fname_common_length()const{ return common_length; }
   const char *get_real_name1() const ;
-
-  struct filelist *findfirst(){ return findptr=list; }
-  struct filelist *findnext(){  return findptr=findptr->next; }
+  
+  FileListT *findfirst(){ return findptr=get_top(); }
+  FileListT *findnext(){  return findptr=findptr->next; }
   int get_max_name_length() const { return max_length; }
-
+  
   static int directory_split_char;
   static int complete_tail_tilda;
   static int complete_hidden_file;

@@ -10,6 +10,7 @@ int option_tilda_is_home=1;
 int option_replace_slash_to_backslash_after_tilda=1;
 int option_tcshlike_history=0;
 int option_dots=1;
+int option_history_in_doublequote=0;
 
 static struct PublicHistory {
   const char *string;
@@ -53,6 +54,31 @@ static const char *get_hist_f(int n)
     cur = cur->next;
   }
   return cur->string;
+}
+
+int cmd_drivealias( FILE *source , Parse &params )
+{
+  for(int i=1; i<params.get_argc() ; i++ ){
+    Substr arg=params[i];
+
+    if( ! isalpha(arg[0] & 255) ){
+      fprintf(stderr,"drvalias: syntax error\n");
+      return 0;
+    }
+    
+    if( arg[1]=='\0' || isspace(arg[1] & 255) ){
+      printf("%c: = %c:\n" , arg[0] , drivealias[ arg[0] & 0x1F ] );
+    }else if( arg[1]=='=' ){
+      if( isalpha(arg[2] & 255 ) )
+	drivealias[ arg[0] & 0x1F ] = toupper( arg[2] & 255 );
+      else
+	drivealias[ arg[0] & 0x1F ] = toupper( arg[0] & 255 );
+    }else{
+      fprintf(stderr,"drvalias: syntax error\n");
+      return 0;
+    }
+  }
+  return 0;
 }
 
 static const char *get_hist_r(int n)
@@ -333,7 +359,7 @@ void replace_envvar(const char *sp, char *_dp , int max )
 
     case '~':
       if(    option_tilda_is_home  
-	 &&  (quote & 2)==0
+	 &&  quote==0
 	 &&  is_space(prevchar) ){
 	if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
 	  ++sp;
@@ -377,7 +403,13 @@ void replace_envvar(const char *sp, char *_dp , int max )
       break;
 
     case '!':
-      if( (quote & 2)==0  &&  option_tcshlike_history ) {
+      if(  option_tcshlike_history
+	 && (   option_history_in_doublequote
+	     ?  (quote & 2)==0  :  quote == 0 ) ) {
+	/* history_in_doublequote が有効(not 0)ならば、
+	 *    "～!～"はヒストリ変換する。
+	 */
+
 	dp = history_copy(sp,dp);
 	/* is_history_refered = 1; */
       }
@@ -411,7 +443,16 @@ void replace_envvar(const char *sp, char *_dp , int max )
       prevchar = *dp++ = *sp++;
       *dp++ = *sp++;
     }else{
-      prevchar = *dp++ = *sp++;
+      if( quote==0  && isalpha(sp[0] & 255) && sp[1]==':' ){
+	if( islower(sp[0] & 255) )
+	  *dp++ = drivealias[ sp[0] & 0x1F ] + ('a'-'A');
+	else
+	  *dp++ = drivealias[ sp[0] & 0x1F ];
+	prevchar = *dp++ = ':';
+	sp += 2;
+      }else{
+	prevchar = *dp++ = *sp++;
+      }
     }
   }
  exit:

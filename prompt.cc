@@ -12,6 +12,31 @@
 
 extern int nhistories;
 
+/* パスが、ホームディレクトリ名を含んでいれば、「～」に変換する。*/
+static char *to_tilda_name(char *p)
+{
+  const char *home=getenv("HOME");
+  if( home == NULL || *home == '\0' )
+    return NULL;
+  
+  /* 比較する */
+  char *sp=p;
+  while( *home != '\0' ){
+    int x=tolower(*home & 255); if( x == '\\' ) x='/';
+    int y=tolower(*sp   & 255); if( y == '\\' ) y='/';
+    if( x != y )
+      return NULL;
+    ++home ; ++sp;
+  }
+  
+  *p++ = '~';
+  while( *sp != '\0' )
+    *p++ = *sp++;
+  *p = '\0';
+  return p;
+}
+
+
 /* ---- 大文字・小文字を区別した正確なファイル名を得る。
    ---- src は見事に破壊される。 ---- */
 char *get_true_name(char *src,char *dst)
@@ -63,7 +88,7 @@ char *get_true_name(char *src,char *dst)
 void truepath( char *dst , const char *src , int size )
 {
   char *tmp=(char*)alloca(size);
-  _abspath( tmp , src , size );
+  _fullpath( tmp , src , size );
   get_true_name( tmp , dst );
 }
 
@@ -129,7 +154,7 @@ static char *paste_true_name(char *dp,const char *cwd)
     *dp++ = *ssp;
   return dp;
 }
- 
+
 char *get_cwd_long_name(char *dp)
 {
   char cwd[ FILENAME_MAX ];
@@ -341,6 +366,14 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	else
 	  dp += sprintf(dp,"PC DOS Version is %d.%d"
 			, _osmajor , _osminor );
+	break;
+
+      case 'W':/* カレントディレクトリ:ホームディレクトリを「~」に変換する */
+	{
+	  char *tail=getcwd_case(dp);
+	  if( (dp=to_tilda_name(dp))==NULL )
+	    dp = tail;
+	}
 	break;
 
       case 'Z':

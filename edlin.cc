@@ -166,7 +166,10 @@ int Edlin::seek_word_top()
 	p++;
       p++;
     }
+    if( strbuf[p]=='<' || strbuf[p]=='>' || strbuf[p]=='+' || strbuf[p]=='-' )
+      ++p;
     wrdtop = p;
+      
     while( !isspace(strbuf[p] & 255) ){
       if( p >= pos ){
 	return wrdtop;
@@ -709,8 +712,13 @@ int Edlin::message(const char *fmt,...) /* ウインドウモード未対応 */
 
   /* 過去のメッセージの末尾を削除 */
   if( msgsize > columns ){
-    for(int i=columns ; i < msgsize ; i++ ){
-      if( pos+i < len  &&  atrbuf[pos+i] != DBC2ND )
+    if( pos+columns < len  &&  atrbuf[pos+columns] != DBC2ND )
+      putchr( strbuf[pos+columns] );
+    else
+      putchr( ' ' );
+    
+    for(int i=columns+1 ; i < msgsize ; i++ ){
+      if( pos+i < len  )
 	putchr( strbuf[pos+i] );
       else
 	putchr(' ');
@@ -730,24 +738,69 @@ void Edlin::cleanmsg() /* ウインドウモード未対応 */
   
   if( msgsize > 0 ){
     putbs( msgsize );
+    
     int i=0;
-    while( pos+i < len ){
-      putchr( strbuf[pos+i++] );
+    while( pos+i < len  &&  i<msgsize ){
+      if( atrbuf[pos+i] != SBC )
+	putchr( strbuf[pos + i++] );
+      putchr( strbuf[pos + i++] );
     }
-    if( i < msgsize ){
-      do{
-	if( pos+i < len  &&  atrbuf[pos+i] != DBC2ND )
-	  putchr( strbuf[pos+i] );
-	else
-	  putchr(' ');
-      }while( ++i < msgsize );
 
-      putbs( msgsize - (len-pos) );
+    while( i < msgsize ){
+      putchr(' ');
+      i++;
     }
-    putbs( len - pos );
+    putbs( i );
   }
   msgsize = 0;
 }
+
+void Edlin::bottom_message( const char *fmt ,...)
+{
+  extern int screen_width , screen_height;
+  int bs=0;
+
+  /* 画面サイズ分カーソルを進めることによって、
+   * 次の行へ移動する。
+   */
+
+  if( pos+msgsize < len && atrbuf[pos+msgsize] == DBC2ND ){
+    putchr( strbuf[ pos+msgsize ] );
+    ++bs;
+  }
+  
+  for( ; bs < screen_width ; bs++ ){
+    if( pos+msgsize+bs < len )
+      putchr( strbuf[pos+msgsize+bs] );
+    else
+      putchr( ' ' );
+  }    
+  fflush(stdout);
+  printf("\033[s\033[%d;1H" , screen_height );
+
+  va_list vp;
+  va_start(vp,fmt);
+  vprintf(fmt,vp);
+  va_end(vp);
+
+  printf("\033[K\033[u");
+  fflush(stderr);
+
+  putbs( bs );
+
+  bottom_msgsize = 1;
+}
+
+void Edlin::clean_bottom()
+{
+  extern int screen_height;
+  
+  if( bottom_msgsize > 0 ){
+    printf( "\033[s\033[%d;1H\033[K\033[u" , screen_height );
+    bottom_msgsize = 0;
+  }
+}
+
 
 void Edlin::locate(int x)  /* WINDOWモード未対応 */
 {
@@ -759,3 +812,22 @@ void Edlin::locate(int x)  /* WINDOWモード未対応 */
   }
   pos = x;
 }
+
+#if 0
+
+Edlin::Status Edlin::bind_self_insert(int key)
+{
+  if( (key >= ' ' &&  ch < 0x100 ) || ch >= 200 ){
+    insert(key);
+    forward();
+  }
+  return CONTINUE;
+}
+Edlin::Status Edlin::bind_backspace(int key)
+{
+  backward();
+  erase();
+  return CONTINUE;
+}
+
+#endif

@@ -268,7 +268,7 @@ int cmd_open( FILE *source , Parse &params )
       default:
 	fprintf(fout,"open: bad option `%s'\n",arg);
 	break;
-
+	
       case 'a':
 	active ^= 1;
 	break;
@@ -374,22 +374,3 @@ int cmd_chcp( FILE *source , Parse &params )
   }
   return 0;
 }
-#if 0
-int cmd_console( FILE *source , Parse &params )
-{
-  /* int pid = getpid(); */
-
-  SwitchList slist;
-
-  int i=atoi(params[1].ptr);
-
-  /* if( slist[i].swctl.idProcess == pid ) */
-  HWND hwnd = slist[i].swctl.hwnd;
-
-  printf("job==%d hwnd==%d\n",i,hwnd);
-  
-  WinPostMsg( hwnd , WM_SYSCOMMAND ,
-	     (MPARAM)SC_MAXIMIZE, MPFROM2SHORT(CMDSRC_MENU, FALSE ));
-  return 0;
-}
-#endif

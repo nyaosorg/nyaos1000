@@ -111,7 +111,7 @@ int Parse::check_redirect()
 {
   int ionum = 1;
 
-  if( isdigit(*sp & 255) )
+  if( *sp=='0' || *sp=='1' || *sp=='2' )
     ionum = *sp++ - '0';
 
   if( *sp == '<' ){
@@ -241,7 +241,7 @@ int Parse::check ()
     }
 
     if(   *sp == '<' || *sp == '>'
-       || (isdigit(*sp & 255) && sp[1] == '>') ){
+       || ((*sp=='1' || *sp=='2' ) && sp[1] == '>') ){
       
       if( check_redirect() != 0 )
 	return err=-1;
@@ -256,7 +256,7 @@ int Parse::check ()
 	return terminal;
       }
       if( *sp=='<' || *sp=='>' 
-	 || (isdigit(*sp & 255) && sp[1] == '>' ) )
+	 || ((*sp=='1' || *sp=='2') && sp[1] == '>' ) )
 	break;
 
       if( *sp == '^' && *(sp+1) != '\0' ){

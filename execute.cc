@@ -13,7 +13,7 @@
 #include "complete.h"
 
 extern char *cmdexe_path; /* in nyaos.cc */
-
+extern char drivealias[];
 extern int echoflag;
 
 int option_single_quote=1;
@@ -21,6 +21,7 @@ int option_backquote=1;
 int option_backquote_in_quote=0;
 int option_debug_echo;
 
+int cmd_ver   (FILE *source , Parse &params );
 int cmd_exec  (FILE *source , Parse &params );
 int cmd_mode  (FILE *source , Parse &params );
 int cmd_pwd   (FILE *source , Parse &params );
@@ -69,6 +70,12 @@ int cmd_lecho(FILE *source, Parse &params );
 int cmd_echo(FILE *srcfil, Parse &params );
 int cmd_drvalias(FILE *srcfil, Parse &params );
 
+/* "suffix.cc" */
+int cmd_ext(FILE *source , Parse &argp );
+
+/* "prepro.cc" */
+int cmd_drivealias(FILE *source , Parse &arg );
+
 volatile int ctrl_c=0;
 void ctrl_c_signal(int sig)
 {
@@ -96,8 +103,10 @@ static int cmd_ls( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
 static int cmd_dir( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
-static int cmd_eadir( FILE *srcfil, Parse &params )
-{  return params.call_as_main(eadir);  }
+#if 0
+   static int cmd_eadir( FILE *srcfil, Parse &params )
+   {  return params.call_as_main(eadir);  }
+#endif
 static int cmd_exit( FILE *srcfil, Parse &params )
 {
   return RC_QUIT;
@@ -223,10 +232,12 @@ Command jumptable[]={
   {"comment",cmd_comment },
   {"cursor", cmd_cursor  },
   {"dirs",   cmd_dirs    },
-  {"eadir",  cmd_eadir   },
+  {"drvalias",cmd_drivealias },
+/*  {"eadir",  cmd_eadir   }, */
   {"echo",   cmd_echo    },
   {"exec",   cmd_exec    },
   {"exit",   cmd_exit    },
+  {"ext",    cmd_ext     },
   {"fg",     cmd_fg      },
   {"foreach",foreach     },
   {"history",cmd_history },
@@ -247,6 +258,7 @@ Command jumptable[]={
   {"set",    cmd_set     },
   {"source", cmd_source  },
   {"unalias",cmd_unalias },
+  {"ver",    cmd_ver     },
   {"which"  ,cmd_which   },
   { NULL    ,NULL        },
 };
@@ -289,8 +301,8 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   /* カレントドライブの変更 */
   if(   is_alpha(cmdline[0]) && cmdline[1]==':' 
      && (cmdline[2]=='\0' || is_space(cmdline[2])) ) {
-    _chdrive(cmdline[0]);
-    _rfnlwr();
+    
+    _chdrive( drivealias[ cmdline[0] & 0x1F ] );
     return 0;
   }
 
@@ -366,5 +378,5 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   if( echoflag )
     puts( buffer[curbuf] );
   
-  return spawnl(P_WAIT,cmdexe_path,"CMD","/C",buffer[curbuf],NULL);
+  return spawnl(P_WAIT,cmdexe_path,cmdexe_path,"/C",buffer[curbuf],NULL);
 }

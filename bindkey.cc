@@ -38,10 +38,9 @@ static struct bind_t{
 } base_bind_table[]={
   { CTRL('H') , Shell::backspace ,
     "CTRL_H"  , "backward_delete_char  (default)"},
-  { KEY(UP)   , Shell::previous_history,
-    "UP","previous_history  (default)" },
-  { KEY(DOWN) , Shell::next_history,
-    "DOWN","next_history  (default)" },
+  { KEY(UP),Shell::vz_prev_history, "UP","vz_prev_history (default)" },
+  { KEY(DOWN) , Shell::vz_next_history,
+    "DOWN","vz_next_history  (default)" },
   { KEY(RIGHT), Shell::forward,
     "RIGHT","forward_char  (default)" },
   { KEY(LEFT) , Shell::backward,"LEFT","backward_char  (default)" },
@@ -56,8 +55,8 @@ static struct bind_t{
   { '\x1B'    , Shell::cancel,"ESC","kill_whole_line  (default)" },
   { CTRL('C') , Shell::abort, "CTRL_C","abort (default)" },
 }, tcsh_bind_table[]={
-  { CTRL('P') , Shell::previous_history,"CTRL_P","previous_history  (tcsh)"},
-  { CTRL('N') , Shell::next_history,"CTRL_N","next_history  (tcsh)" },
+  { CTRL('P') , Shell::vz_prev_history,"CTRL_P","vz_prev_history  (tcsh)"},
+  { CTRL('N') , Shell::vz_next_history,"CTRL_N","vz_next_history  (tcsh)" },
   { CTRL('F') , Shell::forward,"CTRL_F","forward_char  (tcsh)" },
   { CTRL('B') , Shell::backward,"CTRL_B","backward_char  (tcsh)" },
   { CTRL('D') , Shell::tcshlike_ctrl_d,"CTRL_D","delete_char_or_list  (tcsh)" },
@@ -70,8 +69,8 @@ static struct bind_t{
   { CTRL('R') , Shell::rev_i_search,"CTRL_R","rev_i_search (tcsh)" },
   { CTRL('T') , Shell::swapchars,"CTRL_T","swapchars (tcsh)" },
 }, wordstar_bind_table[]={
-  { CTRL('E') , Shell::previous_history,"CTRL_E","previous_history  (ws)" },
-  { CTRL('X') , Shell::next_history,"CTRL_X","next_history  (ws)" },
+  { CTRL('E') , Shell::vz_prev_history,"CTRL_E","vz_prev_history  (ws)" },
+  { CTRL('X') , Shell::vz_next_history,"CTRL_X","vz_next_history  (ws)" },
   { CTRL('D') , Shell::forward,"CTRL_D","forward_char  (ws)" },
   { CTRL('S') , Shell::backward,"CTRL_S","backward_char  (ws)" },
   { CTRL('G') , Shell::simple_delete,"CTRL_G","delete_char  (ws)" },
@@ -160,83 +159,6 @@ static const char *stristr(const char *p,const char *q)
   }
   return NULL;
 }
-
-#if 0
-Shell::Status Shell::vz_prev_history()
-{
-  if( history == NULL )
-    return CONTINUE;
-
-  char *target;
-  int word_seek_mode = 0;
-  if( ed.seek_word_seek() == 0 ){
-    word_seek_mode = 0;
-    target = ed.getbuffer();
-  }else{
-    word_seek_mode = 1;
-    target = ed.get_current_word();
-  }
-  
-  History *p=history;
-  for(;;){
-    if( p == NULL )
-      return CONTINUE;
-    if( stristr(p->buffer,target ) != NULL )
-      break;
-    p = p->prev;
-  }
-  
-  ed.go_ahead();
-  for(;;){
-    ed.message( "%s", p->buffer );
-    int key=::getkey();
-    if( key == '\r' || key == '\n' ){
-      break;
-    }else if( key < 0 || key >= 0x200 ){
-      ungetkey(key);
-      break;
-    }else if(   bindmap[key] == vz_prev_history 
-	     || bindmap[key] == previous_history ){
-      for(History *q=p ;  ; q=q->prev ){
-	if( q == NULL ){
-	  q = history;
-	}
-	if( stristr(q->buffer , ed.getbuffer() ) != NULL ){
-	  p = q;
-	  break;
-	}
-      }
-    }else if(   bindmap[key]==vz_next_history 
-	     || bindmap[key]==next_history     ){
-      for(History *q=p ;  ; q=q->next ){
-	if( q == NULL )
-	  break;
-	if( stristr(q->buffer , ed.getbuffer() ) != NULL ){
-	  p = q;
-	  break;
-	}
-      }
-    }else if( key=='\007' || key=='\033' ){
-      ed.cleanmsg();
-      ed.go_tail();
-      return CONTINUE;
-    }else{
-      ungetkey(key);
-      break;
-    }
-  }
-  ed.cleanmsg();
-  ed.clean_up();
-  ed.insert_and_forward(p->buffer);
-  changed = 0;
-  return CONTINUE;
-}
-
-Shell::Status Shell::vz_next_history()
-{
-  return CONTINUE;
-}
-#endif
 
 Shell::Status Shell::previous_history()
 {
@@ -361,7 +283,7 @@ Shell::Status Shell::input_terminate()
     cur = NULL;
   }
 #endif
-  Edlin2::canna_to_alnum();
+  /* Edlin2::canna_to_alnum(); */
   return TERMINATE;
 }
 Shell::Status Shell::repaint()
@@ -383,7 +305,7 @@ Shell::Status Shell::go_tail()
 
 Shell::Status Shell::cancel()
 {
-  Edlin2::canna_to_alnum();
+  /* Edlin2::canna_to_alnum(); */
   ed.clean_up();
   changed = 0;
   cur = NULL;
@@ -647,14 +569,12 @@ struct {
   { "next_history",              Shell::next_history },
   { "newline",                   Shell::input_terminate },
   { "previous_history",          Shell::previous_history },
+  { "vz_prev_history",           Shell::vz_prev_history },
+  { "vz_next_history",           Shell::vz_next_history },
   { "self_insert",               Shell::self_insert },
   { "up_history",                Shell::previous_history },
   { "i_search",                  Shell::i_search },
   { "rev_i_search",              Shell::rev_i_search },
-#if 0
-  { "vz_prev_history",           Shell::vz_prev_history },
-  { "vz_next_history",           Shell::vz_next_history },
-#endif
 };
 
 int Shell::bindkey(const char *key, const char *funcname )
@@ -711,6 +631,7 @@ int Shell::bindkey(const char *key, const char *funcname )
 
   return 0;
 }
+
 void Shell::bindlist(FILE *fout)
 {
   for(int i=0;i<numof(bindmap);i++){
@@ -738,7 +659,6 @@ static History *i_search_core( History *cur,const char *sekstr
   }
 }
   
-
 static History *rev_i_search_core( History *cur,const char *sekstr
 				  ,int &findpos )
 {

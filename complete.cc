@@ -19,38 +19,11 @@ int Complete::directory_split_char='\\';
 int Complete::complete_tail_tilda=0;
 int Complete::complete_hidden_file=0;
 
-struct filelist *new_filelist(Dir &dir)
-{
-  struct filelist *tmp=(struct filelist*)
-    malloc(sizeof(struct filelist)+dir.get_name_length() );
-  assert( tmp != NULL );
-  
-  strcpy( tmp->name , dir.get_name() );
-  tmp->length = dir.get_name_length();
-  tmp->date   = dir.get_last_write_date_by_short();
-  tmp->time   = dir.get_last_write_time_by_short();
-  tmp->attr   = dir.get_attr();
-  tmp->size   = dir.get_size();
-  tmp->next   = NULL;
-
-  return tmp;
-}
-
-struct filelist *dup_filelist(struct filelist *org)
-{
-  struct filelist *tmp=(struct filelist *)
-    malloc( sizeof(struct filelist) + org->length );
-  assert( tmp != NULL );
-  memcpy( tmp , org , sizeof(struct filelist)+org->length );
-  tmp->next = NULL;
-  return tmp;
-}
-
 const char *Complete::get_real_name1() const
 {
-  struct filelist *p=list;
+  FileListT *p=get_top();
   if( p != NULL ){
-    struct filelist *q=list->next;
+    FileListT *q=p->next;
     while( q != NULL ){
       if(     q->length < p->length 
 	 || ( q->length == p->length && (q->attr & A_DIR) != 0 ) ){
@@ -145,6 +118,15 @@ int pathsplit( const char *path, char *dir, char *fname )
 	  ++p;
 	}
       }
+    }else if( *p=='.' && *(p+1)=='.' && *(p+2)=='.' ){
+      *dir++ = *p++;
+      *dir++ = *p++;
+      while( *p == '.' ){
+	*dir++ = '\\';
+	*dir++ = '.';
+	*dir++ = '.';
+	p++;
+      }
     }
     while( p <= lastroot )
       *dir++ = *p++;
@@ -168,15 +150,6 @@ const char *Complete::errmsg[]={
   "malloc()/new operator error",
 };
 
-void Complete::cleanup()
-{
-  while( list != NULL ){
-    struct filelist *tmp=list;
-    list = list->next;
-    free(tmp);
-  }
-}
-
 static int instrcmp(const char *s1,const char *s2,int n)
 {
   while( n-- > 0 ){
@@ -193,124 +166,6 @@ static int instrcmp(const char *s1,const char *s2,int n)
     s2++;
   }
   return 0;
-}
-
-static int compare(struct filelist *X,struct filelist *Y,int method)
-{
-  int rc=0;
-  switch( method & ~SORT_REVERSE ){
-  case SORT_BY_SUFFIX:
-    {
-      const char *x_sfx=NULL , *y_sfx=NULL;
-      const char *xp=X->name , *yp=Y->name;
-      while( *xp != '\0' ){
-	if( *xp == '.' ){
-	  x_sfx = xp+1;
-	}else if( *xp == '/' || *xp == '\\' ){
-	  x_sfx = NULL;
-	}
-	++xp;
-      }
-      while( *yp != '\0' ){
-	if( *yp == '.' ){
-	  y_sfx = yp+1;
-	}else if( *yp == '/' || *yp == '\\' ){
-	  y_sfx = NULL;
-	}
-	++yp;
-      }
-      if( x_sfx == NULL ){
-	if( y_sfx == NULL )
-	  rc = strcmp(X->name,Y->name);
-	else
-	  rc = -1;
-      }else{
-	if( y_sfx == NULL ){
-	  rc = +1;
-	}else{
-	  rc = strcmp(x_sfx,y_sfx);
-	  if( rc == 0 )
-	    rc = strcmp(X->name,Y->name);
-	}
-      }
-      break;
-    }
-  case SORT_BY_NAME_IGNORE:
-    if( stricmp(X->name,Y->name) == 0 ){
-      rc = 0;
-      break;
-    }
-    /* case less */
-
-  case SORT_BY_NAME:
-    rc = strcmp(X->name,Y->name);
-    break;
-
-  case SORT_BY_SIZE:
-    rc = Y->size - X->size;
-    if( rc == 0 )
-      rc = strcmp(X->name,Y->name);
-
-    break;
-
-  case SORT_BY_CHANGE_TIME:
-  case SORT_BY_LAST_ACCESS_TIME:
-  case SORT_BY_MODIFICATION_TIME:
-
-    rc = Y->date - X->date;
-    if( rc == 0 )
-      rc = Y->time - X->time;
-    if( rc == 0 )
-      rc = strcmp(X->name,Y->name);
-    break;
-    
-  default:
-    rc = -1;
-    break;
-  }
-
-  if( method & SORT_REVERSE )
-    return -rc;
-  else
-    return rc;
-}
-
-struct filelist *fsort_and_insert(struct filelist *first,struct filelist *tmp,
-				  int *nfiles,int method=0)
-{
-  int diff;
-  if( first == NULL || (diff=compare(tmp,first,method)) < 0 ){
-    if( nfiles != NULL )
-      ++ *nfiles;
-    tmp->next = first;
-    return tmp;
-  }
-  if( diff == 0 )
-    return first;
-
-  struct filelist *prev=first,*cur=first->next;
-  for(;;){
-    if( cur == NULL ){
-      prev->next = tmp;
-      tmp->next  = NULL;
-      break;
-    }
-    int diff=compare(tmp,cur,method);
-    
-    if( diff == 0 ){
-      return first;
-    }else if( diff < 0 ){
-      prev->next = tmp;
-      tmp ->next = cur;
-      break;
-    }
-    prev = cur;
-    cur = cur->next;
-  }
-
-  if( nfiles != NULL )
-    ++*nfiles;
-  return first;
 }
 
 int Complete::makelist_core(int command_complete, int is_with_dir)
@@ -352,20 +207,18 @@ int Complete::makelist_core(int command_complete, int is_with_dir)
       if( dir.get_name_length() > max_length )
 	max_length = dir.get_name_length();
       
-      list = fsort_and_insert(list,new_filelist(dir),&nlists );
-			      
+      insert( new_filelist(dir) );
     }
   }
-  return nlists;
+  return get_num();
 }
 
 int Complete::makelist(const char *path)
 {
   status = FILENAME_COMPLETED;
   max_length=0;
-  list = NULL;
-  nlists = 0;
-
+  clear();
+  
   typed_split_char = pathsplit( path , directory , fname );
   if (typed_split_char == ':' )
      typed_split_char = 0;
@@ -373,37 +226,27 @@ int Complete::makelist(const char *path)
   return makelist_core(false,true);
 }
 
-struct filelist *path_cache=NULL;
+Files path_cache;
 
 void make_command_cache()
 {
-  if( path_cache != NULL ){
-    struct filelist *tmp;
-    for( struct filelist *q=path_cache ; q != NULL ; q=tmp ){
-      tmp = q->next;
-      free( q );
-    }
-    path_cache=NULL;
-  }
-
-  int n=0;
+  path_cache.clear();
 
   const char *envpath=getenv("PATH");
   if( envpath != NULL ){
     char *env=(char*)alloca(strlen(envpath)+1);
     strcpy(env,envpath);
     
-    for(const char *dirname=strtok(env,";");
-	dirname != NULL ;
-	dirname = strtok(NULL,";") ){
+    for(  const char *dirname=strtok(env,";")
+	; dirname != NULL
+	; dirname = strtok(NULL,";") ){
       
       for(Dir dir(dirname); dir ; dir++ ){
 	if(   which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0
 	   && dir[dir.get_name_length()-1] != '~'
 	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
 
-	  path_cache = fsort_and_insert( path_cache , new_filelist(dir) 
-					, &n , SORT_BY_NAME_IGNORE );
+	  path_cache.insert( new_filelist(dir) , SORT_BY_NAME_IGNORE );
       }
     }
   }
@@ -412,16 +255,15 @@ void make_command_cache()
     char *env=(char*)alloca(strlen(envpath)+1);
     strcpy(env,envpath);
     
-    for(const char *dirname=strtok(env,";");
-	dirname != NULL ;
-	dirname = strtok(NULL,";") ){
+    for(  const char *dirname=strtok(env,";")
+	; dirname != NULL
+	; dirname = strtok(NULL,";") ){
       
       for(Dir dir(dirname); dir ; dir++ ){
 	if(   dir[dir.get_name_length()-1] != '~'
 	   && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  )
-	  
-	  path_cache = fsort_and_insert( path_cache , new_filelist(dir) 
-					, &n , SORT_BY_NAME_IGNORE );
+	
+	  path_cache.insert( new_filelist(dir) ,SORT_BY_NAME_IGNORE );
       }
     }
   }
@@ -431,8 +273,7 @@ int Complete::makelist_with_path(const char *path)
 {
   status = COMMAND_COMPLETED;
   max_length=0;
-  list = NULL;
-  nlists = 0;
+  this->clear();
 
   typed_split_char = pathsplit( path , directory , fname );
   if( typed_split_char == ':' )
@@ -454,21 +295,16 @@ int Complete::makelist_with_path(const char *path)
   /* ASSERT : path には、ディレクトリ名が含まれていない。*/
   strcpy( fname , path );
 
-  if( path_cache == NULL )
+  if( path_cache.get_top() == NULL )
     make_command_cache();
   
-  struct filelist **tail=&list;
   common_length=strlen(fname);
   
-  for(struct filelist *cur=path_cache ; cur != NULL ; cur=cur->next ){
+  for(FileListT *cur=path_cache.get_top() ; cur != NULL ; cur=cur->next ){
     if(   cur->length > common_length
        && instrcmp(fname,cur->name,common_length ) == 0 ){
       
-      struct filelist *tmp=dup_filelist(cur);
-      *tail = tmp;
-      tail = &tmp->next;
-      nlists++;
-
+      insert( dup_filelist(cur) );
       if( cur->length > max_length )
 	max_length = cur->length;
     }
@@ -479,15 +315,14 @@ int Complete::makelist_with_path(const char *path)
        && which_suffix(dir.get_name(),"EXE","CMD","COM",NULL) != 0
        && dir[dir.get_name_length()-1] != '~'
        && (dir.get_attr() & (Dir::DIRECTORY|Dir::HIDDEN))==0  ){
-      
-      struct filelist *tmp=new_filelist(dir);
-      list = fsort_and_insert( list , tmp , &nlists );
-      if( tmp->length > max_length )
-	max_length = tmp->length;
+    
+      insert( new_filelist(dir) );
+      if( dir.get_name_length() > max_length )
+	max_length = dir.get_name_length();
     }
   }
   status = SIMPLE_COMMAND_COMPLETED;
-  return nlists;
+  return get_num();
 }
 
 int Complete::add_buildin_command(const char *name)
@@ -507,7 +342,8 @@ int Complete::add_buildin_command(const char *name)
       tmp->size = 0;
       if( length > max_length )
 	max_length = length;
-      list = fsort_and_insert(list,tmp,&nlists);
+
+      insert( tmp );
       return 0;
     }
   }
@@ -518,10 +354,10 @@ char *Complete::nextchar()
 {
   static char buffer[FILENAME_MAX];
 
-  if( nlists <= 0 )
+  if( get_num() <= 0 )
     return "\0";
 
-  struct filelist *p=list;
+  FileListT *p=get_top();
   
   if( p == NULL )
     return "\0";
@@ -534,7 +370,7 @@ char *Complete::nextchar()
   for( ; p != NULL ; p=p->next ){
     const char *q = p->name+common_length ;
     char *r=buffer;
-
+    
     while( *r != '\0' ){
       if( is_kanji(*r) ){
 	/****** 倍角文字 ******/

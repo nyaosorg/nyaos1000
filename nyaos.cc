@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <io.h>
 #include <ctype.h>
+#include <process.h>
 #include <sys/video.h>
 
 // #define INCL_WINWINDOWMGR
@@ -81,7 +82,6 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   return dp;
 }
 
-
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
@@ -124,6 +124,69 @@ int main(int argc, char **argv)
   for(int i=1;i<argc;i++){
     if( argv[i][0] == '-' || argv[i][0] == '/' ){
       switch(argv[i][1]){
+
+      case 'g': /* ウインドウサイズ指定 */
+      case 'G':
+	{
+	  const char *p;
+
+	  if( argv[i][2] != '\0' ){
+	    p = &argv[i][2];
+	  }else if( i+1 < argc ){
+	    p = argv[++i];
+	  }else{
+	    fprintf(stderr,"nyaos: no geometry parameter for -g.\n");
+	    return 1;
+	  }
+
+	  int x=0,y=0;
+
+	  while( *p != '\0' && isdigit(*p & 255) )
+	    x = x*10 + (*p++ -'0');
+
+	  if( (*p != 'x' && *p != 'X' ) || x<80 || x>200 ){
+	    fprintf(stderr,"nyaos: bad geometry parameter `%s'.\n"
+		    , argv[i] );
+	    return 1;
+	  }
+	  ++p;
+	  while( *p !='\0' && isdigit(*p & 255) )
+	    y = y*10 + (*p++ -'0');
+
+	  if( y<20 || y>100 ){
+	    fprintf(stderr,"nyaos: bad geometry parameter `%s'.\n"
+		    , argv[i] );
+	    return 2;
+	  }
+	  
+	  char buffer[40];
+	  sprintf(buffer,"co%d,%d", screen_width=x , screen_height=y );
+	  spawnlp(P_WAIT,"CMD.EXE","CMD.EXE","/C","MODE",buffer,NULL);
+
+	  static char env_columns[20];
+	  sprintf(env_columns,"COLUMNS=%d",x);
+	  putenv(env_columns);
+
+	  static char env_lines[20];
+	  sprintf(env_lines,"LINES=%d",y);
+	  putenv(env_lines);
+	}
+	break;
+
+      case 'h':
+      case 'H':
+	if( i+1 < argc ){
+	  char *home;
+	  int len=strlen(argv[++i]);
+	  if( (home = new char[len+7]) == NULL ){
+	    perror( argv[0] );
+	    return -1;
+	  }
+	  sprintf( home , "HOME=%s" , argv[++i] );
+	  putenv( home );
+	}
+	break;
+	
       case 'C':
       case 'c':
       case 'K':
@@ -212,6 +275,8 @@ int main(int argc, char **argv)
 
     if( access(".nyaos",0)==0 ){
       path = ".nyaos";
+    }else if( access("_nyaos",0)==0 ){
+      path = "_nyaos";
     }else if( access("nyaos.rc",0)==0 ){
       path = "nyaos.rc";
     }else if( (home=getenv("HOME"))!=NULL ){
@@ -228,9 +293,12 @@ int main(int argc, char **argv)
       
       strcpy(dp,".nyaos");
       if( access(buffer,0) != 0 ){
-	strcpy(dp,"nyaos.rc");
-	if( access(buffer,0) != 0 )
-	  path = NULL;
+	strcpy(dp,"_nyaos");
+	if( access( buffer,0) != 0 ){
+	  strcpy(dp,"nyaos.rc");
+	  if( access(buffer,0) != 0 )
+	    path = NULL;
+	}
       }
     }
     FILE *fp;
