@@ -135,7 +135,7 @@ public:
   FILE *open_stdin();
   FILE *open_stdout();
 
-  int is_append_redirect(int i)const { return appendflag[i]; }
+  int is_append_redirect(int i) const { return appendflag[i]; }
 };
 
 class Pipe{

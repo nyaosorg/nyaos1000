@@ -10,6 +10,7 @@
 #include "finds.h"
 
 extern int nhistories;
+extern int execute_result;
 
 /* パスが、ホームディレクトリ名を含んでいれば、「～」に変換する。*/
 static char *to_tilda_name(char *p)
@@ -242,7 +243,7 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
       switch( promptenv++ , to_upper(*promptenv) ){
 	
       case '!': /* ヒストリ番号 */
-	dp += sprintf(dp,"%d",nhistories );
+	dp += sprintf(dp,"%d",nhistories+1 );
 	break;
       case '@': /* ボリュームラベル */
 	sp = _getvol(0);
@@ -350,6 +351,11 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 	break;
 	
       case 'Q': *dp++ = '=';	  break;
+
+      case 'R':
+	dp += sprintf(dp,"%d",execute_result);
+	break;
+
       case 'S': *dp++ = ' ';	  break;
 	
       case 'T':/* 現在の時刻 */
@@ -377,8 +383,9 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
 
       case 'Z':
 	switch( ++promptenv , to_upper(*promptenv) ){
+	case 'A': *dp++ = '\a';	  break;
 	case 'H': /* ヒストリ番号 */
-	  dp += sprintf(dp,"%d",nhistories);
+	  dp += sprintf(dp,"%d",nhistories+1);
 	  break;
 
 	case 'V': /* ボリュームラベル */

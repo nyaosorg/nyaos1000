@@ -4,13 +4,6 @@
 #include <process.h>
 #include <sys/video.h>
 
-// #define INCL_WINWINDOWMGR
-
-#define INCL_DOSFILEMGR
-#define INCL_RXSUBCOM
-#include <os2.h>
-#include <os2thunk.h>
-
 #include "edlin.h"
 #include "nyaos.h"
 #include "complete.h"
@@ -32,6 +25,8 @@ char *cursor_on_color_str=NULL;
 char *cursor_off_color_str=NULL;
 int option_nyaos_rc=1;
 int option_cmdlike_crlf=0;
+
+int execute_result=0;
 
 char comspec[128]="COMSPEC=";
 char *cmdexe_path=comspec+8;
@@ -380,6 +375,9 @@ int main(int argc, char **argv)
   // prompt は、この時点では未定なので、ダミーを放り込んでおく。
   // ----------------------------------------------------------
 
+  extern int killAllPublicHistory(void);
+
+  killAllPublicHistory();
   extern int canna_init();
   canna_init();
   
@@ -402,6 +400,14 @@ int main(int argc, char **argv)
     // 伝えておく(って、いちいち、ここで何回もさせることでもないが...)
     // ------------------------------------------------------------------
 
+    // ---- カーソルを BOX 型にする ----
+    if( option_vio_cursor_control ){
+      if( v_hardware() == V_COLOR_12 )
+	v_ctype( 11 , 0 );
+      else
+	v_ctype( 7 , 0 );
+    }
+
     edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
     
     // ================== 実際の入力 =======================
@@ -416,14 +422,6 @@ int main(int argc, char **argv)
     
     // ============== コマンドの実行 ====================
 
-    // ---------------------------------
-    // カーソルを消去された場合にそなえ、
-    // カーソルのサイズを保存しておく。
-    // ---------------------------------
-    
-    if( option_vio_cursor_control )
-      v_getctype( &cursor_start , &cursor_end );
-    
     // ---------------------------------------------------------
     // コマンドを実行し、「終了」の帰り値だったら、終了する。
     // 実行は、高機能system である execute がよしなにしてくれる。
@@ -435,7 +433,8 @@ int main(int argc, char **argv)
       while( *top != '\0' && is_space(*top) )
 	++top;
       if( top[0] != '\0' ){
-	if( execute(stdin,top) == RC_QUIT ){
+	execute_result = execute(stdin,top);
+	if( execute_result == RC_QUIT ){
 	  // --- exitコマンドなどによる終了 ----
 	  fputs("Good bye.\n",stderr);
 	  return 0;
@@ -460,9 +459,6 @@ int main(int argc, char **argv)
 	break;
       }
     }
-    // ---- カーソルを元に戻す ----
-    if( option_vio_cursor_control )
-      v_ctype( cursor_start , cursor_end );
 
   }// ============ コマンド毎のループの末尾 ===========
 }

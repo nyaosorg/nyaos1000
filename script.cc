@@ -2,6 +2,8 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+#define INCL_DOSFILEMGR
+#define INCL_DOSMISC
 #define INCL_DOSSESMGR
 
 #include "macros.h"
@@ -11,6 +13,7 @@
 
 int scriptflag=1;
 int option_amp_start=1;
+int option_amp_detach=0;
 int option_sos=0;
 int option_script_cache=1;
 int option_auto_close=1;
@@ -260,8 +263,7 @@ extern int suffix( const char *path , SmartPtr &dp );
 static int is_pm_application(const char *fname)
 {
   ULONG apptype;
-  if( DosQueryAppType(  (const unsigned char *)fname
-		      , &apptype ) != 0 )
+  if( DosQueryAppType(  (const unsigned char *)fname , &apptype ) != 0 )
     return -1;
   return (apptype & 7)==3;
 }
@@ -284,7 +286,7 @@ int replace_script( const char *sp , char *dst, int max  )
       *dp++ = *sp++;
     
     int start_inserted=0;
-    if( option_amp_start ){
+    if( option_amp_start || option_amp_detach ){
       // 先行して、末尾が & かどうかしらべる。
       // もし、そうならば先頭に「start」を追加する。
 
@@ -300,11 +302,17 @@ int replace_script( const char *sp , char *dst, int max  )
 	  while( is_space(*++p) )
 	    ;
 	  if( *p != '&' && *p != ';' ){
-	    /* 「&&」,「&;」でない「&」なら start を挿入 */
-	    char *s = "start ";
+	    /* 「&&」,「&;」でない「&」なら start または detach を挿入 */
+	    char *s;
+
+	    if(option_amp_detach)
+	      s="detach ";
+	    else{
+	      s="start ";
+	      start_inserted=1;
+	    }
 	    while( *s != '\0' )
 	      *dp++ = *s++;
-	    start_inserted = 1;
 	  }
 	  goto check_script;
 
@@ -332,9 +340,9 @@ int replace_script( const char *sp , char *dst, int max  )
   check_script:
     if( scriptflag != 0  ){
       // ---------------------------
-      //   スクリプト実行支援機能
+      // option +script の場合
       // ---------------------------
-
+      
       char fname[FILENAME_MAX];
       char path[FILENAME_MAX];
       
@@ -343,7 +351,7 @@ int replace_script( const char *sp , char *dst, int max  )
       
       ScriptCache *sc;
       int type=SearchEnv(fname,"SCRIPTPATH",path);
-
+      
       if( option_script_cache  &&  (sc=script_hash[fname]) != NULL ){
 	/* ---- スクリプト(キャッシュヒット) ---- */
 	if( option_debug_echo ){
@@ -366,7 +374,7 @@ int replace_script( const char *sp , char *dst, int max  )
 	  suffix(path,dp);
 	  copy_filename(path,dp,NULL,&dp,BACKSLASH_DEMILITOR);
 	}else{
-	  /* -- #!によるスクリプトである -- */
+	  // -- #!によるスクリプトである
 	  copy_filename(path,dp,NULL,&dp, SLASH_DEMILITOR );
 	}
 	copyargs(sp,dp,&sp,&dp);
@@ -381,17 +389,23 @@ int replace_script( const char *sp , char *dst, int max  )
 	copyargs(sp,dp,&sp,&dp);
       }
     }else{
+      // ---------------------
+      // option -script の場合
+      // ---------------------
+
+      char fname[FILENAME_MAX];
+      copy_filename(sp,SmartPtr(fname,sizeof(fname)),&sp,NULL);
       if( suffix(sp,dp) == 0 ){
 	char path[FILENAME_MAX];
-	char fname[FILENAME_MAX];
-
-	copy_filename(sp,SmartPtr(path,sizeof(fname)),&sp,NULL);
+	
 	SearchEnv(fname,"SCRIPTPATH",path);
 	copy_filename(path,dp,NULL,&dp);
       }else{
-	if( option_auto_close  &&  start_inserted  &&  !is_pm_application(sp) )
+	if(    option_auto_close  &&  start_inserted
+	   &&  !is_pm_application(fname) )
 	  insert_close_option(dp);
-	copy_filename(sp,dp,&sp,&dp);
+	
+	copy_filename(fname,dp,NULL,&dp);
       }
       copyargs(sp,dp,&sp,&dp);
     }

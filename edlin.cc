@@ -235,8 +235,13 @@ int Edlin::complete_core(int fntop,int basesize)
     for(;;){
       struct filelist *cur=com.findfirst();
       while( cur != NULL ){
-	message("%s",cur->name+com.get_fname_common_length() );
-		
+	if( cur->attr & A_DIR ){
+	  message(  "%s%c"
+		  , cur->name+com.get_fname_common_length()
+		  , com.get_split_char() ?: complete_tail_char );
+	}else{
+	  message("%s",cur->name+com.get_fname_common_length() );
+	}
 	int key;
 	
 	switch( key=::getkey() ){
@@ -274,9 +279,10 @@ int Edlin::complete_core(int fntop,int basesize)
 
 	  insert_and_forward( sp );
 
-	  if( cur->attr & A_DIR )
+	  if( cur->attr & A_DIR ){
 	    insert( com.get_split_char() ?: complete_tail_char );
-
+	    forward();
+	  }
 	  if( quoted ){
 	    insert('"');
 	    forward();
@@ -421,6 +427,26 @@ void Edlin::after_repaint(int termclear)
     putel();
   }
   putbs( i );
+}
+/* cmd.exeでkeys on時のCtrl-Home同様に、カーソル位置手前から行頭を消す。
+ * ディフォルトではキーバインドしない。活性化するには、例えば、
+ *	bindkey CTRL_END  kill_line
+ *	bindkey CTRL_HOME kill_top_of_line
+ */
+void Edlin::erasebol()
+{
+  int i;
+
+  if(!pos)
+    return;
+
+  for(i=0,len-=pos;i<=len;++i){
+    strbuf[i]=strbuf[pos+i];
+    atrbuf[i]=atrbuf[pos+i];
+  }
+  putbs(i=pos);
+  pos=0;
+  after_repaint(i);
 }
 
 void Edlin::eraseline()

@@ -73,6 +73,7 @@ public:
   void go_ahead();            /* ^A 先頭へ             */
   void go_tail();             /* ^E 末尾へ             */
   void clean_up();            /* ^U 入力破棄           */
+  void erasebol();		  /*	カーソル手前を消す */
   void eraseline();           /* ^K カーソル以降を消す */
   void swapchars();           /* ^T カーソル手前二文字を入れ換える */
   virtual void cls(){};       /* ^L 画面クリア(何もしない) */
@@ -147,6 +148,7 @@ public:
   Status go_forward(int);
   Status go_tail(int);
   Status cancel(int);
+  Status erasebol();
   Status eraseline();
   Status forward_word(int);
   Status backward_word(int);
@@ -282,7 +284,9 @@ public:
   Status go_ahead();
   Status go_forward();
   Status go_tail();
+  Status flip_over();
   Status cancel();
+  Status erasebol();
   Status eraseline();
   Status forward_word();
   Status backward_word();

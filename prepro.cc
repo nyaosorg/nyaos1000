@@ -11,7 +11,7 @@ int option_dots=1;
 int option_history_in_doublequote=0;
 
 static struct PublicHistory {
-  const char *string;
+  char *string;
   PublicHistory *prev,*next;
 } Oth={NULL,NULL,NULL} , *public_history=&Oth;
 
@@ -46,7 +46,8 @@ static const char *get_hist_f(int n)
   PublicHistory *cur=Oth.next;
   if( cur==NULL )
     return NULL;
-  for(int i=0; i<n ; i++ ){
+  // ユーザー指定のヒストリ番号は「1」から始まるので、i=1
+  for(int i=1; i<n ; i++ ){
     if( cur == NULL )
       return NULL;
     cur = cur->next;
@@ -79,6 +80,9 @@ int cmd_drivealias( FILE *source , Parse &params )
   return 0;
 }
 
+/* 過去方向へヒストリを検索する 
+ *	n ... 遡るヒストリの数
+ */
 static const char *get_hist_r(int n)
 {
   PublicHistory *cur=public_history;
@@ -473,9 +477,14 @@ void replace_envvar(const char *sp, char *_dp , int max )
   }
 }
 
+/* コマンド「hisotory」
+ */
 int cmd_history(FILE *source,Parse &param)
 {
   int n=10;
+  /* パラメータ(参照するヒストリの数)がある場合、その数値を取得。
+   * デフォルトは 10
+   */
   if( param.get_argc() >= 2 ){
     char *arg1=(char*)alloca(param.get_length(1)+1);
     param.copy(1,arg1);
@@ -489,12 +498,29 @@ int cmd_history(FILE *source,Parse &param)
     int i;
     for( i=0 ; i<n  && cur != NULL && cur != &Oth ; i++ )
       cur = cur->prev;
-
-    while( i > 0  && cur !=NULL ){
+    
+    for( ; i > 0  && cur !=NULL ; i-- ){
       cur = cur->next;
       fprintf( fout , "%4d : %s\n"
-	      , nhistories-(i--) , cur->string );
+	      , 1+nhistories-i , cur->string );
     }
   }
   return 0;
+}
+
+/* それまでのヒストリを一掃して、無に戻してしまう。
+ * main関数で、.nyaos から読み込まれてしまったヒストリを消すのに、
+ * 一度呼ばれるのみ
+ */
+void killAllPublicHistory(void)
+{
+  PublicHistory *cur=public_history;
+  while( cur != NULL && cur != &Oth ){
+    PublicHistory *trash=cur;
+    cur = cur->prev;
+    free( trash->string );
+    delete trash;
+  }
+  public_history = &Oth;
+  nhistories = 0;
 }

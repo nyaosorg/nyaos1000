@@ -438,20 +438,36 @@ void dir1(FileListT *flist , int max_length , FILE *fout)
     "Jan","Feb","Mar","Apr","May","Jun",
     "Jul","Aug","Sep","Oct","Nov","Dec",
   };
+  
+  filelist::DirDateTime *datetime;
+  switch( ls_flag[ LS_SORT ] ){
+  case SORT_BY_LAST_ACCESS_TIME: // -u
+    datetime = &flist->access;
+    break;
+
+  case SORT_BY_CHANGE_TIME:      // -c
+    datetime = &flist->create;
+    break;
     
+  default:
+  case SORT_BY_MODIFICATION_TIME: // -t
+    datetime = &flist->write;
+    break;
+  }
+  
   ncolumns += fprintf(fout,"%s %8ld %3s %2d "
 		      , attrstr
 		      , flist->size
-		      , month[ flist->write.d.month-1 ]
-		      , flist->write.d.day
+		      , month[ datetime->d.month-1 ]
+		      , datetime->d.day
 		      );
   
   if( flist->write.d.year+1980 != thisyear ){
-    ncolumns += fprintf(fout," %4d " ,flist->write.d.year+1980 );
+    ncolumns += fprintf(fout," %4d " ,datetime->d.year+1980 );
   }else{
     ncolumns += fprintf( fout
 			,"%02d:%02d " 
-			, flist->write.t.hour ,flist->write.t.minute );
+			, datetime->t.hour ,datetime->t.minute );
   }
   
   if( ! ls_flag[ LS_NOCOLOR ] )

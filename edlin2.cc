@@ -220,13 +220,15 @@ void Edlin2::putbs(int n)
     putc('\b',fp);
 }
 
-
 int Edlin2::getkey_with_cursor()
 {
+#if 0
   int key;
   if( cursor_on == NULL ){
+#endif
     fflush(fp);
     return ::getkey();
+#if 0
   }
 
   if( pos == len ){
@@ -255,7 +257,9 @@ int Edlin2::getkey_with_cursor()
       fprintf(fp,"\x1b[%sm%c\b" , cursor_off , strbuf[pos] );
   }
   return key;
+#endif
 }
+
 
 enum{ PREFIX = -1 };
 #define CAN2NYA(c,n)  case CANNA_KEY_##c: *dp++=PREFIX;*dp++ = K_##n;break
@@ -422,6 +426,9 @@ int Edlin2::getkey()
       }else{
 	return kakbuf[kakpos++] & 0xFF;
       }
+    }else if( (orgkey & 0x180) == 0x80 ){
+      // 半角カナならば...(漢字の場合は、getkey がすでに2bytes化している。
+      return orgkey & 0xFF;
     }
 
     /* ローカルバッファが空で、特殊キーが入力されたら、

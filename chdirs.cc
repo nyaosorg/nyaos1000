@@ -1,25 +1,49 @@
 #include <stdlib.h>
 #include <io.h>
 #include <ctype.h>
+#define INCL_DOSMISC
+#include <os2.h>
 
 #include "parse.h"
 #include "nyaos.h"
 #include "finds.h"
 
 int option_cd_goto_home=0;
+char prevdir[FILENAME_MAX]=".";
 
 enum{
   BIT_CD_PATH      = 1,
   BIT_CD_SHORT_MID = 2,
   BIT_CD_SHORT_TOP = 4,
   BIT_CD_SHORT     = 6,
+  BIT_CD_LAST	   = 8
 };
+
+static int changeDir(const char *s)
+{
+  int rc=0;
+  if( s[1] == ':' ){
+    char buffer[FILENAME_MAX];
+    
+    DosError( FERR_DISABLEHARDERR );
+    if( _getcwd1(buffer,toupper(s[0])) == 0 ){
+      rc = _chdir2( s );
+    }else{
+      fprintf(stderr,"Drive %c: is not ready\n",s[0]);
+    }
+    DosError( FERR_ENABLEHARDERR );    
+  }else{
+    rc=_chdir2(s);
+  }
+  return rc;
+}
 
 int cmd_pwd( FILE *source , Parse &params )
 {
   char cwd[FILENAME_MAX];
 
-  getcwd_case(cwd);
+  if( getcwd_case(cwd) == NULL )
+    return 0;
 
   FILE *fout=params.open_stdout();
   fputs(cwd,fout);
@@ -37,7 +61,7 @@ static int cdshort_2(const char *cwdx,char *list[] , int modeflag )
     if(   name[0] != '.'
        && (dir.get_attr() & Dir::DIRECTORY) != 0
        && (dir.get_attr() & (Dir::HIDDEN|Dir::SYSTEM)) == 0
-       && _chdir2(name)==0 ){
+       && changeDir(name)==0 ){
       
       if( cdshort_1(list+1,modeflag) == 0 ){
 	return 0;
@@ -95,6 +119,9 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
       case 'P':
 	modeflag |= BIT_CD_PATH;
 	break;
+
+      case 0:
+	modeflag |= BIT_CD_LAST;
       }
     }else{
       argc++;
@@ -102,25 +129,32 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
   }
   argv[argc] = NULL;
 
-  if( argc <= 0 ){
+  char wd[FILENAME_MAX];
+  getcwd_case(wd);
+
+  if(argc<=0&&!(modeflag&BIT_CD_LAST)){
     if( option_cd_goto_home ){
       const char *home=getenv("HOME");
-      if( home == NULL || _chdir2(home) != 0 )
+      if( home == NULL || _chdir2(home) != 0 ){
 	fputs("nyaos: %HOME% does not point a right directory.\n",stderr);
+	return-1;
+      }
+      strcpy(prevdir,wd);
       return 0;
     }else{
       return cmd_pwd(source,params);
     }
   }
   
-  char *cwd=argv[0];
-  if( _chdir2( cwd )==0 )
+  char*cwd=(modeflag&BIT_CD_LAST)?prevdir:argv[0];
+  if( _chdir2( cwd )==0 ){
+    strcpy(prevdir,wd);
     return 0;
-  
+  }
   for( const char *p=cwd ; *p != '\0' ; p++ ){
     if( *p=='/' || *p=='\\' || *p==':' ){
       fprintf(stderr,"%s: no such directory.\n",cwd);
-      return 0;
+      return-1;
     }
   }
   
@@ -144,9 +178,10 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
 	if( lastchar != '\\' && lastchar != '/' && lastchar != ':' )
 	  *dp++ = '\\';
 	strcpy( dp , cwd );
-	if( access(cdpath,0)==0  &&  _chdir2(cdpath)==0 )
+	if( access(cdpath,0)==0	 &&  _chdir2(cdpath)==0 ){
+	  strcpy(prevdir,wd);
 	  return 0;
-	
+	}
 	if( *sp == '\0' )
 	  break;
 	
@@ -171,9 +206,10 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
 	  getcwd(pwd,sizeof(pwd));
 	  chdir("/");
 	  
-	  if( cdshort_1(argv,modeflag)==0 )
+	  if( cdshort_1(argv,modeflag)==0 ){
+	    strcpy(prevdir,wd);
 	    return 0;
-	  
+	  }
 	  chdir(pwd);
 	}
 	++env;
@@ -183,7 +219,7 @@ static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
   }
   
   fprintf(stderr,"%s : no such directory.\n",argv[0]);
-  return 0;
+  return-1;
 }
 
 int cmd_chdir( FILE *srcfil, Parse &params)
@@ -195,9 +231,12 @@ int cmd_chdir( FILE *srcfil, Parse &params)
     else
       smart_chdir(srcfil,params);
   }else if( option_cd_goto_home ){
+    char wd[FILENAME_MAX];
+    getcwd_case(wd);
     const char *home=getenv("HOME");
-    if( home == NULL || _chdir2(home) != 0 )
+    if( home == NULL || changeDir(home) != 0 )
       fprintf(stderr,"chdir: $HOME does not point a right directory.\n");
+    strcpy(prevdir,wd);
   }else{
     return cmd_pwd(srcfil,params);
   }
@@ -210,65 +249,294 @@ struct Dirstack{
   char buffer[1];
 } *dirstack=NULL;
 
-int cmd_dirs( FILE *srcfil , Parse &params )
+int simple_dirs ( Parse &params , int flag=0 )
 {
-  char cwd[FILENAME_MAX];
-  getcwd_case(cwd);
-  
   FILE *fout=params.open_stdout();
   if( fout == NULL ){
     fputs("nyaos : cannot make a pipe or file\n",stderr);
     return 1;
   }
-  fputs(cwd,fout);
+
+
+
+  char cwd[FILENAME_MAX];
+  getcwd_case(cwd);
+  
+  if( flag & 1 )
+    fprintf(fout,"%-8d%s\n",0,cwd);
+  else
+    fputs(cwd,fout);  
 
   Dirstack *tmp=dirstack;
+  int i=1;
   while( tmp != NULL ){
-    putc(' ',fout);
-    fputs(tmp->buffer,fout);
+    if( flag & 1 )
+      fprintf(fout,"%-8d%s\n",i,tmp->buffer);
+    else
+      fprintf(fout," %s",tmp->buffer);
 
     tmp = tmp->prev;
+    i++;
   }
-  putc('\n',fout);
+  if( (flag & 1)==0 )
+    putc('\n',fout);
 
   return 0;
 }
+
+
+int cmd_dirs ( FILE *srcfil , Parse &params )
+{
+  int flag=0;
+
+  for(int i=1; i<params.get_argc() ; i++){
+    if( params[i][0]=='-' ){
+      for(int j=1 ; j<params[i].len ; j++){
+	switch( params[i][j] ){
+	case 'v':
+	  flag |= 1;
+	  break;
+	  
+	default:
+	  fprintf(stderr,"-%c : unknown option\n",params[i][j]);
+	  break;
+	}
+      }
+    }
+  }
+  return simple_dirs( params , flag );
+}
+
+/* スタックトップをスタック末尾に移動する。
+ * ここでいうトップは、カレントディレクトリではない 
+ */
+static void move_stacktop_to_stacktail()
+{
+  /* スタックが二つ以上、つまれていないと意味がない */
+  if( dirstack==NULL  ||  dirstack->prev == NULL )
+    return;
+  
+  Dirstack *one=dirstack;
+  dirstack = dirstack->prev;
+  
+  Dirstack *cur=dirstack;
+  while( cur->prev != NULL )
+    cur = cur->prev;
+  
+  cur->prev = one;
+  one->prev = NULL;
+}
+
+/* n 番目のディレクトリスタックへ移動する。
+ * ただし、n==0 はカレントディレクトリ 
+ */
+static int chdir_to_nth_stack(int n,char *error_dir=NULL)
+{
+  if( n==0 )
+    return 0;
+  
+  char cwd[ FILENAME_MAX ];
+  if( getcwd_case( cwd ) == NULL )
+    return -2;
+  
+  Dirstack *cur=dirstack;
+  for(int i=1;i<n;i++){
+    if( cur == NULL )
+      return -1;
+    cur = cur->prev;
+  }
+  
+  if( _chdir2( cur->buffer ) != 0 ){
+    if( error_dir != NULL )
+      strcpy( error_dir , cur->buffer );
+    return -3;
+  }
+  
+  strcpy( prevdir , cwd );
+  return 0;
+}
+
+/* Dirstack のノードとして、カレントディレクトリを得る */
+static Dirstack *getcwd_as_dirstack_node(const char *pwd=NULL)
+{
+  if( pwd == NULL ){
+    char curdir[ FILENAME_MAX ];
+    if( getcwd_case( curdir ) == NULL )
+      return NULL;
+    pwd = curdir;
+  }
+  
+  Dirstack *tmp=(Dirstack*)malloc(sizeof(Dirstack)+strlen(pwd));
+  if( tmp == NULL )
+    return NULL;
+  
+  strcpy( tmp->buffer , pwd );
+  tmp->prev = NULL;
+  
+  return tmp;
+}
+
+/* カレントディレクトリをスタック末尾に入れる */
+static void append_stack_tail(const char *pwd=NULL)
+{
+  Dirstack *tmp=getcwd_as_dirstack_node(pwd);
+  if( tmp == NULL )
+    return;
+  
+  Dirstack *cur=dirstack;
+  if( cur == NULL ){
+    dirstack = tmp;
+  }else{
+    while( cur->prev != NULL )
+      cur = cur->prev;
+    cur->prev = tmp;
+  }
+}
+
+static void drop_stacktop()
+{
+  Dirstack *tmp=dirstack;
+  dirstack = dirstack->prev;
+  free(tmp);
+}
+
+/* 画面にメッセージを出さない popd */
+static int simple_popd()
+{
+  char wd[FILENAME_MAX];
+  getcwd_case(wd);
+  
+  if( dirstack == NULL )
+    return -1;
+  
+  if( _chdir2(dirstack->buffer) != 0 )
+    return -2;
+  
+  strcpy(prevdir,wd);
+  drop_stacktop();
+  
+  return 0;
+}
+
 
 int cmd_pushd( FILE *srcfil , Parse &params)
 {
   char cwd[FILENAME_MAX];
   getcwd_case(cwd);
-  
-  if( params.get_argc() <= 1  &&  dirstack != NULL ){
-    Dirstack *tmp=dirstack;
 
-    _chdir2( dirstack->buffer );
-    dirstack = dirstack->prev;
+  int flag=0;
+  int target=-1;
+  for(int i=1; i < params.get_argc() ; i++ ){
+    if( params[i][0] == '-' ){
+      for(int j=1; j<params[i].len ; j++ ){
+	switch( params[i][j] ){
+	case 'v':
+	  flag |= 1;
+	  break;
+	}
+      }
+    }else{
+      target = i;
+    }
+  }
+  
+  if( target == -1 ){
+    if( dirstack == NULL ){
+      fputs("pushd: No other directory.",stderr);
+      return 0;
+    }
+    // 「pushd↓」：スタックトップとカレントディレクトリを入れ換える
+    Dirstack *tmp=dirstack;
+    
+    if( !_chdir2(dirstack->buffer)){
+      strcpy(prevdir,cwd);
+      dirstack = dirstack->prev;
+    }
     free(tmp);
+  }else if( params[target][0]=='+' ){
+    /* 「pushd +2」
+     * 0 1 2 3 4
+     *    ↓
+     * 2 3 4 0 1
+     */
+    
+    int n=atoi(params[target].ptr+1);
+    if( n <= 0 ){
+      fprintf(stderr,"+%n: No such file or directory.\n",n);
+      return 0;
+    }
+
+    /* 前もって、先に n 番目のディレクトリに移動しておく。
+     * なぜなら、そうしないと、エラーになった際に、スタック構造を元に戻すのが
+     * たいへんだから... */
+
+    char errdir[ FILENAME_MAX ];
+    switch( chdir_to_nth_stack(n,errdir) ){
+    case -3:
+      fprintf(stderr,"%s : Specified directory in the stack is not found.\n");
+      return 0;
+    case -2:
+      fputs("pushd: can not get current directory.\n",stderr);
+      return 0;
+    case -1:
+      fputs("+%d: more than the number of directory stack.\n",stderr);
+      return 0;
+    }
+    strcpy( prevdir , cwd );
+    
+    /* ディレクトリは移動したので、あとは、ディレクトリスタックを
+     * 回転させるだけ */
+    append_stack_tail( cwd );
+    for(int i=1 ; i<n ; i++ )
+      move_stacktop_to_stacktail();
+    drop_stacktop();
+    return simple_dirs(params,flag);
+
   }else{
     if( smart_chdir(srcfil,params) )
       return 0;
+    strcpy(prevdir,cwd);
   }
-
+  
   Dirstack *tmp=(Dirstack*)malloc(sizeof(Dirstack)+strlen(cwd));
   tmp->prev = dirstack;
   strcpy( tmp->buffer , cwd );
   dirstack = tmp;
-
-  return cmd_dirs(srcfil,params);
+  
+  return simple_dirs(params,flag);
 }
 
 int cmd_popd( FILE *srcfil, Parse &params)
 {
-  if( dirstack != NULL ){
-    _chdir2( dirstack->buffer );
-    Dirstack *tmp=dirstack;
-    dirstack = dirstack->prev;
-    free(tmp);
-
-    return cmd_dirs( srcfil , params );
-  }else{
-    printf("dirs : directory stack is empty!\n");
-    return 0;
+  int flag=0;
+  for( int i=1 ; i<params.get_argc() ; i++ ){
+    if( params[i][0] == '-' ){
+      for( int j=1; j<params[i].len ; j++ ){
+	switch( params[i][j] ){
+	case 'v':
+	  flag |= 1;
+	  break;
+	}
+      }
+    }
   }
+
+  switch( simple_popd() ){
+  case -2:
+    fprintf(stderr,"%s : Specified directory in the stack is not found.\n",
+	    dirstack->buffer);
+    break;
+    
+  case -1:
+    fputs("popd : directory stack is empty!\n",stderr);
+    break;
+    
+  case 0:
+    return simple_dirs(params,flag);
+    
+  default:
+    fputs("popd : unknown error\n",stderr);
+    break;
+  }
+  return 0;
 }

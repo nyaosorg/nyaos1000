@@ -241,6 +241,7 @@ int cmd_set( FILE *srcfil, Parse &params )
   return 0;
 }
 
+#if 0
 int cmd_cursor( FILE *fp, Parse &params)
 {
   if( cursor_on_color_str != NULL ){
@@ -268,6 +269,7 @@ int cmd_cursor( FILE *fp, Parse &params)
   }
   return 0;
 }
+#endif
 
 int cmd_echo(FILE *srcfil, Parse &params )
 {
@@ -300,6 +302,8 @@ int cmd_echo(FILE *srcfil, Parse &params )
 	  putc('\r',fout); break;
 	case 'f':
 	  putc('\v',fout); break;
+	case 'a':
+	  putc('\a',fout); break;
 	case 'e':
 	  putc('\033',fout); break;
 	case 'q':

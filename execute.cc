@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <process.h>
 #include <signal.h>
+#define INCL_DOSMISC
 #include <os2.h>
 
 #include "hash.h"
@@ -11,6 +12,7 @@
 
 extern char *cmdexe_path; /* in nyaos.cc */
 extern char drivealias[];
+extern char prevdir[];
 extern int echoflag;
 
 int option_single_quote=0;
@@ -227,10 +229,10 @@ Command jumptable[]={
   {"cds",    cmd_chdir   },
   {"chdir",  cmd_chdir   },
   {"comment",cmd_comment },
-  {"cursor", cmd_cursor  },
+//  {"cursor", cmd_cursor  },
   {"dirs",   cmd_dirs    },
   {"drvalias",cmd_drivealias },
-/*  {"eadir",  cmd_eadir   }, */
+//  {"eadir",  cmd_eadir   },
   {"echo",   cmd_echo    },
   {"exec",   cmd_exec    },
   {"exit",   cmd_exit    },
@@ -300,8 +302,20 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
   /* カレントドライブの変更 */
   if(   is_alpha(cmdline[0]) && cmdline[1]==':' 
      && (cmdline[2]=='\0' || is_space(cmdline[2])) ) {
-    
-    _chdrive( drivealias[ cmdline[0] & 0x1F ] );
+    char wd[FILENAME_MAX],c;
+
+    DosError( FERR_DISABLEHARDERR );
+    getcwd_case(wd);
+    _chdrive( c = drivealias[ cmdline[0] & 0x1F ] );
+    /*
+     * _chdrive( ) は、いつも0を返してくるので実行結果を把握できない (+_;)
+     * 期待通りにカレントドライブが変わったかどうか疑ってみる
+     */
+    if(_getdrive()==c)	  /* うまく変わってたら	 */
+      strcpy(prevdir,wd); /* prevdirを覚えておく */
+    else
+      fputs("Cannot find the specified drive.\n",stderr);
+    DosError( FERR_ENABLEHARDERR );
     return 0;
   }
 
@@ -340,8 +354,13 @@ int execute( FILE *srcfil, const char *cmdline , int fastmode=0 )
 
     /* ヒストリ変換などで文字列が０になることもあるので、
      * ここでチェックする。 */
-    if( params.get_argc() <= 0 )
-      return 0;
+    if( params.get_argc() <= 0 ){
+      pointer = params.get_nextcmds();
+      if( *pointer == '\0' )
+	return 0;
+      else
+	continue;
+    }
 
     Command *cmd;
     

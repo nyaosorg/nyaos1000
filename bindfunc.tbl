@@ -14,10 +14,12 @@ delete_char               Shell::simple_delete
 delete_char_or_list       Shell::tcshlike_ctrl_d
 down_history              Shell::next_history
 end_of_line               Shell::go_tail
+flip_overwrite		  Shell::flip_over
 forward_char              Shell::forward
 forward_word              Shell::forward_word
 i_search                  Shell::i_search
 kill_line                 Shell::eraseline
+kill_top_of_line	  Shell::erasebol
 kill_whole_line           Shell::cancel
 newline                   Shell::input_terminate
 next_history              Shell::next_history

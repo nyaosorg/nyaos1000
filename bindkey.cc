@@ -2,17 +2,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/kbdscan.h>
+#include <sys/video.h>
 
 #include "hash.h"
 #include "edlin.h"
 #include "complete.h"
 #include "nyaos.h"
 
-
 #define CTRL(a) ((a) & 0x1F)
-#define KEY(a)  (K_##a | 0x100)
+#define KEY(a)  ((K_##a & 0xFF) | 0x100)
 
 /* 帰り値は、文字数。キャンセルの時は (-1)を返す。 */
+
+int overwrite=0;
 
 History *Shell::history=NULL;
 int Shell::nhistories=0;
@@ -45,7 +47,16 @@ static struct bind_t{
   { KEY(RIGHT), Shell::forward,
     "RIGHT","forward_char  (default)" },
   { KEY(LEFT) , Shell::backward,"LEFT","backward_char  (default)" },
+#if 0
+  /* option +ctrl_d_eofモードで、うっかり、行頭でDeleteキーを押した時に、
+   * nyaosを抜けてしまう。ファイル名補完候補一覧が表示されるのも違和感がある。
+   * (bindkeyを使って対処できるが、あえてソースコード側にて修正)
+   */
   { KEY(DEL)  , Shell::tcshlike_ctrl_d,"DEL","delete_char_or_list  (default)"},
+#else
+  { KEY(DEL)  , Shell::simple_delete,"DEL","delete_char  (default)"},
+#endif
+  { KEY(INS)  , Shell::flip_over,"INS","flip_overwrite  (default)"},
   { CTRL('Z') , Shell::bye ,"CTRL_Z","bye  (default)"},
   { '\t'      , Shell::tcshlike_complete,"TAB","complete  (default)" },
   { '\r'      , Shell::input_terminate,"ENTER","newline  (default)" },
@@ -159,9 +170,21 @@ void Shell::bindkey_wordstar()
   }
 }
 
+/* insert modeとoverwrite modeを切り換えたら、カーソル形状を
+ * 変えるくらいの芸をするのが一般的だが、面倒くさいから…。(^^;
+ * ---> 葉山もトライしてみたのですが、どうも半分サイズの
+ * カーソルがうまく表示できないんですよねぇ。う～む。
+ */
+Shell::Status Shell::flip_over(){
+  overwrite=!overwrite;
+  return CONTINUE;
+}
+
 Shell::Status Shell::self_insert()
 {
   if( (ch >= ' '  &&  ch < 0x100) || ch >= 0x200  ){
+    if( overwrite )
+      ed.erase();
     ed.insert(ch);
     ed.forward();
     changed = 1;
@@ -340,6 +363,14 @@ Shell::Status Shell::cancel()
   return CONTINUE;
 }
 
+Shell::Status Shell::erasebol()
+{
+  if( ed.position() > 0 ){
+    ed.erasebol();
+    changed = 1;
+  }
+  return CONTINUE;
+}
 Shell::Status Shell::eraseline()
 {
   if( ed.position() < ed.length() ){

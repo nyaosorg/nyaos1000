@@ -2,64 +2,42 @@
 # Nihongo Yet Another Os/2 Shell
 # (c) 1996,97,98 HAYAMA,Kaoru
 #
+# make clean & make depend & make
 
 CC=gcc
 CFLAGS=-O2 -DWITH_CANNA
 LDFLAGS=-lvideo -lwrap -Zcrtdll -lsocket
 
+.SUFFIXES : .cc .o .tbl .exe .cmd .doc .html
+
+.tbl.cc : 
+	mkbtable.cmd < $< >$@
+
 .cc.o :
 	$(CC) $(CFLAGS) -c $<
 
-NYAOS=	nyaos.o edlin.o complete.o eadir.o shell.o foreach.o script.o \
-	alias.o parse.o execute.o chdirs.o commands.o prepro.o bindkey.o \
-	open.o source.o search.o finds.o getkey.o dbcs.o hash.o command2.o \
-	prompt.o edlin2.o wordseek.o suffix.o filelist.o pathlist.o
+NYAOS_SRC= alias.cc bindkey.cc chdirs.cc complete.cc commands.cc \
+	command2.cc dbcs.cc eadir.cc edlin.cc edlin2.cc execute.cc \
+	finds.cc filelist.cc foreach.cc getkey.cc hash.cc nyaos.cc \
+	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script.cc \
+	search.cc shell.cc source.cc suffix.cc wordseek.cc
+NYAOS_TBL=bindfunc.tbl keynames.tbl eadirop.tbl
+NYAOS_OBJ=$(NYAOS_SRC:.cc=.o)
 
-nyaos.exe : $(NYAOS)
+nyaos.exe : $(NYAOS_OBJ)
 	$(CC) $^ -o $@ $(LDFLAGS)
 
-$(NYAOS) : %.o : %.cc
+$(NYAOS_OBJ) : %.o : %.cc
 	$(CC) $(CFLAGS) -c $<
 
-RMCLONE=rmclone.o finds.o dbcs.o getkey.o
-rmclone.exe : $(RMCLONE)
-	gcc $(RMCLONE)
-
-rmclone.o : rmclone.cc
-
-edlin2.o : edlin2.cc edlin.h
-filelist.o : filelist.cc finds.h
-suffix.o : suffix.cc parse.h hash.h
-wordseek.o : wordseek.cc edlin.h
-nyaos.o : nyaos.cc edlin.h
-hash.o : hash.cc hash.h
-pathlist.o : pathlist.cc pathlist.h
-
 bindkey.o : bindkey.cc bindfunc.cc keynames.cc
+eadir.o : eadir.cc eadirop.cc
+
+tables : $(NYAOS_TBL:.tbl=.cc) depend
 bindfunc.cc : bindfunc.tbl mkbtable.cmd
-	mkbtable.cmd <$< >$@
 keynames.cc : keynames.tbl mkbtable.cmd
-	mkbtable.cmd <$< >$@
-
-edlin.o : edlin.cc edlin.h
-complete.o : complete.cc complete.h finds.h
-eadir.o : eadir.cc finds.h eadirop.cc
 eadirop.cc : eadirop.tbl mkbtable.cmd
-	mkbtable.cmd <$< >$@
 
-source.o : source.cc
-shell.o : shell.cc edlin.h
-foreach.o : foreach.cc finds.h
-alias.o : alias.cc hash.h
-script.o : script.cc
-parse.o : parse.cc parse.h
-execute.o : execute.cc hash.h
-
-commands.o : commands.cc
-command2.o : command2.cc
-prepro.o : prepro.cc
-open.o : open.cc
-search.o : search.cc
 
 nyaos.doc : nyaosdoc.html
 	nkf -e $< > tmp.html
@@ -67,7 +45,4 @@ nyaos.doc : nyaosdoc.html
 	rm -f tmp.html
 
 clean :
-	rm -f *.o *~
-
-package :
-	tar cvf package.tar $(NYAOS:.o=.cc)
+	rm -f *.o *~ depend $(NYAOS_TBL:.tbl=.cc)

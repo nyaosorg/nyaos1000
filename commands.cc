@@ -9,6 +9,7 @@
 #include "complete.h"
 #include "nyaos.h"
 
+extern int option_direct_key;
 extern int option_complete_etc;
 extern int option_single_quote;
 extern int option_cd_goto_home;
@@ -17,6 +18,8 @@ static int option_dir_tail_is_forward_slash;
 
 extern int option_history_in_doublequote;
 extern int option_amp_start;
+extern int option_amp_detach;
+extern int option_esc_key_sequences;
 extern int option_tilda_is_home;
 extern int option_tcshlike_history;
 extern int option_dots;
@@ -180,6 +183,7 @@ struct Option{
   int false_value;
 } optlist[]={
   { "amp_start"            , &option_amp_start                 , 1  , 0 },
+  { "amp_detach"	   , &option_amp_detach		       , 1  , 0 },
   { "anywhere_history"     , &option_tcshlike_history          , 1  , 0 },
   { "auto_close"	   , &option_auto_close                , 1  , 0 },
   { "backquote"            , &option_backquote                 , 1  , 0 },
@@ -195,8 +199,10 @@ struct Option{
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
   { "cmdlike_crlf"         , &option_cmdlike_crlf              , 1  , 0 },
   { "debug"                , &option_debug_echo                , 1  , 0 },
+  { "direct_key"           , &option_direct_key		       , 1  , 0 },
   { "dots"                 , &option_dots                      , 1  , 0 },
   { "echo"                 , &echoflag                         , 1  , 0 },
+  { "esc_key_sequences"	   , &option_esc_key_sequences	       , 1  , 0 },
   { "history_in_doublequote" , &option_history_in_doublequote  , 1  , 0 },
   { "ignore_cases"         , &option_ignore_cases              , 1  , 0 },
 #if 0

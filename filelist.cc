@@ -110,10 +110,24 @@ FileListT *dup_filelist(FileListT *org)
 
 static int compare(filelist::DirDateTime &A , filelist::DirDateTime &B )
 {
-  int rc=A.date - B.date;
-  if( rc==0 )
-    return A.time - B.time;
-  return rc;
+  int rc;
+  // ”N
+  rc=(int)A.d.year - (int)B.d.year;
+  if( rc != 0 ) return rc;
+  // ŒŽ
+  rc=(int)A.d.month - (int)B.d.month;
+  if( rc != 0 ) return rc;
+  // “ú
+  rc=(int)A.d.day - (int)B.d.day;
+  if( rc != 0 ) return rc;
+  // Žž
+  rc=(int)A.t.hour - (int)B.t.hour;
+  if( rc != 0 ) return rc;
+  // •ª
+  rc=(int)A.t.minute - (int)B.t.minute;
+  if( rc != 0 ) return rc;
+  // •b
+  return (int)A.t.second - (int)B.t.second;
 }
 
 static int compare(FileListT *X,FileListT *Y,int method)
@@ -181,17 +195,17 @@ static int compare(FileListT *X,FileListT *Y,int method)
     break;
 
   case SORT_BY_CHANGE_TIME:
-    if( (rc=compare( Y->create , X->create )) != 0 )
+    if( (rc=compare( Y->create , X->create )) == 0 )
       rc = strcmp( Y->name , X->name );
     break;
 
   case SORT_BY_LAST_ACCESS_TIME:
-    if( (rc=compare( Y->access , X->access )) != 0 )
+    if( (rc=compare( Y->access , X->access )) == 0 )
       rc = strcmp(X->name,Y->name);
     break;
 
   case SORT_BY_MODIFICATION_TIME:
-    if( (rc=compare( Y->write , X->write )) != 0 )
+    if( (rc=compare( Y->write , X->write )) == 0 )
       rc = strcmp(X->name,Y->name);
     break;
     
