@@ -1,3 +1,4 @@
+#include <alloca.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <io.h>
@@ -8,7 +9,13 @@
 #include "finds.h"
 
 int option_cd_goto_home=0;
-int option_cdshort_top=1;
+
+enum{
+  BIT_CD_PATH      = 1,
+  BIT_CD_SHORT_MID = 2,
+  BIT_CD_SHORT_TOP = 4,
+  BIT_CD_SHORT     = 6,
+};
 
 int cmd_pwd( FILE *source , Parse &params )
 {
@@ -22,17 +29,19 @@ int cmd_pwd( FILE *source , Parse &params )
   return 0;
 }
 
-static int cdshort_1(char *list[]);
-static int cdshort_2(const char *cwdx,char *list[])
+static int cdshort_1(char *list[] , int modeflag );
+
+static int cdshort_2(const char *cwdx,char *list[] , int modeflag )
 {
-  for( Dir dir(cwdx) ; dir != NULL ; ++dir ){
+  Dir dir;
+  for( dir._findfirst(cwdx) ; dir != NULL ; ++dir ){
     const char *name=dir.get_name();
     if(   name[0] != '.'
        && (dir.get_attr() & Dir::DIRECTORY) != 0
        && (dir.get_attr() & (Dir::HIDDEN|Dir::SYSTEM)) == 0
        && _chdir2(name)==0 ){
       
-      if( cdshort_1(list+1) == 0 ){
+      if( cdshort_1(list+1,modeflag) == 0 ){
 	return 0;
       }else{
 	chdir("..");
@@ -41,57 +50,76 @@ static int cdshort_2(const char *cwdx,char *list[])
   }
   return -1;
 }
-static int cdshort_1( char *list[] )
+static int cdshort_1( char *list[] ,int modeflag )
 {
   if( *list == NULL )
     return 0;
   
-  char *cwdx;
-  if( list[0][0] == '*' && list[0][1] == '\0' ){
-    return cdshort_2("*",list);
-  }
+  if( list[0][0] == '*' && list[0][1] == '\0' )
+    return cdshort_2("*",list,modeflag);
 
-  cwdx = (char*)alloca( strlen(*list)+3 );
-
+  char *cwdx = (char*)malloc( strlen(*list)+3 );
+  
   *cwdx = '*';
   strcpy_tail(strcpy_tail( cwdx+1 , *list ) , "*" );
 
-  int rc=cdshort_2(cwdx+1,list);
-  if( rc != 0 && option_cdshort_top==0 )
-    rc = cdshort_2(cwdx  ,list);
+  int rc=cdshort_2(cwdx+1,list,modeflag);
+  if( rc != 0 && (modeflag & BIT_CD_SHORT_MID) !=0 ){
+    rc = cdshort_2(cwdx  ,list,modeflag);
+  }
   return rc;
 }
 
-int smart_chdir(FILE *source , Parse &params)
+/* cd [-sp] path */
+
+static int smart_chdir(FILE *source , Parse &params , int modeflag=0 )
 {
   // パラメータを全て、ポインタ配列に変換する。
-  int argc = params.get_argc();
-  char **argv = (char**)alloca(sizeof(char*)*(argc+1));
-  for(int i=1;i<argc;i++){
-    argv[i-1] = (char*)alloca( params.get_length(i)+1 );
-    params.copy(i,argv[i-1]);
-  }
-  argv[argc-1] = NULL;
-  
-  // 引数が一個の場合は、
-  // 普通の chdir と、CDPATH の検索をまず行う
-
-  if( argc <= 2 ){
-    char *cwd=argv[0];
-
-    if( _chdir2( cwd )==0 )
-      return 0;
-    
-    for( const char *p=cwd ; *p != '\0' ; p++ ){
-      if( *p=='/' || *p=='\\' || *p==':' ){
-	fprintf(stderr,"%s: no such directory.\n",cwd);
-	return 0;
+  int n = params.get_argc();
+  char **argv = (char**)alloca(sizeof(char*)*(n+1));
+  int argc=0;
+  for(int i=1;i<n;i++){
+    argv[argc] = (char*)alloca( params.get_length(i)+1 );
+    params.copy(i,argv[argc]);
+    if( argv[argc][0] == '-' ){
+      switch( argv[argc][1] ){
+      case 's':
+      case 'S':
+	modeflag |= BIT_CD_SHORT_MID;
+	break;
+	
+      case 't':
+      case 'T':
+	modeflag |= BIT_CD_SHORT_TOP;
+	break;
+	
+      case 'p':
+      case 'P':
+	modeflag |= BIT_CD_PATH;
+	break;
       }
+    }else{
+      argc++;
     }
-    
-    // ------- CDPATH を検索する。 --------
-    
+  }
+  argv[argc] = NULL;
+
+  char *cwd=argv[0];
+  if( _chdir2( cwd )==0 )
+    return 0;
+  
+  for( const char *p=cwd ; *p != '\0' ; p++ ){
+    if( *p=='/' || *p=='\\' || *p==':' ){
+      fprintf(stderr,"%s: no such directory.\n",cwd);
+      return 0;
+    }
+  }
+  
+  // ------- CDPATH を検索する。 --------
+  
+  if( modeflag & BIT_CD_PATH ){
     const char *sp=getenv("CDPATH");
+    
     if( sp != NULL ){
       char cdpath[FILENAME_MAX];
       char *dp=cdpath;
@@ -119,30 +147,32 @@ int smart_chdir(FILE *source , Parse &params)
     }
   }
 
-  /* CD-SHORT モード */
-  const char *env=getenv("CDSHORT");
-  if( env != NULL ){
-    int org_drive=_getdrive();
-    
-    // 環境変数 CDSHORT を走査する。
-    while( *env != '\0' ){
-      if( isalpha(*env) ){
-	char pwd[256];
-	
-	_chdrive(*env);
-	getcwd(pwd,sizeof(pwd));
-	chdir("/");
-	
-	if( cdshort_1(argv)==0 )
-	  return 0;
-	
-	chdir(pwd);
+  if( modeflag & BIT_CD_SHORT ){
+    /* CD-SHORT モード */
+    const char *env=getenv("CDSHORT");
+    if( env != NULL ){
+      int org_drive=_getdrive();
+      
+      // 環境変数 CDSHORT を走査する。
+      while( *env != '\0' ){
+	if( isalpha(*env) ){
+	  char pwd[256];
+	  
+	  _chdrive(*env);
+	  getcwd(pwd,sizeof(pwd));
+	  chdir("/");
+	  
+	  if( cdshort_1(argv,modeflag)==0 )
+	    return 0;
+	  
+	  chdir(pwd);
+	}
+	++env;
       }
-      ++env;
+      _chdrive( org_drive );
     }
-    _chdrive( org_drive );
   }
-
+  
   fprintf(stderr,"%s : no such directory.\n",argv[0]);
   return 0;
 }
@@ -150,7 +180,11 @@ int smart_chdir(FILE *source , Parse &params)
 int cmd_chdir( FILE *srcfil, Parse &params)
 {
   if( params.get_argc() > 1 ){
-    smart_chdir(srcfil,params);
+    int thirdchar = params.get_argv(0)[2];
+    if( thirdchar == 's' || thirdchar == 'S' )
+      smart_chdir(srcfil,params,BIT_CD_SHORT_MID);
+    else
+      smart_chdir(srcfil,params);
   }else if( option_cd_goto_home ){
     const char *home=getenv("HOME");
     if( home == NULL || _chdir2(home) != 0 )
@@ -160,6 +194,7 @@ int cmd_chdir( FILE *srcfil, Parse &params)
   }
   return 0;
 }
+  
 
 struct Dirstack{
   Dirstack *prev;

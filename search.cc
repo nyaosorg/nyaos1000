@@ -1,6 +1,22 @@
 #include <io.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include "macros.h"
+
+/* ファイルが存在していて、しかもディレクトリ名でなければ、真(1)を返す。*/
+
+static int is_file_not_dir(const char *path)
+{
+  if( access(path,0) != 0 )
+    return 0;
+
+  struct stat statbuf;
+  if( stat(path,&statbuf)==0  && (statbuf.st_attr & 0x10)==0 )
+    return 1;
+  else
+    return 0;
+}
 
 static int cmdexe_check(const char *path, char *tail )
 {
@@ -8,19 +24,19 @@ static int cmdexe_check(const char *path, char *tail )
   tail[0]='.'; tail[4]='\0';
   
   tail[1]='e';  tail[2]='x';  tail[3]='e';
-  if( access(path,0)==0 )
+  if( is_file_not_dir(path) )
     return EXE_FILE;
   
   tail[1]='c';  tail[2]='m';  tail[3]='d';
-  if( access(path,0)==0 )
+  if( is_file_not_dir(path) )
     return CMD_FILE;
 
   tail[2]='o'; tail[3]='m';
-  if( access(path,0)==0 )
+  if( is_file_not_dir(path) )
     return COM_FILE;
   
   tail[0]='\0';
-  if( access(path,0)==0 )
+  if( is_file_not_dir(path) )
     return FILE_EXISTS;
 
   return NO_FILE;
@@ -81,7 +97,7 @@ static int _SearchEnv(const char *fname,const char *envname,char *path)
       return rc;
   }else{
     /* 拡張子が有る場合、そのままで調べる */
-    if( access(path,0)==0 )
+    if( is_file_not_dir(path) )
       return suffix_type;
   }
   
@@ -115,7 +131,7 @@ static int _SearchEnv(const char *fname,const char *envname,char *path)
 
     if( period != NULL ){
       /* 拡張子がある場合は、そのままで Ok! */
-      if( access(path,0)==0 )
+      if( is_file_not_dir(path) )
 	return suffix_type;
     }else{
       /* 拡張子が無い場合は、EXE , CMD , 拡張子無しについて調べる */

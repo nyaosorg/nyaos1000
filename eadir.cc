@@ -18,10 +18,16 @@
 #include <time.h>
 #include <string.h>
 #include <signal.h>
+
+#include <sys/video.h>
+
 #include "nyaos.h"
 #include "complete.h"
 #include "finds.h"
 
+/* #define INCL_VIO
+   #include <os2.h>
+*/
 extern volatile int ctrl_c;
 extern int screen_width;
 extern int screen_height;
@@ -37,6 +43,7 @@ enum{
   MORE_MODE  = 4,
   COLOR_MODE = 8,
   HIDDEN_MODE= 16, /* HIDDEN属性も表示する。*/
+  HALF_MODE  = 32,
 };
 
 static char *ls_left_code="\033[";
@@ -131,14 +138,21 @@ char **fnexplode2(const char *path)
   int lendir = 0;
   char *dirname = "";
   if( lastroot != NULL ){
-    int lendir=lastroot-path+1;
-    char *dirname = (char*)alloca(lendir+1);
+    assert( lastroot > path );
+    lendir=lastroot-path+1;
+
+    // alloca には複雑な引数を渡してはいけない。
+    int memsiz=lendir+1;
+    dirname = (char*)alloca(memsiz);
+    
     memcpy( dirname , path , lendir );
     dirname[lendir] = '\0';
     if( lastroot[1]=='.' )
       dotprint = 1;
+  }else{
+    if( path[0] == '.' )
+      dotprint = 1;
   }
-  
   Dir dir;
 
   dir._findfirst(path,Dir::ALL);
@@ -151,15 +165,25 @@ char **fnexplode2(const char *path)
     return NULL;
   
   do{
-    if( dotprint || dir.get_name()[0] != '.'){
-      result[ nfiles ] = 
-	(char*)malloc( lendir + dir.get_name_length()+1 );
-      strcpy_tail( strcpy_tail( result[ nfiles ] , dirname )
-		  , dir.get_name() );
-      result = (char**)realloc( result , (++nfiles+1) * sizeof(char*) );
-    }
+    //  o「.」で始まるファイルは基本的に表示しない。
+    //    - ファイル名自体の指定で「.」で始まる場合ば別
+    //    - 「.」自体には展開しない
+    if(  dir.get_name()[0] == '.'
+       && ( dotprint == 0 || dir.get_name()[1]=='\0' ) )
+      continue;
+	
+    result[ nfiles ] = 
+      (char*)malloc( lendir + dir.get_name_length()+1 );
+    strcpy_tail( strcpy_tail( result[ nfiles ] , dirname )
+		, dir.get_name() );
+    result = (char**)realloc( result , (++nfiles+1) * sizeof(char*) );
   }while( ++dir != NULL );
   result[ nfiles ] = NULL;
+
+  if( nfiles <= 0 ){
+    free(result);
+    return NULL;
+  }
 
   return result;
 }
@@ -172,7 +196,7 @@ void set_ls_color_table(const char *s)
   while( is_alpha(s[0]) && is_alpha(s[1]) && s[2]=='=' ){
     int s0=tolower(s[0] & 255) , s1=tolower(s[1] & 255 );
     s += 3;    
-    for(int i=0;i<numof(ls_color_table);i++){
+    for(size_t i=0;i<numof(ls_color_table);i++){
       if( s0==ls_color_table[i].xx[0]  &&  s1==ls_color_table[i].xx[1] ){
 	char buffer[1024],*p=buffer;
 	while( *s != ':' ){
@@ -244,8 +268,23 @@ void kill_filelist(struct filelist *p)
   }
 }
 
+extern "C" {
+  unsigned short VioGetCurPos(unsigned short *pusRow ,
+			      unsigned short *pusColumn ,
+			      unsigned short hvio );
+}
+
 void more(int flag,FILE *fout)
 {
+  if( (flag & HALF_MODE)!=0 && (fout==stdout || fout==stderr) ){
+    fflush(fout);
+    USHORT X,Y;
+    VioGetCurPos(&Y,&X ,0 );
+    if( Y >= screen_height-1 ){
+      v_scroll(0,0,screen_width-1,Y,3,V_SCROLL_UP);
+      fputs("\x1B[3A",fout);
+    }
+  }
   putc('\n',fout);
   if(   (flag & COLOR_MODE)  &&  (flag & MORE_MODE) 
      && ++nprintlines >= screen_height-1 ){
@@ -327,22 +366,22 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
   }
 
   if( (flag & PRINT_MASK) != INDEX_MODE ){
-    ncolumns += fprintf(fout,"%s %10d %4d-%02d-%02d %02d:%02d:%02d ",
-		       attrstr,
-		       flist->size,
-		       flist->d.year+1980,
-		       flist->d.month,
-		       flist->d.day,
-		       flist->t.hour,
-		       flist->t.minute,
-		       flist->t.second*2
-		       );
+    ncolumns += fprintf(fout,"%s %10ld %4d-%02d-%02d %02d:%02d:%02d "
+			, attrstr
+			, flist->size
+			, flist->d.year+1980
+			, flist->d.month
+			, flist->d.day
+			, flist->t.hour
+			, flist->t.minute
+			, flist->t.second*2
+			);
   }
   
   if( flag & COLOR_MODE ){
     fprintf(fout,"%s%s%s",ls_left_code,headstr,ls_right_code);
   }
-  ncolumns += fprintf(fout,"%s",flist->name,fout);
+  ncolumns += fprintf(fout,"%s",flist->name);
   if( flag & COLOR_MODE )
     fputs(ls_end_code,fout);
   
@@ -369,8 +408,6 @@ void dir1(struct filelist *flist,int max_length,int flag,FILE *fout)
       ptr.value = ea.value;
       int type = *ptr.word++;
       if( type == 0xFFFD ){
-	int x,y;
-	
 	int size = *ptr.word++; /* 実際のサイズ */
 	int n = 0;              /* ctrl-codeを ^N などと変形した後のサイズ*/
 	char *s=(char*)alloca(size*2); /* 変形後の文字列が入る */
@@ -569,6 +606,14 @@ int the_dir(const char *dirname,int flag , FILE *fout )
   return nlists;
 }
 
+static int exit_with_ctrl_c()
+{
+  fputs("\n^C\n",stderr);
+  ctrl_c = 0;
+  signal(SIGINT,ctrl_c_signal);
+  return 0;
+}
+
 int eadir( int argc, char **argv,FILE *fout=stdout)
 {
   int flag=0;
@@ -620,6 +665,12 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	  break;
 	case 'o':
 	  flag &= ~COLOR_MODE;
+	  break;
+	case '3':
+	  flag |= HALF_MODE;
+	  break;
+	default:
+	  fprintf(stderr,"`%s' : unknown option\n",argv[i]);
 	  break;
 	}/* end switch */
       }/* end for */
@@ -704,12 +755,9 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
       }// _fnexplode で展開できない場合の処理
     }/* if(argv[i][0]=='-' ){...}else{...} */
   }/* argv loop */
-  if( ctrl_c ){
-    fputs("\nCtrl-C Hit.\n",fout);
-    ctrl_c = 0;
-    signal(SIGINT,ctrl_c_signal);
-    return 0;
-  }
+
+  if( ctrl_c )
+    return exit_with_ctrl_c();
   
   if( filecount > 0 || dircount > 0  ){
     /* ファイル名が指定された */
@@ -736,7 +784,9 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 	}
 	
 	the_dir( p->name , flag , fout );
-	
+	if( ctrl_c )
+	  return exit_with_ctrl_c();
+
 	if( (p=p->next) == NULL ) break;
 	
 	putc('\n',fout);
@@ -750,12 +800,9 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
     /* ファイル名が指定されていない ---> カレントディレクトリ */
 
     the_dir( "." , flag , fout );
-    if( ctrl_c ){
-      fputs("\nCtrl-C Hit.\n",stderr);
-      ctrl_c = 0;
-      signal(SIGINT,ctrl_c_signal);
-      return 0;
-    }
+    if( ctrl_c )
+      return exit_with_ctrl_c();
+
   }
   if( (flag & COLOR_MODE) && isatty(fileno(fout)) )
     fputs( ls_end_code ,fout);

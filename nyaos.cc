@@ -55,6 +55,7 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin)
   time( &now );
   struct tm *thetime = localtime( &now );
   edlin.using_i_mark=0;
+  int a;
   
   while( *promptenv != '\0' ){
     if( *promptenv == '$' ){
@@ -83,20 +84,19 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin)
       case 'H': *dp++ = '\b';	  break;
 	
       case 'I':
-	int a;
 	if( option_vio_cursor_control )
 	  a = v_getattr();
 	
 	dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
 		      , screen_width ,
-		      " Nihongo Yet Another Os/2 Shell 1.29 "
+		      " Nihongo Yet Another Os/2 Shell 1.30  "
 		      " (c) 1996,97 HAYAMA,Kaoru "
 		      );
 	edlin.using_i_mark = 1;
 	if( option_vio_cursor_control )
 	  v_attrib(a);
 	break;
-	
+
       case '{':
 	{
 	  int curdrv=_getdrive();
@@ -287,7 +287,7 @@ int main(int argc, char **argv)
 	   "\n"
 	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "   Os/2 Shell 1.29     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "   Os/2 Shell 1.30     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	   "                                                          \n"

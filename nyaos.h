@@ -15,6 +15,7 @@ extern int screen_width , screen_height ;
 int execute(FILE *srcfil, const char *cmdline, int use_spawn=0 );
 int eadir(int argc, char **argv,FILE *fout);
 char *fgets_chop(char *dp,int max,FILE *fp);
+class ShellEdlin;
 void setprompt(const char *promptenv,char *dp,ShellEdlin &edlin);
 class Parse;
 

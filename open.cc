@@ -70,12 +70,13 @@ int cmd_which( FILE *source , Parse &params )
   }
 
   char buffer[FILENAME_MAX];
+  int type;
   
   for(int i=1;i<argc;i++){
     int len=params.get_length(i);
     // params.get_length() はどうも、怪しい。そのうち、要チェックである。
 
-    char *arg =(char *)alloca(len+5);
+    char *arg =(char *)alloca(len+1);
     char *arg2=(char *)alloca(len+10);
     params.copy(i,arg);
 
@@ -83,6 +84,7 @@ int cmd_which( FILE *source , Parse &params )
     char replace_buffer2[FILENAME_MAX];
     
     alias_replace( arg , replace_buffer1 );
+
     replace_script( replace_buffer1 , replace_buffer2 );
 
     char *sp=replace_buffer2; /* 置換後のコマンドライン全体が入っている   */
@@ -104,21 +106,11 @@ int cmd_which( FILE *source , Parse &params )
 	goto next;
       }
     }
-    
-    /* 実行ファイルの検索 */
-    if( _path(buffer,arg)!=0  ||  print_file(buffer)!=0 ){
 
-      /* そのままで見付からない場合は、拡張子を付けてみる。*/
-      const static char *suffix_list[]={
-	"CMD","EXE","COM",NULL,
-      };
-      
-      for(const char **p=suffix_list ; *p != NULL ; p++ ){
-	sprintf(arg2,"%s.%s",arg,*p);
-	if( _path(buffer,arg2)==0  &&  print_file(buffer)==0 )
-	  goto next;
-      }
-      printf( "%s :not found %s.\n"
+    /* 実行ファイルの検索 */
+    type=SearchEnv(arg,"PATH",buffer);
+    if( (type != EXE_FILE && type != CMD_FILE ) || print_file(buffer)!=0 ){
+      printf( "%s : not found %s.\n"
 	     , arg 
 	     , scriptflag ? "in PATH and SCRIPTPATH" : "in PATH" );
     }

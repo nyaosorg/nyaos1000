@@ -13,7 +13,6 @@
 #include "nyaos.h"
 
 extern int option_cd_goto_home;
-extern int option_cdshort_top;
 
 static int option_dir_tail_is_forward_slash;
 
@@ -155,7 +154,6 @@ struct{
   { "ctrl_d_eof"           , &Shell::ctrl_d_eof                , 1  , 0 },
   { "ctrl_z_eof"           , &Shell::ctrl_z_eof                , 1  , 0 },
   { "cd_goto_home"         , &option_cd_goto_home              , 1  , 0 },
-  { "cd_short_top"         , &option_cdshort_top               , 1  , 0 },
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
   { "script"               , &scriptflag                       , 1  , 0 },
   { "sos"                  , &option_sos                       , 1  , 0 },

@@ -357,6 +357,7 @@ const struct commandtable_tag jumptable[]={
   {"bind",   cmd_bind    },
   {"bindkey",cmd_bindkey },
   {"cd",     cmd_chdir   },
+  {"cds",    cmd_chdir   },
   {"chdir",  cmd_chdir   },
   {"comment",cmd_comment },
   {"cursor", cmd_cursor  },
