@@ -36,8 +36,8 @@ public:
   void *lookup_tolower(const Substr &s);
   void *lookup_tolower(const char *s);
   
-  HashB(int s) : size(s) , table((Bullet**)NULL) { }
-  ~HashB(){ }
+  HashB(int s) : table((Bullet**)NULL) , size(s) { }
+  virtual ~HashB(){ }
 };
 
 template <class T>

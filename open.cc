@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <process.h>
+#include <alloca.h>
 
 #include "macros.h"
 #include "nyaos.h"
@@ -100,8 +101,8 @@ int cmd_jobs(FILE *source , Parse &argv )
       continue;
     
     int top=
-      fprintf(fout,
-	      "%2d%5d%4d %-3s %-5s "
+      fprintf(fout
+	      , "%2d%5ld%4ld %-3s %-5s "
 	      , i
 	      , slist[i].swctl.idProcess
 	      , slist[i].swctl.idSession
@@ -194,20 +195,20 @@ int cmd_which( FILE *source , Parse &params )
   }
 
   char buffer[FILENAME_MAX];
-  int type;
+  int type=0;
   
+  char *argv=0; /* なんでか知らんが、ここにおかんと変なワーニングが
+		   出たりするんだな。gcc のバグかな */
   for(int i=1;i<argc;i++){
     int len=params.get_length(i);
-    // params.get_length() はどうも、怪しい。そのうち、要チェックである。
+    argv=(char *)alloca(len+1);
 
-    char *arg =(char *)alloca(len+1);
-    char *arg2=(char *)alloca(len+10);
-    params.copy(i,SmartPtr(arg,len+1));
+    params.copy(i,SmartPtr(argv,len+1));
     
     char replace_buffer1[FILENAME_MAX];
     char replace_buffer2[FILENAME_MAX];
     
-    replace_alias( arg , replace_buffer1 , sizeof(replace_buffer1));
+    replace_alias( argv , replace_buffer1 , sizeof(replace_buffer1));
     replace_script( replace_buffer1,replace_buffer2,sizeof(replace_buffer2));
 
     char *sp=replace_buffer2; /* 置換後のコマンドライン全体が入っている   */
@@ -216,19 +217,19 @@ int cmd_which( FILE *source , Parse &params )
       *dp++ = *sp++;
     *dp = '\0';
 
-    if( strcmp(replace_buffer1,arg) != 0 ){
+    if( strcmp(replace_buffer1,argv) != 0 ){
       printf("replaced to `%s'\n",replace_buffer2 );
       continue;
     }
 
     if( command_hash[ params[i] ] != NULL ){
-      printf( "%s: nyaos built-in command\n",arg);
+      printf( "%s: nyaos built-in command\n",argv);
     }else{
       /* 実行ファイルの検索 */
-      type=SearchEnv(arg,"PATH",buffer);
+      type=SearchEnv(argv,"PATH",buffer);
       if( (type != EXE_FILE && type != CMD_FILE ) || print_file(buffer)!=0 ){
 	printf( "%s : not found %s.\n"
-	       , arg 
+	       , argv
 	       , scriptflag ? "in PATH and SCRIPTPATH" : "in PATH" );
       }
     }
@@ -240,7 +241,7 @@ static void the_open( char *fname , const char *setup_string , int active )
 {
   char *p=fname;
   char *lastp=NULL , *last2p=NULL;
-  const char *title;
+
 
   while( *p != '\0' ){
     last2p = lastp;
@@ -271,8 +272,8 @@ extern void truepath(char *dst,const char *src,int size);
 int cmd_open( FILE *source , Parse &params )
 {
   int argc = params.get_argc();
-  int number = 0; /* OPEN する種類 */
-  BOOL flag=TRUE; /* すでに open しているウインドウを利用するのか？*/
+
+
   const char *setup_string="OPEN=DEFAULT";
   int nopens=0;
   int active = 0;

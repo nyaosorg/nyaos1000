@@ -365,7 +365,7 @@ void Edlin::initComplete()
 
   firstcalled = 0;
 
-  for(int i=0;i<numof(completeBindmap);i++)
+  for(unsigned int i=0;i<numof(completeBindmap);i++)
     completeBindmap[ i ] = COMPLETE_FIX_PLUS;
   
   struct{
@@ -389,7 +389,7 @@ void Edlin::initComplete()
     { '\n'			, COMPLETE_FIX },
   };
   
-  for(int i=0;i<numof(defaultBindmap);i++){
+  for(unsigned int i=0;i<numof(defaultBindmap);i++){
     completeBindmap[ defaultBindmap[i].key ] = defaultBindmap[i].func;
   }
 }
@@ -481,7 +481,7 @@ int Edlin::completeFirst()
 	message("%s",cur->name+com.get_fname_common_length() );
       }
       CompleteFunc completeFunc;
-      int key=::getkey();
+      unsigned int key=::getkey();
       if( key >= numof(completeBindmap) )
 	completeFunc = COMPLETE_FIX_PLUS;
       else
@@ -787,23 +787,15 @@ void Edlin::after_repaint(int termclear)
  */
 void Edlin::erasebol()
 {
-  int i;
-
-  if(!pos)
+  if( pos == 0 )
     return;
 
+  int i=pos;  
   if( makeRoom(0,-pos) != 0 )
     return;
 
-  len -= pos;
-#if 0
-  for(i=0,len-=pos;i<=len;++i){
-    strbuf[i]=strbuf[pos+i];
-    atrbuf[i]=atrbuf[pos+i];
-  }
-#endif
-  putbs(i=pos);
-  pos=0;
+  pos = 0;
+  putbs(i);
   after_repaint(i);
 }
 
@@ -999,7 +991,7 @@ int Edlin::message(const char *fmt,...) /* ウインドウモード未対応 */
   if( msgsize > 0 )
     putbs(msgsize);
 
-  int length=vsprintf(msg,fmt,vp);  
+  (void)vsprintf(msg,fmt,vp);  
   va_end(vp);
 
   int columns=0; /* 実際の表示桁数(エスケープシーケンス部分を除く) */

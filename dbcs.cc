@@ -24,7 +24,7 @@ int dbcs_table_init()
     // OS/2 ‚Ìê‡AAPI ŠÖ”‚ğŒÄ‚ñ‚ÅAİ’è‚·‚éB
 
     char buffer[12];    
-    ULONG length;
+
     COUNTRYCODE country;
     
     country.country = 0;

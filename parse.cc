@@ -345,7 +345,12 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv) )
   char **argv=(char**)alloca(sizeof(char*)*(argc+3));
   for(i=0;i<argc;i++){
     argv[i]=(char *)alloca(args[i].len+5);
-    copy(i,SmartPtr(argv[i],args[i].len+5) );
+    SmartPtr smartptr(argv[i],args[i].len+5);
+    try{
+      copy(i,smartptr);
+    }catch( SmartPtr::BorderOut ){
+      smartptr.terminate();
+    }
   }
   argv[i] = NULL;
   
@@ -372,35 +377,37 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
   return (*routine)(argc,argv,fout);
 }
 
-SmartPtr Parse::copy(int n, SmartPtr dp, int flag )
+SmartPtr Parse::copy(int n, SmartPtr dp, int flag ) throw()
 {
-  if( n < argc ){
-    const char *sp   = args[n].ptr ;
-    const char *tail = sp + args[n].len ;
+  if( n >= argc )
+    return dp;
 
-    /* 基本的に引用符とキャレットはコピ－しない。
-     * 二重キャレット「^^」は「^」としてコピ－する。
-     * ただし、引用符に囲まれたキャレットはそのままコピ－する。
-     */
+  const char *sp   = args[n].ptr ;
+  const char *tail = sp + args[n].len ;
 
-    bool quote=false;
-    
-    /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
-     * (1) s|^-|/|;
-     */
-       
-    if( (flag & REPLACE_SLASH)  &&  *sp == '-' ){
-      *dp++ = '/';
-      ++sp;
-    }
+  /* 基本的に引用符とキャレットはコピ－しない。
+   * 二重キャレット「^^」は「^」としてコピ－する。
+   * ただし、引用符に囲まれたキャレットはそのままコピ－する。
+   */
+  
+  bool quote=false;
+  
+  /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
+   * (1) s|^-|/|;
+   */
+  
+  if( (flag & REPLACE_SLASH)  &&  *sp == '-' ){
+    *dp++ = '/';
+    ++sp;
+  }
 
-    int lastchar = -1;
+  int lastchar = -1;
 
+  try{
     while( sp < tail ){
-      
       if( *sp == '"' ){
 	/* 引用符の場合は、フラグを反転させて、ポインタを進めるだけ。*/
-
+      
 	if( (flag & QUOTE_COPY)==0 && *(sp+1) == '"' ){
 	  /* 連続する二つの引用符は、単一の引用符に変換する。*/
 	  *dp++ = '"';
@@ -444,6 +451,8 @@ SmartPtr Parse::copy(int n, SmartPtr dp, int flag )
       *dp++ = '.';
 
     *dp = '\0';
+  }catch(SmartPtr::BorderOut){
+    dp.terminate();
   }
   return dp;
 }

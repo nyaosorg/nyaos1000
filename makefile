@@ -5,7 +5,7 @@
 # make clean & make depend & make
 
 CC=gcc
-CFLAGS=-O2 -DWITH_CANNA
+CFLAGS=-DWITH_CANNA -Wall -O2
 LDFLAGS=-lvideo -lwrap -Zcrtdll -lsocket
 
 all : nyaos.exe nyaos.doc
@@ -26,7 +26,7 @@ NYAOS_HDR=\
 	complete.h edlin.h finds.h hash.h macros.h nyaos.h \
 	parse.h pathlist.h smartptr.h strtok.h
 NYAOS_SRC=\
-	alias.cc bindkey.cc chdirs.cc complete.cc commands.cc \
+	alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
 	command2.cc dbcs.cc eadir.cc edlin.cc edlin2.cc execute.cc \
 	finds.cc filelist.cc foreach.cc getkey.cc hash.cc nyaos.cc \
 	open.cc parse.cc pathlist.cc prepro.cc prompt.cc script.cc \

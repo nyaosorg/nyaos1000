@@ -151,7 +151,7 @@ public:
   FileListT *get_top() const { return top; }
   void clear();
   
-  Files() : top(0) , n(0) , dirname(0) { }
+  Files() : top(0) , dirname(0) , n(0) { }
   ~Files(){ clear(); }
 };
 

@@ -25,13 +25,13 @@ int Shell::vz_history_core(WHist *tmp)
     int key=::getkey();
     ed.cleanmsg();
     
-    if( bindmap[key]==next_history || bindmap[key]==vz_next_history ){
+    if( bindmap[key]==&next_history || bindmap[key]==&vz_next_history ){
       if( tmp->next != NULL )
 	tmp = tmp->next;
       else 
 	return 0;
-    }else if(   bindmap[key] != vz_prev_history 
-	     && bindmap[key] != previous_history ){
+    }else if(   bindmap[key] != &vz_prev_history 
+	     && bindmap[key] != &previous_history ){
       /* 単語もバッチソ。大団円 */
       ed.insert_and_forward(tmp->buffer);
       ungetkey(key);
@@ -137,7 +137,7 @@ Shell::Status Shell::vz_prev_history()
 	cur=history;
     }
     const char *sp=cur->buffer;
-    int left;
+
 
     if( wordtop == 0 ){
       /******** 行単位での検索 *********/

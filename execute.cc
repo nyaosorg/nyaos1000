@@ -101,8 +101,8 @@ static int foreach(FILE *source, Parse &params )
 
 static int cmd_ls( FILE *srcfil, Parse &params )
 {  return params.call_as_main(eadir);  }
-static int cmd_dir( FILE *srcfil, Parse &params )
-{  return params.call_as_main(eadir);  }
+
+
 #if 0
    static int cmd_eadir( FILE *srcfil, Parse &params )
    {  return params.call_as_main(eadir);  }
@@ -186,7 +186,7 @@ void backquote_replace(const char *sp , char *dp , int max )
       FILE *pp=popen( buffer[0] , "r" );
       
       if( pp != NULL ){
-	int ch,size=0;
+	int ch;
 	while( (ch=fgetc(pp)) != EOF  ){
 	  if( !quote  && isspace(ch & 255) ){
 	    *dp++ = ' ';
@@ -219,22 +219,25 @@ void backquote_replace(const char *sp , char *dp , int max )
   *dp = '\0';
 }
 
+static int cmd_rem(FILE *source , Parse &)
+{
+  return 0;
+}
+
 Command jumptable[]={
   {"alias",  cmd_alias   },
   {"bg",     cmd_bg      },
   {"cache",  cmd_cache   },
   {"chcp",   cmd_chcp    },
   {"bind",   cmd_bind    },
-  /*  {"bindcomplete",cmd_bindcomplete} , */
   {"bindkey",cmd_bindkey },
+  {"call",   cmd_source  },
   {"cd",     cmd_chdir   },
   {"cds",    cmd_chdir   },
   {"chdir",  cmd_chdir   },
   {"comment",cmd_comment },
-  //  {"cursor", cmd_cursor  },
   {"dirs",   cmd_dirs    },
   {"drvalias",cmd_drivealias },
-//  {"eadir",  cmd_eadir   },
   {"echo",   cmd_echo    },
   {"exec",   cmd_exec    },
   {"exit",   cmd_exit    },
@@ -253,6 +256,7 @@ Command jumptable[]={
   {"pwd",    cmd_pwd     },
   {"popd",   cmd_popd    },
   {"pushd",  cmd_pushd   },
+  {"rem",    cmd_rem     },
   {"rd",     cmd_rmdir   },
   {"rehash", cmd_rehash  },
   {"rmdir",  cmd_rmdir   },

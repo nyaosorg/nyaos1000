@@ -2,12 +2,16 @@
 #ifndef MACROS_H
 #define MACROS_H
 
+// #include <sys/nls.h>
+
 /* dbcs.c */
 extern char dbcs_table[128+256];
 int dbcs_table_init();
 extern char toupper_table[128+256];
 extern char tolower_table[128+256];
 #define is_kanji(x) (dbcs_table+128)[x]
+// #define is_kanji(x) _nls_is_dbcs_lead((x) & 0xFF)
+
 #define to_upper(x) (toupper_table+128)[x]
 #define to_lower(x) (tolower_table+128)[x]
 #define is_space(x) isspace((x)& 255)

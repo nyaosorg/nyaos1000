@@ -226,6 +226,7 @@ private:
   int changed;
   int prevchar;
   int prev_complete_num;
+  int overwrite;
 
   static void bindkey_base();
   static Status (Shell::*bindmap[0x200])();
@@ -300,6 +301,8 @@ public:
   static int replace_last_history(const char *s);
   // ヒストリに文字列を加える。
   static int append_history(const char *s);
+
+  int isOverWrite(){ return overwrite; }
 };
 
 /* TERMCAP & エスケープシーケンス メモ

@@ -14,6 +14,8 @@ int option_dots=1;
 int option_history_in_doublequote=0;
 int option_same_history=1;
 
+extern int are_spaces(const char *s); /* ← edlin2.cc */
+
 static struct PublicHistory {
   char *string;
   PublicHistory *prev,*next;
@@ -291,8 +293,8 @@ static SmartPtr word_designator(const char *&sp , const char *histring ,
   while( *histring != '\0' )
     *dp++ = *histring++;
   *dp = '\0';
+  return dp;
 }
-
 /* 「!」で始まるヒストリ参照子を、対応するヒストリ内容に置換する。
  *	sp ... 置換前の「!」を差すポインタ
  *	dp ... 置換後の結果をコピーするスマートポインタ
@@ -467,8 +469,9 @@ void replace_history(const char *sp, char *_dp , int max )
     putc( '\n' , stdout );
   }
 
+  /* ヒストリを登録する。*/
   PublicHistory *tmp=new PublicHistory;
-  if( tmp != NULL  &&  (tmp->string = strdup(_dp))!=NULL ){
+  if( tmp != NULL && !are_spaces(_dp) && (tmp->string=strdup(_dp))!=NULL ){
     tmp->prev = public_history ;
     tmp->next = public_history->next ;
     public_history = public_history->next = tmp ;
@@ -490,131 +493,139 @@ void preprocess(const char *sp, char *_dp , int max )
   int quote=0;
   int prevchar=' ';
 
-  while( *sp != '\0' ){
-    switch( *sp ){
-    case '\'':
-      if( (quote & 1)==0 )
-	quote ^= 2;
-      break;
-      
-    case '"':
-      if( (quote & 2)==0 )
-	quote ^= 1;
-      break;
-      
-    case ';': /* 空白＋「；」を「&;」に変換する */
+  try{
+    if( *sp == '@' )
       ++sp;
-      if( Parse::option_semicolon_terminate && !quote && is_space(prevchar) ){
-	*dp++ = '&';
-      }
-      *dp++ = ';';
-      continue;
-      
-    case '.': /* 空白＋「...」を「..\..」に変換する */
-      if(   option_dots 
-	 && !quote 
-	 && is_space(prevchar) && sp[1]=='.' && sp[2]=='.' ){
-	
-	++sp;
-	/* sp は二つ目の . を差している。*/
-	for(;;){
-	  *dp++ = '.';
-	  *dp++ = '.';
-	  if( *++sp != '.' )
-	    break;
-	  *dp++ = '\\';
-	}
-	continue;
-      }
-      break;
 
-    case '~':
-      if(    option_tilda_is_home  
-	 &&  quote==0
-	 &&  is_space(prevchar) ){
-	if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
-	  ++sp;
-	  const char *system_ini = getenv("SYSTEM_INI");
-	  if( system_ini == NULL ){
-	    *dp++ = '?';
-	  }else{
-	    *dp++ = *system_ini;
-	  }
-	}else{ /* 普通の UNIX 的チルダの変換 */
-	  dp = insert_env("HOME",dp);
-	  if( isalnum(*++sp&255) || is_kanji(*sp&255) ){
-	    *dp++ = Edlin::complete_tail_char;
-	    *dp++ = '.';
-	    *dp++ = '.';
-	    prevchar = *dp++ = Edlin::complete_tail_char;;
-	  }else{
-	    prevchar = '~';
-	  }
+    while( *sp != '\0' ){
+      switch( *sp ){
+      case '\'':
+	if( (quote & 1)==0 )
+	  quote ^= 2;
+	break;
+	
+      case '"':
+	if( (quote & 2)==0 )
+	  quote ^= 1;
+	break;
+	
+      case ';': /* 空白＋「；」を「&;」に変換する */
+	++sp;
+	if(   Parse::option_semicolon_terminate 
+	   && !quote && is_space(prevchar) ){
+	  *dp++ = '&';
 	}
-	if( option_replace_slash_to_backslash_after_tilda ){
-	  /* チルダの後の「/」を全て「\」に変換する。 */
+	*dp++ = ';';
+	continue;
+	
+      case '.': /* 空白＋「...」を「..\..」に変換する */
+	if(   option_dots 
+	   && !quote 
+	   && is_space(prevchar) && sp[1]=='.' && sp[2]=='.' ){
+	  
+	  ++sp;
+	  /* sp は二つ目の . を差している。*/
 	  for(;;){
-	    if( *sp == '\0' )
-	      goto exit;
-	    if( is_space(*sp) )
+	    *dp++ = '.';
+	    *dp++ = '.';
+	    if( *++sp != '.' )
 	      break;
-	    if( is_kanji(*sp) ){
-	      prevchar = *dp++ = *sp++;
-	      *dp++ = *sp++;
-	    }else if( *sp=='/' ){
-	      ++sp;
-	      prevchar = *dp++ = '\\';
+	    *dp++ = '\\';
+	  }
+	  continue;
+	}
+	break;
+	
+      case '~':
+	if(    option_tilda_is_home  
+	   &&  quote==0
+	   &&  is_space(prevchar) ){
+	  if( *(sp+1) == ':' ){ /* `~:' をブートドライブに置換する */
+	    ++sp;
+	    const char *system_ini = getenv("SYSTEM_INI");
+	    if( system_ini == NULL ){
+	      *dp++ = '?';
 	    }else{
-	      prevchar = *dp++ = *sp++;
+	      *dp++ = *system_ini;
+	    }
+	  }else{ /* 普通の UNIX 的チルダの変換 */
+	    dp = insert_env("HOME",dp);
+	    if( isalnum(*++sp&255) || is_kanji(*sp&255) ){
+	      *dp++ = Edlin::complete_tail_char;
+	      *dp++ = '.';
+	      *dp++ = '.';
+	      prevchar = *dp++ = Edlin::complete_tail_char;;
+	    }else{
+	      prevchar = '~';
 	    }
 	  }
-	}
-	continue;
-      }
-      break;
-
-    case '%':
-      if( (quote & 2)==0  &&  isalpha(sp[1] & 255) ){
-	char envname[128];
-	
-	++sp;
-	char *ddp=envname;
-	for(;;){
-	  if( *sp=='\0' ){
-	    break;
-	  }else if( *sp=='%' ){
-	    prevchar = *sp++;
-	    break;
-	  }else if( ddp >= envname+sizeof(envname)-2 ){
-	    break;
+	  if( option_replace_slash_to_backslash_after_tilda ){
+	    /* チルダの後の「/」を全て「\」に変換する。 */
+	    for(;;){
+	      if( *sp == '\0' )
+		goto exit;
+	      if( is_space(*sp) )
+		break;
+	      if( is_kanji(*sp) ){
+		prevchar = *dp++ = *sp++;
+		*dp++ = *sp++;
+	      }else if( *sp=='/' ){
+		++sp;
+		prevchar = *dp++ = '\\';
+	      }else{
+		prevchar = *dp++ = *sp++;
+	      }
+	    }
 	  }
-	  prevchar = *ddp++ = toupper(*sp & 255);
-	  ++sp;
+	  continue;
 	}
-	*ddp = '\0';
-	dp = insert_env(envname,dp);
-	continue;
+	break;
+	
+      case '%':
+	if( (quote & 2)==0  &&  isalpha(sp[1] & 255) ){
+	  char envname[128];
+	  
+	  ++sp;
+	  char *ddp=envname;
+	  for(;;){
+	    if( *sp=='\0' ){
+	      break;
+	    }else if( *sp=='%' ){
+	      prevchar = *sp++;
+	      break;
+	    }else if( ddp >= envname+sizeof(envname)-2 ){
+	      break;
+	    }
+	    prevchar = *ddp++ = toupper(*sp & 255);
+	    ++sp;
+	  }
+	  *ddp = '\0';
+	  dp = insert_env(envname,dp);
+	  continue;
+	}
+	break;
       }
-      break;
-    }
-    if( is_kanji(*sp) ){
-      prevchar = *dp++ = *sp++;
-      *dp++ = *sp++;
-    }else{
-      if( quote==0  && isalpha(sp[0] & 255) && sp[1]==':' ){
-	if( islower(sp[0] & 255) )
-	  *dp++ = drivealias[ sp[0] & 0x1F ] + ('a'-'A');
-	else
-	  *dp++ = drivealias[ sp[0] & 0x1F ];
-	prevchar = *dp++ = ':';
-	sp += 2;
-      }else{
+      if( is_kanji(*sp) ){
 	prevchar = *dp++ = *sp++;
+	*dp++ = *sp++;
+      }else{
+	if( quote==0  && isalpha(sp[0] & 255) && sp[1]==':' ){
+	  if( islower(sp[0] & 255) )
+	    *dp++ = drivealias[ sp[0] & 0x1F ] + ('a'-'A');
+	  else
+	    *dp++ = drivealias[ sp[0] & 0x1F ];
+	  prevchar = *dp++ = ':';
+	  sp += 2;
+	}else{
+	  prevchar = *dp++ = *sp++;
+	}
       }
     }
+  exit:
+    *dp = '\0';
+  }catch( SmartPtr::BorderOut ){
+    dp.terminate();
   }
- exit:
-  *dp = '\0';
 }
 
 

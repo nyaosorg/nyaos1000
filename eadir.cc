@@ -59,7 +59,7 @@ static char *ls_read_only_file="33;1";	/* 背景が黄 */
 static char *ls_comment="44;37;1";	/* 青地に白 */
 static char *ls_longname="41;37;1";     /* 赤字に白 */
 
-static int thisyear=0;
+static unsigned int thisyear=0;
 
 static struct {
   const char *xx;
@@ -360,65 +360,67 @@ void dir1(  FileListT *flist , int max_length
     AS_DIR , AS_READ , AS_WRITE , AS_EXEC , AS_ARCHIVE ,
     AS_HIDDEN , AS_SYSTEM , AS_EA , NUM_AS ,
   };
-
   char attrstr[ NUM_AS+1 ];
-  for(int i=0 ; i<NUM_AS ; i++ )
-    attrstr[ i ] = '-';
+  try{
+    for(int i=0 ; i<NUM_AS ; i++ )
+      attrstr[ i ] = '-';
 
-  attrstr[ NUM_AS   ] = '\0';
-  attrstr[ AS_READ  ] = 'r';
-  attrstr[ AS_WRITE ] = 'w';
-  
-  const char *top=flist->name;
-  for(const char *p=flist->name ; *p != '\0' ; p++ ){
-    if( *p == '\\' || *p == '/' )
-      top = p+1 ;
-  }
-
-  /* 隠しファイルは表示せず、終了 */
-  if( is_file_print(flist)==0 )
-    return;
-
-  if( flist->attr & A_DIR ){
-    smart_copy( headstrp , ls_directory );
-    attrstr[ AS_DIR ] = 'd';
-    attrstr[ AS_EXEC ] = 'x';
-    tailchar = '/';
-  }else if( flist->attr & A_HIDDEN ){
-    if( ! ls_flag[ LS_ALL ] )
+    attrstr[ NUM_AS   ] = '\0';
+    attrstr[ AS_READ  ] = 'r';
+    attrstr[ AS_WRITE ] = 'w';
+    
+    const char *top=flist->name;
+    for(const char *p=flist->name ; *p != '\0' ; p++ ){
+      if( *p == '\\' || *p == '/' )
+	top = p+1 ;
+    }
+    
+    /* 隠しファイルは表示せず、終了 */
+    if( is_file_print(flist)==0 )
       return;
-    for(const char *sp=ls_hidden_file ; *sp != '\0' ; sp++ )
-      *headstrp++ = *sp;
-    smart_copy( headstrp , ls_hidden_file );
-    attrstr[ AS_HIDDEN ] = 'h';
-  }else if( flist->attr & A_SYSTEM ){
-    smart_copy( headstrp , ls_system_file );
-    attrstr[ AS_SYSTEM ] = 's';
-  }else if( flist->attr & A_LABEL ){
-    smart_copy( headstrp , ls_system_file );
-    attrstr[ AS_SYSTEM ] = 'L' ;
-  }else if( which_suffix(flist->name,"EXE","COM","CMD","BAT",NULL) != 0 ){
-    smart_copy( headstrp , ls_executable_file );
-    tailchar = '*';
-    attrstr[ AS_EXEC ] = 'x';
-  }else if( flist->attr & A_RONLY ){
-    smart_copy( headstrp , ls_read_only_file );
-  }else{
-    smart_copy( headstrp , ls_normal_file );
+    
+    if( flist->attr & A_DIR ){
+      smart_copy( headstrp , ls_directory );
+      attrstr[ AS_DIR ] = 'd';
+      attrstr[ AS_EXEC ] = 'x';
+      tailchar = '/';
+    }else if( flist->attr & A_HIDDEN ){
+      if( ! ls_flag[ LS_ALL ] )
+	return;
+      for(const char *sp=ls_hidden_file ; *sp != '\0' ; sp++ )
+	*headstrp++ = *sp;
+      smart_copy( headstrp , ls_hidden_file );
+      attrstr[ AS_HIDDEN ] = 'h';
+    }else if( flist->attr & A_SYSTEM ){
+      smart_copy( headstrp , ls_system_file );
+      attrstr[ AS_SYSTEM ] = 's';
+    }else if( flist->attr & A_LABEL ){
+      smart_copy( headstrp , ls_system_file );
+      attrstr[ AS_SYSTEM ] = 'L' ;
+    }else if( which_suffix(flist->name,"EXE","COM","CMD","BAT",NULL) != 0 ){
+      smart_copy( headstrp , ls_executable_file );
+      tailchar = '*';
+      attrstr[ AS_EXEC ] = 'x';
+    }else if( flist->attr & A_RONLY ){
+      smart_copy( headstrp , ls_read_only_file );
+    }else{
+      smart_copy( headstrp , ls_normal_file );
+    }
+  }catch( SmartPtr::BorderOut ){
+    headstrp.terminate();
   }
-
   if( flist->attr & A_RONLY )
     attrstr[ AS_WRITE ] = '-';
   
   if( flist->attr & A_ARCHIVE )
     attrstr[ AS_ARCHIVE ] = 'a';
-
+  
   if( flist->easize > 4 ) /* EA がなくても、サイズ情報で最低 4bytes は要る */
     attrstr[ AS_EA ] = 'e';
   
   if( ! ls_flag[ LS_NOCOLOR] )
     fputs(ls_end_code,fout);
-
+  
   ncolumns=0;
   
   /* ls モードの時は、このブロックだけで return する */
@@ -429,9 +431,9 @@ void dir1(  FileListT *flist , int max_length
     dbcs_fputs(flist->name,fout);
     if( ! ls_flag[ LS_NOCOLOR ] )
       fputs(ls_end_code,fout);
-
+    
     int i=strlen(flist->name);
-
+    
     /* 実行ファイルに「＊」ディレクトリに「/」を付ける。 
      * ただし、パイプ、ファイル出力の際は付けない。
      */
@@ -439,7 +441,7 @@ void dir1(  FileListT *flist , int max_length
       putc(tailchar,fout);
       ++i;
     }
-
+    
     if( ! ls_flag[ LS_LAST_COLUMN ] ){
       while( i < max_length+2 ){
 	++i;
@@ -449,7 +451,7 @@ void dir1(  FileListT *flist , int max_length
     /* column += i; */
     return;
   }
-
+  
   static const char *month[]={
     "Jan","Feb","Mar","Apr","May","Jun",
     "Jul","Aug","Sep","Oct","Nov","Dec",
@@ -460,7 +462,7 @@ void dir1(  FileListT *flist , int max_length
   case SORT_BY_LAST_ACCESS_TIME: // -u
     datetime = &flist->access;
     break;
-
+    
   case SORT_BY_CHANGE_TIME:      // -c
     datetime = &flist->create;
     break;
@@ -470,7 +472,7 @@ void dir1(  FileListT *flist , int max_length
     datetime = &flist->write;
     break;
   }
-
+  
   if( datetime->d.month > 12  || datetime->d.month < 1   ){
     /* FAT では、最終アクセス時刻を取得することができない。
      * この場合、時刻は 1989/0/0 になってしまう。
@@ -486,7 +488,7 @@ void dir1(  FileListT *flist , int max_length
 			, month[ datetime->d.month-1 ]
 			, datetime->d.day
 			);
-
+    
   
     if( flist->write.d.year+1980 != thisyear ){
       ncolumns += fprintf(fout," %4d " ,datetime->d.year+1980 );
@@ -821,7 +823,7 @@ int eadir( int argc, char **argv,FILE *fout=stdout)
 
   /* --- 西暦の年数を前もって取得 --- */
   time_t now;
-  struct tm *date;
+
   time(&now);
   thisyear = localtime(&now)->tm_year + 1900;
   /* --------------------------------------------------------- */

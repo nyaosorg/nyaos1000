@@ -4,6 +4,9 @@
 #include <process.h>
 #include <sys/video.h>
 
+#define INCL_VIO
+#include <os2.h>
+
 #include "edlin.h"
 #include "nyaos.h"
 #include "complete.h"
@@ -11,8 +14,6 @@
 
 #define RED	"" /*"\x1B[31m"*/
 #define WHITE	"" /*"\x1B[37m"*/
-
-
 
 int prompt_myself=1;
 int screen_width=80;
@@ -25,6 +26,7 @@ char *cursor_on_color_str=NULL;
 char *cursor_off_color_str=NULL;
 int option_nyaos_rc=1;
 int option_cmdlike_crlf=0;
+int option_icanna=0;
 
 char comspec[128]="COMSPEC=";
 char *cmdexe_path=comspec+8;
@@ -73,7 +75,7 @@ void get_scrsize(int *wh,FILE *f)
 // ---- fgets と基本は同じ。ただ、末尾の「\n」を読み込まない点が異なる ----
 char *fgets_chop(char *dp, int max, FILE *fp)
 {
-  int ch;
+  int ch=0; // この 0 は不要なんだけどね。ほんとは 
   while( max-- >= 0  &&  (ch=getc(fp)) != '\n' ){
     if( ch==EOF ){
       *dp = '\0';
@@ -84,9 +86,6 @@ char *fgets_chop(char *dp, int max, FILE *fp)
   *dp = '\0';
   return dp;
 }
-
-
-
 
 #ifdef USE_SET_WIN_TITLE
 /* フラグ : FCF_TASKLIST が VIO ウインドウで立っている場合、
@@ -106,11 +105,6 @@ void set_win_title( const char *title )
 #endif
 
 
-
-
-
-
-
 int main(int argc, char **argv)
 {
   if( _osmode != OS2_MODE ){
@@ -122,8 +116,6 @@ int main(int argc, char **argv)
   set_win_title( "Nihongo Yet Another Os/2 Shell "VERSION );
 #endif
   
-  char directory[FILENAME_MAX];
-  char thename[FILENAME_MAX];
 
   // ---- DBCS table の初期化 ----
   if( dbcs_table_init() != 0 ){
@@ -151,10 +143,16 @@ int main(int argc, char **argv)
 
   // -------- オプション分析 ----------
 
-  int quite_mode=0;
+  int quite_mode=0;	/* ロゴを表示しない */
+  int warning_mode=0;	/* 警告あり：!0 で画面をクリアしない */
+
   for(int i=1;i<argc;i++){
     if( argv[i][0] == '-' || argv[i][0] == '/' ){
       switch(argv[i][1]){
+      default:
+	fprintf(stderr,"-%c : no such option.\n",argv[i][1]);
+	warning_mode = 1;
+	break;
 
       case 'g': /* ウインドウサイズ指定 */
       case 'G':
@@ -167,7 +165,8 @@ int main(int argc, char **argv)
 	    p = argv[++i];
 	  }else{
 	    fprintf(stderr,"nyaos: no geometry parameter for -g.\n");
-	    return 1;
+	    warning_mode = 1;
+	    break;
 	  }
 
 	  int x=0,y=0;
@@ -226,25 +225,28 @@ int main(int argc, char **argv)
 	if( i+1 < argc ){
 	  char oneline[1024];
 	  SmartPtr dp(oneline,sizeof(oneline));
-
-	  for(int j=i+1;;){
-	    int quote=0;
-
-	    for(const char *p=argv[j] ; *p != '\0' ; p++ ){
-	      if( isspace(*p & 255) || *p == '^' || *p == '!' )
-		quote = 1;
+	  try{
+	    for(int j=i+1;;){
+	      int quote=0;
+	      
+	      for(const char *p=argv[j] ; *p != '\0' ; p++ ){
+		if( isspace(*p & 255) || *p == '^' || *p == '!' )
+		  quote = 1;
+	      }
+	      if( quote ) *dp++ = '"';
+	      
+	      for( const char *sp=argv[j] ; *sp != '\0' ; sp++ )
+		*dp++ = *sp;
+	      
+	      if( quote ) *dp++ = '"';
+	      
+	      if( ++j >= argc )  break;
+	      *dp++ = ' ';
 	    }
-	    if( quote ) *dp++ = '"';
-	    
-	    for( const char *sp=argv[j] ; *sp != '\0' ; sp++ )
-	      *dp++ = *sp;
-
-	    if( quote ) *dp++ = '"';
-
-	    if( ++j >= argc )  break;
-	    *dp++ = ' ';
+	    *dp = '\0';
+	  }catch( SmartPtr::BorderOut ){
+	    dp.terminate();
 	  }
-	  *dp = '\0';
 
 	  int rc=execute(stdin,oneline);
 	  if( argv[i][1] == 'c' || argv[i][1] == 'C' || argv[i][1] == 'e' )
@@ -259,6 +261,31 @@ int main(int argc, char **argv)
       case 'q':
 	quite_mode = 1;
 	break;
+
+      case '-':
+	{
+	  extern int set_option(const char *name,int flag);
+	  
+	  const char *sp=&argv[i][2];
+	  char buffer[40],*dp=buffer;
+	  int flag=1;
+	  while( *sp != '\0' &&  dp < buffer+sizeof(buffer)-1 ){
+	    if( *sp == '-' ){
+	      flag = 0;
+	      break;
+	    }else if( *sp == '+' ){
+	      break;
+	    }
+	    *dp++ = *sp++;
+	  }
+	  *dp = '\0';
+	  
+	  if( set_option(buffer,flag) != 0 ){
+	    fprintf(stderr,"--%s: no such option.\n",buffer);
+	    warning_mode = 1;
+	  }
+	}
+	break;
       }
     }else{
       if( _chdir2(argv[i]) != 0 ){
@@ -268,26 +295,24 @@ int main(int argc, char **argv)
     }
   }
 
-  /* 
-   */
-     
   if( isatty(fileno(stdin)) && !quite_mode ){
     extern int get_current_cp(void);
-    const char *term;
+    
 
-    printf("\x1b[2J\x1b[1m");
+    if( ! warning_mode )
+      fputs("\x1b[2J\x1b[1m",stdout);
+
     int cp=get_current_cp();
     if( cp==932 || cp==942 || cp==943 ){
-      printf(
-	     "\n  ┏┓┳┳  ┳┏━┓┏━┓┏━┓  " 
+      printf("\n  ┏┓┳┳  ┳┏━┓┏━┓┏━┓  " 
 	     "\n  ┃┃┃┗━┫┣━┫┃  ┃┗━┓  "
 	     "\n  ┻┗┛┗━┛┻  ┻┗━┛┗━┛  "
 	     );
     }else{
       printf("\n   // /// //  //  ////   ////   /////"
 	     "\n  /// // ////// //  // //  // ///   "
-	     "\n // ///     // ////// //  //    /// "
-	     "\n/// //  ///// //  //  ////  /////   ");
+	     "\n // ///    /// ////// //  //    /// "
+	     "\n/// //  ////  //  //  ////  /////   ");
     }
     
     printf("\n          Free Software           "
@@ -390,8 +415,11 @@ int main(int argc, char **argv)
   extern int killAllPublicHistory(void);
 
   killAllPublicHistory();
-  extern int canna_init();
-  canna_init();
+
+  if( option_icanna == 0 ){
+    extern int canna_init();
+    canna_init();
+  }
   
   ShellEdlin edlin("NYAOS>",cmdlin,sizeof(cmdlin) );
   Shell shell(edlin);
@@ -414,10 +442,24 @@ int main(int argc, char **argv)
 
     // ---- カーソルを BOX 型にする ----
     if( option_vio_cursor_control ){
+      VIOCURSORINFO info;
+
+      if( shell.isOverWrite() ){ /* 上書きモードの時は半分サイズ */
+	info.yStart = (unsigned short)-50;
+      }else{			 /* 挿入モードの時はフルサイズ */
+	info.yStart = 0;
+      }
+      info.cEnd   = (unsigned short)-100;
+      info.cx = 0;
+      info.attr = 0;
+      
+      VioSetCurType( &info , 0 );
+#if 0
       if( v_hardware() == V_COLOR_12 )
 	v_ctype( 0 , 14 );
       else
 	v_ctype( 0 , 6 );
+#endif
     }
 
     edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
@@ -473,13 +515,19 @@ int main(int argc, char **argv)
 	fputs("^C\n",stdout);
 	break;
 
-      defalt:
+      default:
 	fputs("\nUnknown error occuerd.\n"
 	      "Please mail to hayama@karl.tis.co.jp\n"
 	      , stdout );
 	break;
       }
     }
-
   }// ============ コマンド毎のループの末尾 ===========
+}
+
+void unexpected(void)
+{
+  fputs("nyaos: fatal error. unexpected exception occured.\n"
+	"       Please mail to iya-hayamatta@ijk.com\n"
+	, stderr );
 }

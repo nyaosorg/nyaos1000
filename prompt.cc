@@ -266,7 +266,6 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
   struct tm *thetime = localtime( &now );
   if( edlin != NULL )
     edlin->using_i_mark=0;
-  int a;
   
   while( *promptenv != '\0' ){
     if( *promptenv == '$' ){
@@ -302,22 +301,26 @@ void setprompt(const char *promptenv,char *dp,ShellEdlin *edlin=NULL)
       case 'H': *dp++ = '\b';	  break;
 	
       case 'I':
-	if( option_vio_cursor_control )
-	  a = v_getattr();
+	{
+	  int a=0x0F;
+	  if( option_vio_cursor_control )
+	    a = v_getattr();
 	
-	dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
-		      , screen_width ,
-		      " Nihongo Yet Another Os/2 Shell "VERSION
-		      " (c) 1996-98 HAYAMA,Kaoru "
-		      );
-	if( edlin != NULL )
-	  edlin->using_i_mark = 1;
-	if( option_vio_cursor_control )
-	  v_attrib(a);
+	  dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
+			, screen_width ,
+			" Nihongo Yet Another Os/2 Shell "VERSION
+			" (c) 1996-99 HAYAMA,Kaoru "
+			);
+	  if( edlin != NULL )
+	    edlin->using_i_mark = 1;
+	  if( option_vio_cursor_control )
+	    v_attrib(a);
+	}
 	break;
 
       case '{':
 	{
+	  int a=0x0F;
 	  int curdrv=_getdrive();
 	  if( option_vio_cursor_control )
 	    a = v_getattr();

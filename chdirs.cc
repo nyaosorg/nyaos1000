@@ -526,7 +526,11 @@ int cmd_pushd( FILE *srcfil , Parse &params)
     
     int n=atoi(params[target].ptr+1);
     if( n <= 0 ){
-      fprintf(stderr,"+%s: No such file or directory.\n",n);
+      fprintf(stderr,"+%-*.*s: No such file or directory.\n"
+	      , params[target].len
+	      , params[target].len
+	      , params[target].ptr
+	      );
       return 0;
     }
 

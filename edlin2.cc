@@ -43,30 +43,53 @@ static int access_script_canna()
     return -1;
 }
 
+/* euc2sjis 系関数の下請け関数
+ * EUC の漢字部分の 2bytes を SJIS の 2bytes に置き帰る。
+ * 2bytes コードでない場合の動作は未定義
+ * 
+ * in	c1 EUC上位 1byte
+ *	c2 EUC下位 1byte
+ * out	jms_c1 SJIS上位 1byte
+ *	jms_c2 SJIS下位 1byte (半角カナの場合、書かれない)
+ * return
+ *	1 : 半角カナ
+ *	2 : それ以外
+ */
+static int euc2sjis_oneword(int c1,int c2,char &jms_c1,char &jms_c2)
+{
+  if( (c1 & 255) == 0x8E ){
+    jms_c1 = c2;
+    return 1;
+  }
+  c1 &= 0x7F;c2 &= 0x7F;
+
+  if( c1 & 1 ){
+    c1 = (c1 >> 1 ) + 0x71;
+    c2 += 0x1f;
+    if( c2 >= 0x7f )
+      c2++;
+  }else{
+    c1 = (c1 >> 1 ) + 0x70;
+    c2 += 0x7e;
+  }
+  if( c1 > 0x9F )
+    c1 += 0x40;
+  
+  jms_c1 = c1;
+  jms_c2 = c2;
+  return 2;
+}
+
+/* EUC文字列を ShiftJIS へ変換する。
+ * in	sp EUC 文字列
+ * out	dp ShiftJIS 文字列
+ */
 static void euc2sjis(const char *sp , char *dp )
 {
   while( *sp != '\0' ){
-    if( (*sp & 255) == 0x8E ){ /* 半角カナ */
-      ++sp; /* Prefix文字を読みとばす */
-      *dp++ = *sp++;
-    }else if( *sp & 0x80 ){ /* 漢字 */
-      int c1=*sp++ & 0x7F;
-      int c2=*sp++ & 0x7F;
-      
-      if( c1 & 1 ){
-	c1 = (c1 >> 1 ) + 0x71;
-	c2 += 0x1f;
-	if( c2 >= 0x7f )
-	  c2++;
-      }else{
-	c1 = (c1 >> 1 ) + 0x70;
-	c2 += 0x7e;
-      }
-      if( c1 > 0x9F )
-	c1 += 0x40;
-      
-      *dp++ = c1;
-      *dp++ = c2;
+    if( *sp & 0x80 ){ /* 2bytes コード */
+      dp += euc2sjis_oneword(sp[0],sp[1],dp[0],dp[1]);
+      sp += 2;
     }else{
       *dp++ = *sp++;
     }
@@ -80,22 +103,31 @@ static int (*DLL_jrKanjiString )(int,int,char*,int,jrKanjiStatus *) = 0;
 static int (*DLL_jrKanjiControl)(int,int,char*) = 0;
 
 static HMODULE module_handle;
+static int canna_loaded=0;
+
+static void print_warning( char **warning )
+{
+  if( warning != NULL ){
+    for( ; *warning != NULL ; warning++ ){
+      char buffer[256];
+      euc2sjis(*warning , buffer );
+      fputs(buffer,stderr);
+      putc('\n',stderr);
+    }
+  }
+}
+
 static void release_canna()
 {
-  char **warning;
+  char **warning=NULL;
   (*DLL_jrKanjiControl)(0,KC_FINALIZE,(char*)&warning);
-  if( warning  &&  option_honest ){
-    while( *warning != NULL ){
-      char buffer[256];
-      euc2sjis( *warning++ , buffer );
-      fputs( buffer , stderr);
-      putc( '\n' , stderr );
-    }
+  if( warning && option_honest ){
+    print_warning(warning);
   }
   DosFreeModule(module_handle);
 }
 
-static int canna_loaded=0;
+
 int canna_init()
 {
   /* ------- DLL Loading ------ */
@@ -109,24 +141,22 @@ int canna_init()
 			 , (PFN*)&DLL_jrKanjiControl )){
     return 1;
   }
-
-  atexit(release_canna);
+  
   fputs("canna.dll loaded.\n",stdout);  
-  canna_loaded = 1;  
+  atexit(release_canna);
 
   /* ------ CANNA customize file ----- */
 
-  char **warning;
-  char buffer[FILENAME_MAX];
-
+  char **warning=NULL;
+  
   { /* -- かんな初期化の際に /usr/local/canna/lib のあるドライブに移動する--
      * set cannya=ドライブ[,初期化ファイル]
      * --------------------------------------------------------------------*/
     
     char *dotcanna=getenv("CANNYA");
     int orgdrv = _getdrive();
-    int drv;
-
+    int drv=0; // 無駄なんだけどね、この0は 
+    
     if( dotcanna != NULL  &&  *dotcanna != '\0' ){
       if( *dotcanna != ',' ){
 	_chdrive( *dotcanna++ );
@@ -144,21 +174,19 @@ int canna_init()
       
       _chdrive(drv);
     }
-    (*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
+
+    int rc=(*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
     _chdrive(orgdrv);
-  }
-  
-  if( warning != NULL ){
-    for( ; *warning != NULL ; warning ++ ){
-      char buffer[256];
-      euc2sjis(*warning , buffer );
-      fputs(buffer,stderr);
-      putc('\n',stderr);
+    if( rc == -1 ){
+      print_warning(warning);
+      return 1;
     }
+  }
+  if( warning != NULL ){
+    print_warning(warning);
     return 1;
   }
-  /* (*DLL_jrKanjiControl)( 0 , KC_SETMODEINFOSTYLE , (char*)1 ); */
-
+  canna_loaded = 1;
   return 0;
 }
 
@@ -183,42 +211,8 @@ void Edlin2::putbs(int n)
 
 int Edlin2::getkey_with_cursor()
 {
-#if 0
-  int key;
-  if( cursor_on == NULL ){
-#endif
-    fflush(fp);
-    return ::getkey();
-#if 0
-  }
-
-  if( pos == len ){
-    fprintf(fp," \b\x1b[%sm \b" , cursor_on );
-    
-    fflush(fp);
-    key=::getkey();
-    if( cursor_off != NULL)
-      fprintf(fp,"\x1b[%sm \b",cursor_off);
-  }else if( atrbuf[pos] == DBC1ST ){
-    fprintf(fp,"\x1b[%sm%c%c\b\b" , cursor_on 
-	    , strbuf[pos] , strbuf[pos+1] );
-    
-    fflush(fp);
-    key=::getkey();
-    if( cursor_off != NULL )
-      fprintf(fp,"\x1b[%sm%c%c\b\b" , cursor_off 
-	      , strbuf[pos] , strbuf[pos+1] );
-  }else{
-    fprintf(fp,"\x1b[%sm%c\b" , cursor_on , strbuf[pos] );
-    
-    fflush(fp);
-    key=::getkey();
-    
-    if( cursor_off != NULL )
-      fprintf(fp,"\x1b[%sm%c\b" , cursor_off , strbuf[pos] );
-  }
-  return key;
-#endif
+  fflush(fp);
+  return ::getkey();
 }
 
 enum{ PREFIX = -1 };
@@ -281,32 +275,25 @@ int Edlin2::print_henkan_koho( jrKanjiStatus &status , const char *mode_string )
 
   char *buffer=(char*)alloca(status.gline.length+10);
   SmartPtr dp(buffer,status.gline.length+10);
-
-  for( const unsigned char *sp=status.gline.line; *sp != '\0' ; ++sp ){
+  try{
+    for( const unsigned char *sp=status.gline.line; *sp != '\0' ; ++sp ){
       /* 反転部分の処理 */
-    if( column == status.gline.revPos ){
-      copy_message( cursor_on , '<' , dp );
-      standout = 1;
-    }else if( column == status.gline.revPos + status.gline.revLen ){
-      copy_message( cursor_off , '>' , dp );
-      standout = 0;
-    }
-#if 0
-    if( *sp & 0x80 ){
-      euc2jms( sp[0] , sp[1] , dp );
-      sp++;
-      column += 2;
-    }else{
-#endif
+      if( column == status.gline.revPos ){
+	copy_message( cursor_on , '<' , dp );
+	standout = 1;
+      }else if( column == status.gline.revPos + status.gline.revLen ){
+	copy_message( cursor_off , '>' , dp );
+	standout = 0;
+      }
       *dp++ = *sp;
       column++;
-#if 0
     }
-#endif
+    if( standout )
+      copy_message( cursor_off , '>' , dp );
+    *dp = '\0';
+  }catch( SmartPtr::BorderOut ){ /* バッファを溢れた時 */
+    dp.terminate();
   }
-  if( standout )
-    copy_message( cursor_off , '>' , dp );
-  *dp = '\0';
   euc2sjis(buffer,buffer);
 
   if( mode_string == NULL )
@@ -316,9 +303,11 @@ int Edlin2::print_henkan_koho( jrKanjiStatus &status , const char *mode_string )
   return column;
 }
 
+extern int option_icanna;
+
 int Edlin2::getkey()
 {
-  if( !canna_loaded )
+  if( !canna_loaded || option_icanna )
     return getkey_with_cursor();
 
   /* 前回の呼び出しで確定している文字列がある場合、
@@ -400,7 +389,7 @@ int Edlin2::getkey()
      * そのキーコードをそのまま返す。*/
     if( localbuf[0] == '\0' && orgkey > 0xFF ){
       if( mode_string != NULL ){
-	if( !are_spaces(mode_string) )
+	if( !are_spaces((const char*)mode_string) )
 	  bottom_message( "%s",mode_string );
       }else{
 	clean_bottom();
@@ -452,53 +441,51 @@ int Edlin2::getkey()
     /* 確定文字列の処理 */
     if( kakutei > 0 ){
       cleanmsg();
-      
-      SmartPtr dp(kakbuf,sizeof(kakbuf));
-      for(int i=0 ; i<kakutei ; i++ ){
-	if( eucbuf[i] & 0x80 ){
 
-	  switch( 0xFF & eucbuf[i] ){
-	    CAN2NYA(Up,UP);
-	    CAN2NYA(Down,DOWN);
-	    CAN2NYA(Left,LEFT);
-	    CAN2NYA(Right,RIGHT);
-	    CAN2NYA(Insert,INS);
-	    CAN2NYA(Home,HOME);
-	    CAN2NYA(End,END);
-	    CAN2NYA(F1,F1);
-	    CAN2NYA(Cntrl_Down,CTRL_DOWN);
-	    CAN2NYA(Cntrl_Up,CTRL_UP);
-	    CAN2NYA(Cntrl_Left,CTRL_LEFT);
-	    CAN2NYA(Cntrl_Right,CTRL_RIGHT);
-	    CAN2NYA(PageUp,PAGEUP);
-	    CAN2NYA(PageDown,PAGEDOWN);
+      SmartPtr dp(kakbuf,sizeof(kakbuf));      
+      try{
+	for(int i=0 ; i<kakutei ; i++ ){
+	  if( eucbuf[i] & 0x80 ){
 
-	  case 0xFF:
-	    *dp++ = 0xFF;
-	    *dp++ = 0xFF;
-	    break;
+	    switch( 0xFF & eucbuf[i] ){
+	      CAN2NYA(Up,UP);
+	      CAN2NYA(Down,DOWN);
+	      CAN2NYA(Left,LEFT);
+	      CAN2NYA(Right,RIGHT);
+	      CAN2NYA(Insert,INS);
+	      CAN2NYA(Home,HOME);
+	      CAN2NYA(End,END);
+	      CAN2NYA(F1,F1);
+	      CAN2NYA(Cntrl_Down,CTRL_DOWN);
+	      CAN2NYA(Cntrl_Up,CTRL_UP);
+	      CAN2NYA(Cntrl_Left,CTRL_LEFT);
+	      CAN2NYA(Cntrl_Right,CTRL_RIGHT);
+	      CAN2NYA(PageUp,PAGEUP);
+	      CAN2NYA(PageDown,PAGEDOWN);
 
-	  case 0x7F:
-	    *dp++ = 0xFF;
-	    *dp++ = K_DEL;
-	    break;
-	    
-	  default:
-	    {
-	      char tinybuf[3]={ eucbuf[i] , eucbuf[i+1] , 0 };
-	      euc2sjis( tinybuf , tinybuf );
-	      *dp++ = tinybuf[0];
-	      if( tinybuf[1] != '\0' )
-		*dp++ = tinybuf[1];
+	    case 0xFF:
+	      *dp++ = 0xFF;
+	      *dp++ = 0xFF;
+	      break;
+	      
+	    case 0x7F:
+	      *dp++ = 0xFF;
+	      *dp++ = K_DEL;
+	      break;
+	      
+	    default:
+	      dp += euc2sjis_oneword(eucbuf[i],eucbuf[i+1],dp[0],dp[1] );
+	      ++i;
+	      break;
 	    }
-	    i++;
-	    break;
+	  }else{
+	    *dp++ = eucbuf[i];
 	  }
-	}else{
-	  *dp++ = eucbuf[i];
 	}
+	*dp = '\0';
+      }catch(SmartPtr::BorderOut){
+	dp.terminate();
       }
-      *dp = '\0';
       
       /* jrKanjiControl( 0 ,KC_FINALIZE , NULL ); */
       cleanmsg();
@@ -522,30 +509,25 @@ int Edlin2::getkey()
     /* local echo */
 
     SmartPtr dp(localbuf,sizeof(localbuf));
-    int quote=0;
-    for(int i=0; i < status.length; i++ ){
-      if( i== status.revPos ){
-	copy_message( cursor_on , '<' , dp );
-	quote = 1;
-      }else if( i == status.revPos + status.revLen ){
-	copy_message( cursor_off , '>' , dp );
-	quote = 0;
-      }
-#if 0
-      if( status.echoStr[i] & 0x80 ){
-	euc2jms( status.echoStr[i] , status.echoStr[i+1] , dp );
-	i++;
-      }else{
-#endif
+    try{
+      int quote=0;
+      for(int i=0; i < status.length; i++ ){
+	if( i== status.revPos ){
+	  copy_message( cursor_on , '<' , dp );
+	  quote = 1;
+	}else if( i == status.revPos + status.revLen ){
+	  copy_message( cursor_off , '>' , dp );
+	  quote = 0;
+	}
 	*dp++ = status.echoStr[i];
-#if 0
       }
-#endif
+      if( quote )
+	copy_message( cursor_off , '>' , dp );
+      
+      *dp = '\0';
+    }catch( SmartPtr::BorderOut ){
+      dp.terminate();
     }
-    if( quote )
-      copy_message( cursor_off , '>' , dp );
-
-    *dp = '\0';
     euc2sjis( localbuf , localbuf );
     message( "|%s|",localbuf);
     

@@ -73,8 +73,20 @@ void PathList::append(const char *paths,int dem)
 void PathList::listing(char *dp,int dem)
 {
   OnePath *cur=first;
+  const char *home=getenv("HOME");
   for(;;){
     const char *sp=cur->name;
+    if( *sp == '~'  &&  home != NULL ){
+      for( const char *p=home; *p != '\0'; p++ )
+	*dp++ = *p;
+
+      if( *++sp != '/'  &&  *sp != '\\' ){
+	*dp++ = '.';
+	*dp++ = '.';
+	*dp++ = '\\';
+      }
+    }
+
     while( *sp != '\0' )
       *dp++ = *sp++;
     

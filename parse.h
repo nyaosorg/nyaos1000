@@ -1,4 +1,4 @@
-#ifndef PARSE_H
+#ifndef PARSE_H /* -*- c++ -*- */
 #define PARSE_H
 
 #include <stdio.h>
@@ -16,8 +16,8 @@ class Substr{
     { return ptr[n] & 255; }
 
   /* èâä˙âª */
-  Substr(void) : ptr(NULL) , len(0) { }
-  Substr(const char *p,int l) : ptr(p) , len(l) { }
+  Substr(void) : len(0), ptr(NULL) { }
+  Substr(const char *p,int l) :  len(l) ,ptr(p) { }
   void clean(){ len = 0; ptr = NULL; }
 
   /* ÉeÉXÉg */
@@ -87,10 +87,9 @@ class Parse{
 
 public:
   Parse(const char *source)
-    : args(argbase) , argc(0) , sp(source) , terminal(NOT_TERMINAL) 
-      , limit(30) ,err(0)
-	, output_fp(stdout) , input_fp(stdin) , pipemode(STD)
-	  { check(); }
+    :  sp(source)  , terminal(NOT_TERMINAL), argc(0), limit(30), args(argbase)
+      , output_fp(stdout) , input_fp(stdin) , pipemode(STD) ,err(0)
+	{ check(); }
 
   ~Parse();
   
@@ -117,8 +116,8 @@ public:
   int get_length_later(int n){ return n < argc ? sp-args[n].ptr : 0; }
   const char *get_parameter(){ return args[1].ptr; }
   const char *get_source(){ return args[0].ptr; }
-
-  SmartPtr copy(int n, SmartPtr dp,int flag=0 );
+  
+  SmartPtr copy(int n, SmartPtr dp,int flag=0 ) throw();
   SmartPtr copyall(int n,SmartPtr dp,int flag=QUOTE_COPY);
   SmartPtr betacopy(SmartPtr dp,int n=0);
 

@@ -26,12 +26,12 @@ int cmd_bind(FILE *source, Parse &param )
 
   if( param.get_argc() < 2 ){
     FILE *fout=param.open_stdout();
-    for(int i=0;i<numof(table2);i++)
+    for(unsigned i=0;i<numof(table2);i++)
       fprintf(fout,"%s\t: %s\n",table2[i].name,table2[i].usage);
   }else{
     char *buffer=(char*)alloca(param.get_length(1)+1);
     param.copy(1,buffer);
-    for(int i=0;i<numof(table2);i++){
+    for(unsigned i=0;i<numof(table2);i++){
       if(   to_lower(buffer[0])==table2[i].name[0]
 	 && stricmp(buffer,table2[i].name)==0 ){
 	(*table2[i].func)();
@@ -75,13 +75,47 @@ int cmd_bindkey(FILE *source,Parse &param)
   return 0;
 }
 
+/* 環境変数を本当に消す (putenv の消し方では不十分)
+ *	env 環境変数名(必大文字)
+ * return
+ *	 0 成功
+ *	-1 そんな環境変数は存在しない
+ */
+static int unsetenv(const char *env)
+{
+  int len=strlen(env);
+  
+  if( environ == NULL )
+    return -1;
+
+  for( char **p=environ ; *p != NULL ; p++ ){
+    if( strncmp(*p,env,len)==0 && *(*p+len)=='=' ){
+      char **q=p+1;
+      if( *q == NULL ){
+	*p = NULL;
+	return 0;
+      }
+      while( *(q+1) != NULL )
+	++q;
+      
+      *p = *q;
+      *q = NULL;
+      return 0;
+    }
+  }
+  return -1;
+}
+
+
 /* putenv は putenv("VAR=VALUE")という形式でないと受けつけない為に作った
  * フィルター関数。VAR は小文字でも大文字に変換してくれる。
+ *	env    環境変数名
+ *	value  値。NULL か "\0" で、その環境変数を消す。
  */
 static void setenv(const char *env,const char *value)
 {
   int env_len=strlen(env);
-  int value_len=strlen(value);
+  int value_len=(value != NULL ? strlen(value) : 0 );
   
   char *buffer=(char*)malloc(env_len+value_len+2);
   char *dp = buffer;
@@ -93,14 +127,19 @@ static void setenv(const char *env,const char *value)
       *dp++ = *env++;
     }
   }
-  if( *value == '\0' ){
+ 
+  if( value == NULL  ||  *value == '\0' ){
     *dp = '\0';
+    unsetenv( buffer );
+    free(buffer);
   }else{
     *dp++ = '=';
     strcpy( dp , value );
+    putenv( buffer );
   }
-  putenv( buffer );
 }
+
+
 
 int cmd_set( FILE *srcfil, Parse &params )
 {
@@ -185,7 +224,7 @@ int cmd_set( FILE *srcfil, Parse &params )
       //「set ahaha=」で環境変数 ahaha を削除する
       //「set ahaha+=」は何もしない。
       if( ! appendmode )
-	setenv( env_name , "\0" );
+	setenv( env_name , NULL );
       return 0;
     }
     if( !is_space(*sp) )
@@ -194,7 +233,7 @@ int cmd_set( FILE *srcfil, Parse &params )
   }
   
   // 右辺値の取得
-
+  
   char *final_space=NULL;
   int quote=0;
   int compati=( *sp != '"' );
@@ -287,7 +326,14 @@ int cmd_echo(FILE *srcfil, Parse &params )
   bool quote=false;
   
   const char *sp=params.get_argv(1);
+
   if( sp != NULL ){
+    /* echo off や echo on では何も表示させないようにする
+     * バッチファイルの先頭などの「@echo off」対策
+     */
+    if( strnicmp(sp,"OFF",3) ==0 || strnicmp(sp,"ON",2)==0 )
+      return 0;
+
     while( *sp != '\0'  &&  sp < params.get_tail() ){
       if( is_kanji(*sp) ){
 	putc(*sp++,fout);

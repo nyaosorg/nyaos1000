@@ -106,164 +106,166 @@ static void wildcard_expand_copy( const Substr &arg , SmartPtr &dp
 void replace_alias(const char *sp , char *destinate , int max )
 {
   SmartPtr dp(destinate,max);
-
-  for(;;){ /* 各コマンド単位 */
-    Parse params(sp);
-
-    /* 命令が空の場合、ただちにやり直し。
-     * 「&&」や startに変換する「&」などでは、これが必要らしい 
-     */
-    if( params.get_argc() == 0 ){
-      sp = params.get_tail();
-      if( *sp == '\0' )
-	break;
-      while( sp < params.get_nextcmds() )
-	*dp++ = *sp++;
-      if( *sp == '\0' )
-	break;
-
-      continue;
-    }
-
-    Alias *ptr = alias_hash[ params[0] ];
-    if( ptr == NULL ){
-      dp = params.betacopy(dp);
-    }else{
-      const char *spa=ptr->base;
-      int percent_used=0;
+  try{
+    for(;;){ /* 各コマンド単位 */
+      Parse params(sp);
       
-      while( *spa != '\0' ){
-	if( *spa == '%' ){
-	  int wildcard_flag = 0;
-	  if( *++spa == '+' ){
-	    wildcard_flag = 1;
-	    ++spa;
-	  }
-
-	  switch( *spa ){
-	  default:
-	    if( is_digit(*spa) ){
-	      percent_used = 1;
-	      int n=0;
-	      do{
-		n *= 10;
-		n += (*spa-'0');
-	      }while( is_digit(*++spa) );
-
-	      if( n < params.get_argc() ){
-		if( wildcard_flag )
-		  wildcard_expand_copy( params[n] , dp , *spa=='@' ? 1 : 0 );
-		else
-		  dp = params.copy(n,dp);
-	      }
-	      
-	      if( *spa == '*' ){
-		while( ++n < params.get_argc() ){
-		  *dp++ = ' ';
+      /* 命令が空の場合、ただちにやり直し。
+       * 「&&」や startに変換する「&」などでは、これが必要らしい 
+       */
+      if( params.get_argc() == 0 ){
+	sp = params.get_tail();
+	if( *sp == '\0' )
+	  break;
+	while( sp < params.get_nextcmds() )
+	  *dp++ = *sp++;
+	if( *sp == '\0' )
+	break;
+	
+	continue;
+      }
+      
+      Alias *ptr = alias_hash[ params[0] ];
+      if( ptr == NULL ){
+	dp = params.betacopy(dp);
+      }else{
+	const char *spa=ptr->base;
+	int percent_used=0;
+	
+	while( *spa != '\0' ){
+	  if( *spa == '%' ){
+	    int wildcard_flag = 0;
+	    if( *++spa == '+' ){
+	      wildcard_flag = 1;
+	      ++spa;
+	    }
+	    
+	    switch( *spa ){
+	    default:
+	      if( is_digit(*spa) ){
+		percent_used = 1;
+		int n=0;
+		do{
+		  n *= 10;
+		  n += (*spa-'0');
+		}while( is_digit(*++spa) );
+		
+		if( n < params.get_argc() ){
 		  if( wildcard_flag )
-		    wildcard_expand_copy( params[n] , dp , 0 );
+		    wildcard_expand_copy( params[n] , dp , *spa=='@' ? 1 : 0 );
 		  else
 		    dp = params.copy(n,dp);
 		}
-		++spa;
-	      }else if( *spa == '@' ){
-		while( ++n < params.get_argc() ){
-		  *dp++ = ' ';
-		  if( wildcard_flag )
-		    wildcard_expand_copy( params[n] , dp , 1 );
-		  else
-		    dp = params.copy(n,dp,Parse::QUOTE_COPY);
+		
+		if( *spa == '*' ){
+		  while( ++n < params.get_argc() ){
+		    *dp++ = ' ';
+		    if( wildcard_flag )
+		      wildcard_expand_copy( params[n] , dp , 0 );
+		    else
+		      dp = params.copy(n,dp);
+		  }
+		  ++spa;
+		}else if( *spa == '@' ){
+		  while( ++n < params.get_argc() ){
+		    *dp++ = ' ';
+		    if( wildcard_flag )
+		      wildcard_expand_copy( params[n] , dp , 1 );
+		    else
+		      dp = params.copy(n,dp,Parse::QUOTE_COPY);
+		  }
+		  ++spa;
 		}
-		++spa;
 	      }
+	      break;
+	      
+	    case '*':
+	      percent_used = 1;
+	      spa++;
+	      if( wildcard_flag ){
+		for(int i=1;i<params.get_argc();i++)
+		  wildcard_expand_copy( params[i] , dp , 0 );
+	      }else{
+		dp = params.copyall(1,dp);
+	      }
+	      break;
+	      
+	    case '@':
+	      percent_used = 1;
+	      spa++;
+	      if( wildcard_flag ){
+		for(int i=1;i<params.get_argc() ; i++)
+		  wildcard_expand_copy( params[i] , dp , 1 );
+	      }else{
+		dp = params.copyall(1,dp,Parse::REPLACE_SLASH);
+	      }
+	      break;
+	      
+	    case '%':
+	      spa++;
+	      *dp++ = '%';
+	      break;
+	      
+	    case '\\':case '/':
+	      if( dp==destinate || (dp[-1] != '\\' && dp[-1] != '/') )
+		*dp++ = *spa;
+	      spa++;
 	    }
-	    break;
-	    
-	  case '*':
-	    percent_used = 1;
-	    spa++;
-	    if( wildcard_flag ){
-	      for(int i=1;i<params.get_argc();i++)
-		wildcard_expand_copy( params[i] , dp , 0 );
-	    }else{
-	      dp = params.copyall(1,dp);
-	    }
-	    break;
-	    
-	  case '@':
-	    percent_used = 1;
-	    spa++;
-	    if( wildcard_flag ){
-	      for(int i=1;i<params.get_argc() ; i++)
-		wildcard_expand_copy( params[i] , dp , 1 );
-	    }else{
-	      dp = params.copyall(1,dp,Parse::REPLACE_SLASH);
-	    }
-	    break;
-	    
-	  case '%':
-	    spa++;
-	    *dp++ = '%';
-	    break;
-
-	  case '\\':case '/':
-	    if( dp==destinate || (dp[-1] != '\\' && dp[-1] != '/') )
-	      *dp++ = *spa;
-	    spa++;
+	  }else{
+	    *dp++ = *spa++;
 	  }
-	}else{
-	  *dp++ = *spa++;
+	}
+	if( percent_used == 0 ){
+	  *dp++ = ' ';
+	  dp = params.copyall(1,dp);
+	}
+	
+	/* リダイレクト文字列の再現 */
+	const Substr *redirect=params.get_redirect();
+	if( redirect[0] != NULL ){
+	  *dp++ = ' ';
+	  *dp++ = '<';
+	  redirect[0] >> dp;
+	  dp += redirect[0].len;
+	}
+	if( redirect[1] != NULL ){
+	  *dp++ = ' ';
+	  *dp++ = '>';
+	  if( params.is_append_redirect(1) )
+	    *dp++ = '>';
+	  redirect[1] >> dp;
+	  dp += redirect[1].len;
+	}
+	if( redirect[2] != NULL ){
+	  *dp++ = ' ';
+	  *dp++ = '2';
+	  *dp++ = '>';
+	  if( params.is_append_redirect(2) )
+	    *dp++ = '>';
+	  redirect[2] >> dp;
+	  dp += redirect[2].len;
 	}
       }
-      if( percent_used == 0 ){
-	*dp++ = ' ';
-	dp = params.copyall(1,dp);
-      }
       
-      /* リダイレクト文字列の再現 */
-      const Substr *redirect=params.get_redirect();
-      if( redirect[0] != NULL ){
-	*dp++ = ' ';
-	*dp++ = '<';
-	redirect[0] >> dp;
-	dp += redirect[0].len;
-      }
-      if( redirect[1] != NULL ){
-	*dp++ = ' ';
-	*dp++ = '>';
-	if( params.is_append_redirect(1) )
-	  *dp++ = '>';
-	redirect[1] >> dp;
-	dp += redirect[1].len;
-      }
-      if( redirect[2] != NULL ){
-	*dp++ = ' ';
-	*dp++ = '2';
-	*dp++ = '>';
-	if( params.is_append_redirect(2) )
-	  *dp++ = '>';
-	redirect[2] >> dp;
-	dp += redirect[2].len;
-      }
-    }
-    
-    sp = params.get_tail();
-    if( *sp == '\0' )
-      break;
+      sp = params.get_tail();
+      if( *sp == '\0' )
+	break;
 
-    while( sp < params.get_nextcmds() )
-      *dp++ = *sp++;
-
-    if( *sp == '\0' )
-      break;
-  }/* for(;;) */
-
-  *dp = '\0';
+      while( sp < params.get_nextcmds() )
+	*dp++ = *sp++;
+      
+      if( *sp == '\0' )
+	break;
+    }/* for(;;) */
+    *dp = '\0';
+  }catch(SmartPtr::BorderOut){
+    dp.terminate();
+  }
 }
 
 int cmd_unalias(FILE *fin, Parse &params)
 {
-  const char *parameter=params.get_argv(1);
+  
   int argc=params.get_argc();
 
   if( argc < 2 )

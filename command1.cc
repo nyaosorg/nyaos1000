@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <sys/ea.h>
-#include <sys/video.h>
+// #include <sys/video.h>
 #include <ctype.h>
 #include <process.h>
 
@@ -14,8 +14,6 @@ extern int option_complete_etc;
 extern int option_single_quote;
 extern int option_cd_goto_home;
 extern int option_debug_echo;
-static int option_dir_tail_is_forward_slash;
-
 extern int option_history_in_doublequote;
 extern int option_amp_start;
 extern int option_amp_detach;
@@ -30,6 +28,7 @@ extern int option_ignore_cases;
 extern int option_auto_close;
 extern int option_honest;
 extern int printexitvalue;
+extern int option_icanna;
 
 int echoflag=0;
 
@@ -63,9 +62,11 @@ int cmd_mode( FILE *source , Parse &args )
   char buffer[ 1024 ];
   args.copyall(0,buffer);
   spawnl(P_WAIT,cmdexe_path,"CMD","/C",buffer,NULL);
+#if 0
   if( option_vio_cursor_control ){
     v_getctype( &cursor_start , &cursor_end );
   }
+#endif
   return 0;
 }
 
@@ -210,6 +211,7 @@ struct Option{
   { "esc_key_sequences"	   , &option_esc_key_sequences	       , 1  , 0 },
   { "history_in_doublequote" , &option_history_in_doublequote  , 1  , 0 },
   { "honest"               , &option_honest                    , 1  , 0 },
+  { "icanna"		   , &option_icanna		       , 1  , 0 },
   { "ignore_cases"         , &option_ignore_cases              , 1  , 0 },
   { "printexitvalue"       , &printexitvalue                   , 1  , 0 },
   { "prompt_even_piped"    , &option_prompt_even_piped         , 1  , 0 },
@@ -224,6 +226,22 @@ struct Option{
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
   { NULL , NULL , 1 , 0 }
 };
+
+/* option コマンドのオプションをセットする。
+ *	name ... オプションの名称
+ *	flag ... Onならば非0 , Offならば 0
+ * return 0 ... 成功   !0 ... オプションは存在しない
+ */
+int set_option(const char *name,int flag)
+{
+  for( const Option *p=optlist ; p->name != NULL ; p++ ){
+    if( stricmp(p->name,name)==0 ){
+      *p->pointor = ( flag ? p->true_value : p->false_value );
+      return 0;
+    }
+  }
+  return -1;
+}
 
 int cmd_option(FILE *source, Parse &params)
 {
@@ -246,18 +264,10 @@ int cmd_option(FILE *source, Parse &params)
     }else if( name[0] =='+' ){
       name++;
     }
-    
-    for(const Option *p=optlist ; p->name != NULL ; p++ ){
-      if( strcmp(p->name,name)==0 ){
-	*p->pointor = ( value ? p->true_value : p->false_value );
-	goto next;
-      }
+    if( set_option(name,value) != 0 ){
+      fprintf(fout,"%s : no such option.\n",name);
+      return 1;
     }
-    fprintf(fout,"%s : no such option.\n",name);
-    return 1;
-    
-  next:
-    ;
   }
   return 0;
 }

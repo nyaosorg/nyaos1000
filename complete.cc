@@ -38,38 +38,23 @@ const char *Complete::get_real_name1() const
  */
 int which_suffix(const char *path,...)
 {
-  /* まず、拡張子のドットを検索する。*/
-  while( *path != '.' ){
-    if( *path == '\0' )
-      return 0;
-    if( is_kanji(*path) )
-      path++;
-    path++;
-  }
+  /* 拡張子を取得 */
+  const char *ext=_getext(path);
+  if( ext == NULL )
+    return 0;
+
+  ++ext; /* ピリオドをスキップ */
 
   /* 拡張子を発見、以下比較 */
-  int rc=0;
   const char *q;
-
   va_list varptr;
   va_start(varptr,path);
-  
-  while( (q=va_arg(varptr,const char *)) != NULL ){
-    const char *p=path+1;
-    rc++;
 
-    while( *p != '\0' ){
-      /* まさか、拡張子に漢字は入らないだろうと楽観 */
-      if( to_upper(*p) != to_upper(*q) )
-	goto next_arg;
-      p++;q++;
-    }
-    if( *q == '\0' ){
+  for(int i=1; (q=va_arg(varptr,const char *)) != NULL ; i++ ){
+    if( stricmp(ext,q) == 0 ){
       va_end(varptr);
-      return rc;
+      return i;
     }
-  next_arg:
-    ;
   }
   va_end(varptr);
   return 0;

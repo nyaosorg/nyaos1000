@@ -51,14 +51,15 @@ int cmd_cache(FILE *source, Parse &args )
   for(HashIndex<ScriptCache> hi(script_hash) ; *hi != NULL ; hi++ ){
     printf("%s = %s\n",hi->name,hi->interpreter);
   }
+  return 0;
 }
-
 int cmd_rehash(FILE *source , Parse &args )
 {
   extern void make_command_cache(void);
 
   make_command_cache();
   script_hash.destruct_all();
+  return 0;
 }
 
 static void copy_filename(  const char *sp , SmartPtr dp
@@ -227,8 +228,9 @@ static int insert_interpretor(const char *cache,const char *fname,SmartPtr &dp)
   const char *interpreter=dp.rawptr();
     
   /* 環境変数 USRDRIVE の最初の一文字を複写 */
-  const char *usp;
+
   int ch;
+  const char *usp=0;
   if( (ch=getc(fp))=='/' && (usp=getenv("SCRIPTDRIVE")) != NULL ){
     while( *usp != '\0' && *usp != ':' )
       *dp++ = *usp++;
@@ -377,7 +379,12 @@ int replace_script( const char *sp , char *dst, int max  )
       
       // とりあえず、コマンド名を別のバッファに保存しておいて、 
       // ポインタを進める。(「$0」→ fname) 
-      copy_filename(sp,SmartPtr(fname,sizeof(fname)),&sp,NULL);
+      SmartPtr smartptr(fname,sizeof(fname) );
+      try{
+	copy_filename(sp,smartptr,&sp,NULL);
+      }catch( SmartPtr::BorderOut ){
+	smartptr.terminate();
+      }
       
       /* ------ 内臓コマンド ------*/
       if( is_inner_command(fname)) {
@@ -435,7 +442,12 @@ int replace_script( const char *sp , char *dst, int max  )
     else{
 
       char fname[FILENAME_MAX];
-      copy_filename(sp,SmartPtr(fname,sizeof(fname)),&sp,NULL);
+      SmartPtr smartptr(fname,sizeof(fname));
+      try{
+	copy_filename(sp,smartptr,&sp,NULL);
+      }catch( SmartPtr::BorderOut ){
+	smartptr.terminate();
+      }
       if( suffix(sp,dp) == 0 ){
 	char path[FILENAME_MAX];
 	
