@@ -13,6 +13,7 @@
 #include "nyaos.h"
 #include "finds.h"
 #include "strtok.h"
+#include "strbuffer.h"
 
 extern int nhistories;
 extern int execute_result;

@@ -70,6 +70,18 @@ StrBuffer::~StrBuffer()
     free(buffer);
 }
 
+StrBuffer &StrBuffer::operator << (int n) throw(MallocError)
+{
+  if( n < 0 ){
+    return *this << '-' << -n;
+  }else if( n < 10 ){
+    return *this << "0123456789"[ n ];
+  }else{
+    return *this << (n / 10) << "0123456789"[ n % 10 ];
+  }
+}
+
+
 #if 0
 #include <stdio.h>
 

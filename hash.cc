@@ -1,7 +1,21 @@
-#include <ctype.h>
+#include <cctype>
+#include <cstring>
+#include <cstdlib>
 
-#include "parse.h"
+#include "substr.h"
 #include "hash.h"
+
+inline HashB::Bullet::~Bullet()
+{
+  free(key);
+}
+
+/* HashB::get_index --- キー文字列から、ハッシュ値を計算する
+ *	p   - キー文字列
+ *	len - キー文字列の長さ('\0'を認識するので ∞ でもよい)
+ * return
+ *	ハッシュ値(ハッシュテーブルのサイズで除算済みの値)
+ */
 
 int HashB::get_index(const char *p,int len)
 {
@@ -12,6 +26,9 @@ int HashB::get_index(const char *p,int len)
   return index % size;
 }
 
+/* HashB::get_index_without_cases
+ * --- 大文字・小文字を無視する get_index。
+ */
 int HashB::get_index_without_cases(const char *p,int len)
 {
   int index=0;
@@ -21,6 +38,14 @@ int HashB::get_index_without_cases(const char *p,int len)
   return index % size;
 }
 
+/* HashB::add 
+ * オブジェクト rep を key として登録する。
+ * 本メソッドでは、重複を許す。
+ *	flag == 0 : リストの先頭に挿入する。(insert)
+ *	flag != 0 : リストの末尾に追加する。(append)
+ * return
+ *	0 : 成功 , 非0 : 失敗(メモリエラー)
+ */
 int HashB::add(const char *key, void *rep, int flag)
 {
   if( table == NULL ){
@@ -35,7 +60,11 @@ int HashB::add(const char *key, void *rep, int flag)
   if( tmp == NULL )
     return 1;
 
-  tmp->key = key;
+  if( (tmp->key = strdup(key)) == NULL ){
+    delete tmp;
+    return 1;
+  }
+
   tmp->rep = rep;
 
   if( table[index]==(Bullet*)NULL || flag==0 ){
@@ -51,6 +80,12 @@ int HashB::add(const char *key, void *rep, int flag)
   return 0;
 }
 
+/* HashB の [] 演算子 --- キー値からオブジェクトを検索する。
+ *	key キー値 
+ * return
+ *	非NULL … オブジェクトへのポインタ
+ *	NULL   … マッチするオブジェクトは無かった。
+ */
 void *HashB::operator[](const char *key)
 {
   if( table == NULL ) return NULL;
@@ -64,6 +99,8 @@ void *HashB::operator[](const char *key)
   return NULL;
 }
 
+/* HashB の [] 演算子 (SubStr版…char版とやってることは同じ)
+ */
 void *HashB::operator[](const Substr &key)
 {
   if( table==NULL  ||  key.len==0 ) return NULL;
@@ -79,6 +116,26 @@ void *HashB::operator[](const Substr &key)
   return NULL;
 }
 
+/* 大文字小文字を区別せずに検索するメソッド。
+ * 大文字小文字の区別するしない以外は [] と同じ
+ */
+void *HashB::lookup_tolower(const char *key)
+{
+  if( table==NULL  ) return NULL;
+  int index=get_index_without_cases(key);
+
+  int firstletter=tolower(*key & 255 );
+  for(Bullet *cur=table[index] ; cur != NULL ; cur=cur->next ){
+    if(   cur->key[0]==firstletter  && stricmp(cur->key,key) == 0  ){
+      return cur->rep;
+    }
+  }
+  return NULL;
+}
+
+/* 大文字小文字を区別せずに検索するメソッド(SubStr版)。
+ * 大文字小文字の区別するしない以外は [] と同じ
+ */
 void *HashB::lookup_tolower(const Substr &key)
 {
   if( table==NULL  ||  key.len == 0 ) return NULL;
@@ -95,23 +152,16 @@ void *HashB::lookup_tolower(const Substr &key)
   return NULL;
 }
 
-void *HashB::lookup_tolower(const char *key)
-{
-  if( table==NULL  ) return NULL;
-  int index=get_index_without_cases(key);
-
-  int firstletter=tolower(*key & 255 );
-  for(Bullet *cur=table[index] ; cur != NULL ; cur=cur->next ){
-    if(   cur->key[0]==firstletter  && stricmp(cur->key,key) == 0  ){
-      return cur->rep;
-    }
-  }
-  return NULL;
-}
-
-
-
-int HashB::remove(const char *key, int destruct_flag)
+/* キー値にマッチするオブジェクトをHashから除くメソッド。
+ * destruct_flag 
+ *	0   オブジェクトを Hash から除くだけ。
+ *	非0 オブジェクトを Hash から除いた上で、delete する。
+ *	    (実際の delete は仮想関数の delete_node を呼び出す)
+ * return
+ *	0 削除できた！
+ *	1 削除できなかった！(マッチするオブジェクトが無かった)
+ */
+int HashB::remove(const char *key, bool destruct_flag)
 {
   if( table == NULL ) return 1;
   int index=get_index(key);
@@ -140,7 +190,10 @@ int HashB::remove(const char *key, int destruct_flag)
   }
 }
 
-int HashB::remove(const Substr &key,int destruct_flag)
+/* キー値にマッチするオブジェクトをHashから除くメソッド。
+ * SubStr をキーに使う以外は、char[]版と同じ。
+ */
+int HashB::remove(const Substr &key,bool destruct_flag)
 {
   if( table == NULL ) return 1;
   int index=get_index(key.ptr,key.len);
@@ -174,7 +227,12 @@ int HashB::remove(const Substr &key,int destruct_flag)
   }
 }
 
-void HashB::remove_all(int destruct_flag)
+/* ハッシュから、全てのインスタンスを除外する。
+ * destruct_flag
+ *	0    除外するだけ
+ *	非0  除外した上で、インスタンスに対し、delete を実行する。
+ */
+void HashB::remove_all(bool destruct_flag)
 {
   if( table != NULL ){
     for(int i=0; i<size; i++){

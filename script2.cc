@@ -29,6 +29,7 @@
 #include "nyaos.h"	/* for Command class */
 #include "complete.h"	/* cmd_rehash の為だけのみ */
 #include "strbuffer.h"
+#include "autofileptr.h"
 
 int scriptflag=1;
 int option_amp_start=1;
@@ -164,7 +165,7 @@ static const char *copy_args( StrBuffer &buf , const char *sp )
  */
 static char *read_sos_header( const char *path ) throw(MallocError)
 {
-  FILE *fp=fopen(path,"r");
+  AutoFilePtr fp(path,"r");
   if( fp == NULL )
     return NULL;
 
@@ -182,10 +183,8 @@ static char *read_sos_header( const char *path ) throw(MallocError)
       /* SOSスクリプトは２行目に soshdr/Nide というサインがある！*/
       if( ++nlines==1 ){
 	for( const char *s="soshdr/Nide" ; *s != '\0' ; s++ ){
-	  if( getc(fp) != *s ){
-	    fclose(fp);
+	  if( getc(fp) != *s )
 	    return NULL;
-	  }
 	}
       }else if( nlines >= 14 ){
 	/* SOS.HDR は 13行であることから、この行こそ、
@@ -196,7 +195,6 @@ static char *read_sos_header( const char *path ) throw(MallocError)
 	while( (ch=getc(fp)) != EOF  &&  ch != '\n' )
 	  buf << ch;
 
-	fclose(fp);
 	return buf.finish();
       }
     }else if( !isprint(ch) || ch==EOF ){
@@ -206,7 +204,6 @@ static char *read_sos_header( const char *path ) throw(MallocError)
   /* break でこのループを脱出するものは、
    * いずれも SOSスクリプトでなかったケース
    */
-  fclose(fp);
   return 0;
 }
 
@@ -255,35 +252,29 @@ static void expand_sos(  StrBuffer &buf
  */
 static char *read_script_header( const char *fname ) throw(MallocError)
 {
-  FILE *fp=fopen(fname,"r");
+  AutoFilePtr fp(fname,"r");
   if( fp==NULL )
     return NULL;
   
-  if( getc(fp) != '#' || getc(fp) != '!' ){
-    fclose(fp);
+  if( getc(fp) != '#' || getc(fp) != '!' )
     return NULL;
-  }
+
   StrBuffer buf; /* インタプリタ名を保存 */
-  try{
-    /* 環境変数 SCRIPTDRIVE の最初の一文字を複写 */
-    int ch;
-    const char *usp=0;
-    if( (ch=getc(fp))=='/' && (usp=getenv("SCRIPTDRIVE")) != NULL ){
-      while( *usp != '\0' && *usp != ':' ){
-	buf << *usp++;
-      }
-      buf << ':';
+
+  /* 環境変数 SCRIPTDRIVE の最初の一文字を複写 */
+  int ch;
+  const char *usp=0;
+  if( (ch=getc(fp))=='/' && (usp=getenv("SCRIPTDRIVE")) != NULL ){
+    while( *usp != '\0' && *usp != ':' ){
+      buf << *usp++;
     }
-    /* perlやawkなどの実行ファイル名の複写 */
-    while( ch != EOF  &&  ch != '\n' ){
-      buf << (char)(ch=='/' ? '\\' : ch);
-      ch=getc(fp);
-    }
-  }catch(...){
-    fclose(fp);
-    throw;
+    buf << ':';
   }
-  fclose(fp);
+  /* perlやawkなどの実行ファイル名の複写 */
+  while( ch != EOF  &&  ch != '\n' ){
+    buf << (char)(ch=='/' ? '\\' : ch);
+    ch=getc(fp);
+  }
   return buf.finish();
 }
  
@@ -362,7 +353,7 @@ char *replace_script( const char *sp ) throw(MallocError)
   StrBuffer buf;
   
   for(;;){  /* コマンド毎のループ */
-    while( is_space(*sp) )
+    while( *sp != '\0'  &&  is_space(*sp) )
       buf << *sp++;
 
     /* true ならば、VIOアプリの時に"/C /F" が挿入される*/
@@ -433,9 +424,10 @@ char *replace_script( const char *sp ) throw(MallocError)
        * ポインタを進める。(「$0」→ fname) 
        */
       sp = copy_filename( fname , sp );
-      
 
-      if( is_inner_command(fname.getTop() )) {
+      if( fname.isNull() ){
+	;
+      }else if( is_inner_command( fname.getTop() )) {
 
 	/* ------ 内臓コマンド ------*/
 	copy_filename( buf , fname.getTop() , BACKSLASH_DEMILITOR );

@@ -6,7 +6,7 @@
 #include "parse.h"
 #include "Edlin.h"
 #include "macros.h"
-
+#include "autofileptr.h"
 #include "quoteflag.h"
 
 int option_tilda_is_home=1;
@@ -25,8 +25,6 @@ static struct PublicHistory {
 } Oth={NULL,NULL,NULL} , *public_history=&Oth;
 
 int nhistories = 0;
-
-// char drivealias[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /* 00h から 1Fh までの制御文字を ^H という形で表示するfputs。
  * 出力先が端末でない、ファイル等の時は、変換を行わない。
@@ -54,7 +52,7 @@ static void fputs_ctrl(const char *p , FILE *fout)
  */
 int source_history( const char *fname )
 {
-  FILE *fp=fopen(fname,"rt");
+  AutoFilePtr fp(fname,"rt");
   if( fp==NULL )
     return -1;
 
@@ -74,18 +72,21 @@ int source_history( const char *fname )
     PublicHistory *tmp=(PublicHistory*)malloc(sizeof(PublicHistory));
     if( tmp != NULL ){
       tmp->string = strdup(p);
-      tmp->prev = public_history;
-      tmp->next = NULL;
-      if( public_history != NULL )
-	public_history->next = tmp;
-      public_history = tmp;
-      ++nhistories;
+      if( tmp->string == NULL ){
+	free(tmp);
+      }else{
+	tmp->prev = public_history;
+	tmp->next = NULL;
+	if( public_history != NULL )
+	  public_history->next = tmp;
+	public_history = tmp;
+	++nhistories;
+      }
     }
     
     /* ---- shell history ---- */
     Shell::append_history(p);
   }
-  fclose(fp);
   return 0;
 }
 
@@ -109,7 +110,6 @@ static const char *seek_hist_top(const char *str,int len)
  *	str ... 検索文字列
  * return マッチしたヒストリ行
  */
-
 static const char *seek_hist_mid(const char *str)
 {
   PublicHistory *cur=public_history;
@@ -139,39 +139,6 @@ static const char *get_hist_f(int n)
   }
   return cur->string;
 }
-
-#if 0
-/* ドライブエイリアスのコマンド。プリプロセスでのドライブ文字変換を
- * 設定するコマンド。
- *	source コマンド文字列が入っていたストリーム
- *	param パラメータ
- * return 0:正常終了 !0:異常終了
- */
-int cmd_drivealias( FILE *source , Parse &params )
-{
-  for(int i=1; i<params.get_argc() ; i++ ){
-    Substr arg=params[i];
-
-    if( ! isalpha(arg[0] & 255) ){
-      fprintf(stderr,"drvalias: syntax error\n");
-      return 0;
-    }
-    
-    if( arg[1]=='\0' || isspace(arg[1] & 255) ){
-      printf("%c: = %c:\n" , arg[0] , drivealias[ arg[0] & 0x1F ] );
-    }else if( arg[1]=='=' ){
-      if( isalpha(arg[2] & 255 ) )
-	drivealias[ arg[0] & 0x1F ] = toupper( arg[2] & 255 );
-      else
-	drivealias[ arg[0] & 0x1F ] = toupper( arg[0] & 255 );
-    }else{
-      fprintf(stderr,"drvalias: syntax error\n");
-      return 0;
-    }
-  }
-  return 0;
-}
-#endif
 
 /* 過去方向へヒストリを検索する 
  *	n ... 遡るヒストリの数

@@ -3,6 +3,8 @@
 #ifndef SUBSTR_H
 #define SUBSTR_H
 
+class SmartPtr;
+
 /* Substr : 部分文字列参照用クラス(Pascal型文字列) */
 class Substr{
 public:

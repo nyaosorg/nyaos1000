@@ -31,7 +31,7 @@ all : nyaos.exe nyaos.doc
 NYAOS_HDR=\
 	complete.h edlin.h finds.h hash.h macros.h nyaos.h substr.h \
 	parse.h pathlist.h smartptr.h strtok.h keyname.h strbuffer.h \
-	quoteflag.h
+	quoteflag.h autofileptr.h
 NYAOS_SRC=\
 	alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
 	command2.cc dbcs.cc eadir.cc edlin.cc edlin2.cc execute.cc \

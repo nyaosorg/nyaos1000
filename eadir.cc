@@ -47,6 +47,7 @@ enum{
   LS_COMMA ,
   NUM_LS ,
 };
+
 static char ls_flag[ NUM_LS ];
 
 static char *ls_left_code="\033[";
