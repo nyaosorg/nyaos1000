@@ -303,18 +303,23 @@ int Shell::line_input(const char *prompt,int window)
   ed.init();
   for(;;){
     ch=ed.getkey();
-    switch( (this->*bindmap[ch])() ){
-    case TERMINATE:
-      return ed.length();
-    case QUIT:
-      return -1;
-    case CANCEL:
-      return 0;
-    case FATAL:
-      return -1;
-    case CONTINUE:
+    if( ch < numof(bindmap) ){
+      switch( (this->*bindmap[ch])() ){
+      case TERMINATE:
+	return ed.length();
+      case QUIT:
+	return -1;
+      case CANCEL:
+	return 0;
+      case FATAL:
+	return -1;
+      case CONTINUE:
+	prevchar = ch;
+	continue;
+      }
+    }else{
+      self_insert();
       prevchar = ch;
-      continue;
     }
   }
 }
