@@ -13,7 +13,7 @@
 
 /* 帰り値は、文字数。キャンセルの時は (-1)を返す。 */
 
-Shell::History *Shell::history=NULL;
+History *Shell::history=NULL;
 int Shell::nhistories=0;
 int Shell::ctrl_d_eof=0;
 int Shell::ctrl_z_eof=1;
@@ -64,6 +64,8 @@ static struct bind_t{
   { KEY(ALT_F), Shell::forward_word,"ALT_F","forward_word  (tcsh)" },
   { KEY(ALT_B), Shell::backward_word,"ALT_B","backward_word  (tcsh)" },
   { CTRL('E') , Shell::go_tail,"CTRL_E","end_of_line  (tcsh)" },
+  { CTRL('S') , Shell::i_search,"CTRL_S","i_search (tcsh)" },
+  { CTRL('R') , Shell::rev_i_search,"CTRL_R","rev_i_search (tcsh)" },
 }, wordstar_bind_table[]={
   { CTRL('E') , Shell::previous_history,"CTRL_E","previous_history  (ws)" },
   { CTRL('X') , Shell::next_history,"CTRL_X","next_history  (ws)" },
@@ -205,7 +207,8 @@ Shell::Status Shell::backspace()
 Shell::Status Shell::tcshlike_complete()
 {
   if( prevchar == '\t' ){
-    ed.complete_list();
+    if( ed.length() != 0 )
+      ed.complete_list();
   }else{
     ed.complete();
     changed = 1;
@@ -543,6 +546,8 @@ struct {
   { "previous_history",          Shell::previous_history },
   { "self_insert",               Shell::self_insert },
   { "up_history",                Shell::previous_history },
+  { "i_search",                  Shell::i_search },
+  { "rev_i_search",              Shell::rev_i_search },
 };
 
 int Shell::bindkey(const char *key, const char *funcname )
@@ -553,7 +558,7 @@ int Shell::bindkey(const char *key, const char *funcname )
 
   for(;;){
     center=(low+high)/2;
-    int diff=(keytable[center].name[0] - toupper(key[0]) );
+    int diff=(keytable[center].name[0] - to_upper(key[0]) );
     if( diff==0 )
       diff=stricmp(keytable[center].name,key);
 
@@ -577,7 +582,7 @@ int Shell::bindkey(const char *key, const char *funcname )
 
   for(;;){
     center=(low+high)/2;
-    int diff=(functable[center].name[0] - tolower(funcname[0]) );
+    int diff=(functable[center].name[0] - to_lower(funcname[0]) );
     if( diff==0 )
       diff=stricmp(functable[center].name,funcname);
 
@@ -607,4 +612,124 @@ void Shell::bindlist(FILE *fout)
 	      bindmap_usage_key[i],bindmap_usage_func[i] );
     }
   }
+}
+
+static History *i_search_core( History *cur,const char *sekstr
+			      ,int &findpos)
+{
+  for(;;){
+    char *findptr;
+    if( cur == NULL ){
+      putc('\a',stderr);
+      return NULL;
+    }
+    if( (findptr=strstr(cur->buffer,sekstr)) != NULL ){
+      findpos = findptr - cur->buffer;
+      return cur;
+    }
+    cur = cur->next;
+  }
+}
+  
+
+static History *rev_i_search_core( History *cur,const char *sekstr
+				  ,int &findpos )
+{
+  for(;;){
+    char *findptr;
+    if( cur == NULL ){
+      putc('\a',stderr);
+      return NULL;
+    }
+    if( (findptr=strstr(cur->buffer,sekstr)) != NULL ){
+      findpos = findptr - cur->buffer;
+      return cur;
+    }
+    cur = cur->prev;
+  }
+}
+
+Shell::Status Shell::search_engine(int isrev=1)
+{
+  if( history == NULL )
+    return CONTINUE;
+
+  /* インクリメンタルサーチモード開始 */
+  History *cur=NULL,*tmp=NULL;
+  char sekstr[256]="\0";
+  int seklen=0;
+  int findpos=0;
+  
+  for(;;){
+    ed.message("(%si-search)`%s':%s"
+	       ,isrev ? "reverse-" : ""
+	       ,sekstr
+	       ,(cur==NULL ? "" : cur->buffer) );
+
+    unsigned key=ed.getkey(1);
+
+    if( key < 0 || key > 0x1FF 
+       || (bindmap[ key ] == self_insert && isprint(key & 255) )){
+      /* 文字列の追加(increment) */
+      if( key > 0x1ff || key < 0 ){
+	sekstr[ seklen++ ] = (key >> 8);
+      }
+      sekstr[ seklen++ ] = (key & 0xFF);
+      sekstr[ seklen   ] = '\0';
+
+      if( isrev ){
+	tmp=rev_i_search_core(cur != NULL ? cur : history 
+				, sekstr , findpos );
+      }else if( cur != NULL ){
+	tmp = i_search_core(cur , sekstr , findpos );
+      }
+      if( tmp != NULL )
+	cur = tmp;
+
+    }else if( key >= 0 && bindmap[ key ] == rev_i_search ){
+      isrev = 1;
+
+      if( cur==NULL || cur->prev==NULL )
+	tmp = rev_i_search_core(history , sekstr , findpos );
+      else
+	tmp = rev_i_search_core(cur->prev , sekstr , findpos );
+
+      if( tmp != NULL )
+	cur = tmp;
+
+    }else if( key >= 0 && bindmap[ key ] == i_search ){
+      isrev = 0;
+
+      if( cur != NULL  &&  cur->next != NULL )
+	tmp = i_search_core(cur->next , sekstr , findpos );
+
+      if( tmp != NULL )
+	cur = tmp;
+
+    }else{ /* それ以外の機能キーの場合は、サーチを終結する。*/
+      if( cur != NULL  &&  key != '\007' ){
+	/* 入力バッファの中にペーストする。*/
+	ed.clean_up();
+	ed.insert_and_forward( cur->buffer );
+	ed.locate(findpos+seklen);
+      }else{
+	ed.cleanmsg();
+      }
+      if( key < 0 || key > numof(bindmap) || bindmap[key] == input_terminate ){
+	return CONTINUE;
+      }else{
+	return (this->*bindmap[key])();
+      }
+    }
+  }
+}
+
+Shell::Status Shell::i_search()
+{
+  return search_engine(0);
+}
+
+Shell::Status Shell::rev_i_search()
+{
+  return search_engine(1);
 }

@@ -7,6 +7,7 @@
 #include <fnmatch.h>
 #include <stdarg.h>
 #include "complete.h"
+#include "macros.h"
 
 int Complete::directory_split_char='\\';
 int Complete::complete_tail_tilda=0;
@@ -18,7 +19,7 @@ int which_suffix(const char *path,...)
   while( *path != '.' ){
     if( *path == '\0' )
       return 0;
-    if( _nls_is_dbcs_lead(*path) )
+    if( is_kanji(*path) )
       path++;
     path++;
   }
@@ -36,7 +37,7 @@ int which_suffix(const char *path,...)
 
     while( *p != '\0' ){
       /* まさか、拡張子に漢字は入らないだろうと楽観 */
-      if( toupper(*p) != toupper(*q) )
+      if( to_upper(*p) != to_upper(*q) )
 	goto next_arg;
       p++;q++;
     }
@@ -60,7 +61,7 @@ int pathsplit( const char *path, char *dir, char *fname )
     lastroot = path;
   }
   for(const char *p=path ; *p != '\0' ; p++ ){
-    if( _nls_is_dbcs_lead( *p & 255 ) ){
+    if( is_kanji(*p) ){
       ++p;
     }else if( *p=='\\' || *p=='/' || *p==':' ){
       lastroot = p;
@@ -123,7 +124,7 @@ int dircompare(struct filelist *d1,struct filelist *d2)
   /* nedsg */
   const char *p=dircmd;
   int sign=+1;
-  while( *p != '\0' && !isspace(*p) ){
+  while( *p != '\0' && !is_space(*p) ){
     int diff;
     const char *q;
     const char *period1,*period2;
@@ -176,7 +177,7 @@ int dircompare(struct filelist *d1,struct filelist *d2)
 	period1 = period2 = NULL;
 	q=d1->name;
 	while( *q != '\0' ){
-	  if( _nls_is_dbcs_lead(*q) ){
+	  if( is_kanji(*q) ){
 	    q++;
 	  }else if( *q == '/' || *q=='\\' ){
 	    period1 = NULL;
@@ -187,7 +188,7 @@ int dircompare(struct filelist *d1,struct filelist *d2)
 	}
 	q=d2->name;
 	while( *q != '\0' ){
-	  if( _nls_is_dbcs_lead(*q) ){
+	  if( is_kanji(*q) ){
 	    q++;
 	  }else if( *q == '/' || *q=='\\' ){
 	    period2 = NULL;
@@ -233,13 +234,13 @@ void Complete::cleanup()
 static int instrcmp(const char *s1,const char *s2,int n)
 {
   while( n-- > 0 ){
-    if( _nls_is_dbcs_lead( *s1 ) ){
+    if( is_kanji( *s1 ) ){
       if( *s1 != *s2 )
 	return *s1-*s2;
       if( *++s1 != *++s2 )
 	return *s1-*s2;
       n--;
-    }else if( toupper(*s1 & 255) != toupper(*s2 & 255) ){
+    }else if( to_upper(*s1) != to_upper(*s2) ){
        return *s1-*s2;
     }
     s1++;
@@ -361,7 +362,7 @@ int Complete::makelist_with_path(const char *path)
 
   const char *p=path;
   while( *p != '\0'){
-    if( _nls_is_dbcs_lead(*p) ){
+    if( is_kanji(*p) ){
       p++;
     }else if( *p==':' || *p=='/' || *p=='\\'){
       /* フルパスで記述されている場合、
@@ -449,7 +450,7 @@ char *Complete::nextchar()
     char *r=buffer;
 
     while( *r != '\0' ){
-      if( _nls_is_dbcs_lead( *r & 255 ) ){
+      if( is_kanji(*r) ){
 	/****** 倍角文字 ******/
 	if( q[0] != r[0]  ||  q[1] != r[1] ){
 	  *r = '\0';
@@ -459,7 +460,7 @@ char *Complete::nextchar()
 	r += 2;
       }else{
 	/****** 半角文字 ******/
-	if( toupper(*q & 255) != toupper(*r & 255) ){
+	if( to_upper(*q) != to_upper(*r) ){
 	  *r = '\0';
 	  break;
 	}

@@ -34,7 +34,7 @@ public:
 	,input_redirect(NULL) , input_redirect_length(0)
 	  , output_fp(stdout) , input_fp(stdin) , pipemode(STD)
 	    ,isappend(false)
-      { check(); }
+	      { check(); }
 
   ~Parse();
 
@@ -43,8 +43,10 @@ public:
   const char *get_argv(int n){ return n < argc ? args[n].pointor : NULL; }
   int   get_length(int n){ return n < argc ? args[n].length : 0; }
 
-  char *copy   (int n, char *dp, bool quote_copy_flag=false );
-  char *copyall(int n, char *dp, bool quote_copy_flag=true  );
+  char *copy   (int n, char *dp, bool quote_copy_flag=false ,
+		bool replace_flag=false );
+  char *copyall(int n, char *dp, bool quote_copy_flag=true ,
+		bool replace_flag=false );
 
   int get_length_later(int n){ return n < argc ? sp-args[n].pointor : 0; }
   const char *get_parameter(){ return args[1].pointor; }

@@ -1,8 +1,7 @@
 #ifndef NYAOS_H
 #define NYAOS_H
 
-#undef numof
-#define numof(A) (sizeof(A)/sizeof((A)[0]))
+#include "macros.h"
 
 /**** "callcmd.cc" ****/
 
@@ -35,7 +34,7 @@ int do_alias(FILE *fin, const char *sp,
 int cmd_unalias(FILE *fin, const char *parameter,int argc,char **argv);
 int cmd_alias(FILE *fin, const char *sp,int argc,char **argv);
 
-
+extern int cursor_start , cursor_end;
 extern char *cursor_on_color_str;
 extern char *cursor_off_color_str;
 
@@ -63,12 +62,12 @@ extern int scriptflag;
 int replace_script( const char *source , char *destinate );
 
 extern int option_tilda_is_home;
+extern int option_replace_slash_to_backslash_after_tilda;
 int replace_envvar( const char *source , char *destinate );
 void buildin_command_to_complete_table(void);
 
 extern int option_vio_cursor_control;
 
 /**** bindkey.cc *****/
-
 
 #endif

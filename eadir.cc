@@ -63,7 +63,7 @@ void set_ls_color_table(const char *s)
   if( s==NULL )
     return;
 
-  while( isalpha(s[0] & 255 ) && isalpha(s[1] & 255) && s[2]=='=' ){
+  while( is_alpha(s[0]) && is_alpha(s[1]) && s[2]=='=' ){
     int s0=tolower(s[0] & 255) , s1=tolower(s[1] & 255 );
     s += 3;    
     for(int i=0;i<numof(ls_color_table);i++){
@@ -92,11 +92,11 @@ void set_ls_color_table(const char *s)
 	      *p++ = n;
 	    }else if( *s=='x' ){  /* "\x1b": 16iŒ`Ž® */
 	      int n=0,j=0;
-	      while( isxdigit(*++s) && ++j <= 3 ){
+	      while( is_xdigit(*++s) && ++j <= 3 ){
 		n *= 16;
-		if( islower(*s) )
+		if( is_lower(*s) )
 		  n += (*s-'a'+10);
-		else if( isupper(*s) )
+		else if( is_upper(*s) )
 		  n += (*s-'A'+10);
 		else
 		  n += (*s-'0');
@@ -166,7 +166,7 @@ int fnexplode2(struct filelist *&list   , int &count ,
     lastroot = path;
   }
   for(const char *sp=path ; *sp != '\0' ; sp++ ){
-    if( _nls_is_dbcs_lead( *sp & 255 ) ){
+    if( is_kanji(*sp) ){
       ++sp;
     }else if( *sp=='\\' || *sp=='/' || *sp==':' ){
       lastroot = sp;

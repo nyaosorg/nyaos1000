@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <sys/ea.h>
 #include <sys/nls.h>
+#include <sys/video.h>
 
 #include "edlin.h"
 #include "parse.h"
@@ -17,6 +18,17 @@ extern int option_tcshlike_history;
 
 int option_cd_goto_home=0;
 int echoflag=0;
+
+int cmd_mode( FILE *source , Parse &params )
+{
+  char buffer[ 1024 ];
+  params.copyall(0,buffer);
+  system( buffer );
+  if( option_vio_cursor_control ){
+    v_getctype( &cursor_start , &cursor_end );
+  }
+  return 0;
+}
 
 int cmd_pwd( FILE *source , Parse &params )
 {
@@ -35,7 +47,7 @@ static void cut_tail_root(char *p)
   char *q=NULL;
   while( *p != '\0' ){
     q=p;
-    if( _nls_is_dbcs_lead(*p) )
+    if( is_kanji(*p) )
       p++;
     p++;
   }
@@ -94,7 +106,7 @@ int cmd_comment(FILE *source, Parse &params)
     return 0;
   }
 
-  char *fname=(char*)alloca(params.get_length(1));
+  char *fname=(char*)alloca(params.get_length(1)+1);
   params.copy(1,fname);
 
   struct _ea eavalue;
@@ -149,6 +161,8 @@ struct{
   { "ls_tail_slash"        , &Complete::directory_split_char   ,'/','\\'},
   { "script"               , &scriptflag                       , 1  , 0 },
   { "tilda_home"           , &option_tilda_is_home             , 1  , 0 },
+  { "slash_to_backslash_after_tilda"
+      , &option_replace_slash_to_backslash_after_tilda , 1 , 0 },
   { "vio"                  , &option_vio_cursor_control        , 1  , 0 },
 };
 

@@ -10,7 +10,6 @@ extern int wrdcmp(const char *tblstr,const char *cmdstr);
 struct Alias *alias_hashtable[];
 
 int alias_nesting=0;
-
 void alias_replace(const char *sp , char *destinate  )
 {
   char *dp=destinate;
@@ -22,7 +21,7 @@ void alias_replace(const char *sp , char *destinate  )
       int size=params.get_length(0);
       const char *sp2=params.get_argv(0);
       while( size-- ){
-	key += tolower(*sp2);
+	key += tolower(*sp2 & 255);
 	sp2++;
       }
     }
@@ -40,13 +39,13 @@ void alias_replace(const char *sp , char *destinate  )
 	  if( *spa == '%' ){
 	    switch( *++spa ){
 	    default:
-	      if( isdigit(*spa) ){
+	      if( is_digit(*spa) ){
 		percent_used = 1;
 		int n=0;
 		do{
 		  n *= 10;
 		  n += (*spa-'0');
-		}while( isdigit(*++spa) );
+		}while( is_digit(*++spa) );
 		if( n < params.get_argc() )
 		  dp = params.copy(n,dp);
 		
@@ -54,6 +53,12 @@ void alias_replace(const char *sp , char *destinate  )
 		  while( ++n < params.get_argc() ){
 		    *dp++ = ' ';
 		    dp = params.copy(n,dp);
+		  }
+		  ++spa;
+		}else if( *spa == '@' ){
+		  while( ++n < params.get_argc() ){
+		    *dp++ = ' ';
+		    dp = params.copy(n,dp,false,true);
 		  }
 		  ++spa;
 		}
@@ -64,6 +69,12 @@ void alias_replace(const char *sp , char *destinate  )
 	      percent_used = 1;
 	      spa++;
 	      dp = params.copyall(1,dp);
+	      break;
+
+	    case '@':
+	      percent_used = 1;
+	      spa++;
+	      dp = params.copyall(1,dp,true,true);
 	      break;
 
 	    case '%':
@@ -177,13 +188,13 @@ int cmd_alias(FILE *fp, Parse &params)
 
     int key=0;
     char *dp=tmp->name;
-    while( *sp != '\0' && !isspace(*sp) ){
+    while( *sp != '\0' && !is_space(*sp) ){
       if( *sp == '=' ){
 	++sp;
 	break;
       }
-      if( isspace(*sp) ){
-	while( isspace(*sp) )
+      if( is_space(*sp) ){
+	while( is_space(*sp) )
 	  sp++;
 	if( *sp == '=' ){
 	  ++sp;
@@ -195,13 +206,49 @@ int cmd_alias(FILE *fp, Parse &params)
     *dp++ = '\0';
     
     /* 空白スキップ */
-    while( isspace(*sp) )
+    while( is_space(*sp) )
       sp++;
-    
+
     tmp->base = dp;
-    while( *sp != '\0' )
-      *dp++ = *sp++;
-    *dp = '\0';
+
+    if( *sp == '"' ){
+      /* alias ahaha="ufufuf ""ohoho""" の場合。
+       * 引用符一個は空文字に、連続する引用符二個は引用符一個に置換される。
+       */
+      int quote = 1;
+      if( *++sp == '"' ){
+	/* 余り考えられない状況だが「alias ufufu=""ahaha""」などの場合の為 */
+	*dp++ = '"';
+	++sp;
+      }
+
+      for(;;){
+	if( *sp == '"' ){
+	  if( *++sp == '"' ){
+	    *dp++ = '"';
+	    ++sp;
+	    continue;
+	  }else{
+	    quote ^= 1;
+	    /* continue せずに直後のコピーへ移行する */
+	  }
+	}
+	if( *sp == '\0' || (!quote && (*sp=='|' || *sp=='&') ) )
+	   break;
+	*dp++ = *sp++;
+      }
+      *dp = '\0';
+
+    }else{
+      /* 従来と互換性のある alias。引用符一個は引用符一個にしか置換されない。
+       * 引用符で囲まれていない「&」や「|」以降もエイリアスに含まれてしまう等
+       * のバグがあるが、互換性のため修正はしていない。
+       */
+      
+      while( *sp != '\0' )
+	*dp++ = *sp++;
+      *dp = '\0';
+    }
 
     /* 重複するエイリアスは廃棄 */
     unalias( key %= numof(alias_hashtable) , tmp->name );

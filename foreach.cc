@@ -62,10 +62,10 @@ static int eachcmd(FILE *srcfil, const char *var, const char *str, Line *line )
 	  }
 	  ++sp; /* ')'‚ð“Ç‚Ý”ò‚Î‚µ */
 	}else{
-	  if( *sp != '\0'  &&  (isalpha(*sp) || *sp=='_' ) ){
+	  if( *sp != '\0'  &&  (is_alpha(*sp) || *sp=='_' ) ){
 	    do{
 	      *wp++ = *sp++;
-	    }while( *sp != '\0' && ( isalnum(*sp) || *sp=='_' ) );
+	    }while( *sp != '\0' && ( is_alnum(*sp) || *sp=='_' ) );
 	  }
 	}
 	*wp = '\0';
@@ -184,13 +184,13 @@ int foreach(FILE *srcfil,const char *parameter, int argc, char **argv)
       
       char *sp=buffer;
 
-      while( *sp != '\0' && isspace(*sp) )
+      while( *sp != '\0' && is_space(*sp) )
 	sp++;
       
       if (   (sp[0] == 'e' || sp[0] == 'E' )
 	  && (sp[1] == 'n' || sp[1] == 'N' )
 	  && (sp[2] == 'd' || sp[2] == 'D' )
-	  && (sp[3] =='\0' || isspace(sp[3]) ) )
+	  && (sp[3] =='\0' || is_space(sp[3]) ) )
 	break;
 
       if( *sp != '\0' ){

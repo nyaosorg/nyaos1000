@@ -14,14 +14,17 @@
 #include "edlin.h"
 
 extern int echoflag;
+int cmd_mode  (FILE *source , Parse &params );
 int cmd_pwd   (FILE *source , Parse &params );
-int cmd_chdir (FILE *srcfil, Parse &params);
-int cmd_option(FILE *source, Parse &params);
-int cmd_comment(FILE *source, Parse &params);
-int cmd_alias(FILE *source, Parse &);
-int cmd_unalias(FILE *source, Parse &);
-int cmd_mkdir(FILE *source, Parse &);
-int cmd_rmdir(FILE *source, Parse &);
+int cmd_chdir (FILE *srcfil, Parse &params );
+int cmd_option(FILE *source, Parse &params );
+int cmd_comment(FILE *source, Parse &params );
+int cmd_alias(FILE *source, Parse & );
+int cmd_unalias(FILE *source, Parse & );
+int cmd_mkdir(FILE *source, Parse & );
+int cmd_rmdir(FILE *source, Parse & );
+int cmd_history(FILE *source, Parse & );
+
 void alias_replace(const char *sp,char *dp);
 
 int cmd_bind(FILE *source, Parse &param )
@@ -45,7 +48,7 @@ int cmd_bind(FILE *source, Parse &param )
     char *buffer=(char*)alloca(param.get_length(1)+1);
     param.copy(1,buffer);
     for(int i=0;i<numof(table2);i++){
-      if(   tolower(buffer[0])==table2[i].name[0]
+      if(   to_lower(buffer[0])==table2[i].name[0]
 	 && stricmp(buffer,table2[i].name)==0 ){
 	(*table2[i].func)();
 	return 0;
@@ -79,26 +82,6 @@ int cmd_bindkey(FILE *source,Parse &param)
   return 0;
 }
 
-int cmd_history(FILE *source,Parse &param)
-{
-  int n=10;
-  if( param.get_argc() >= 2 ){
-    char *arg1=(char*)alloca(param.get_length(1)+1);
-    param.copy(1,arg1);
-    if( (n=atoi(arg1)) < 1 )
-      n = 10;
-  }
-  int hisnum=Shell::get_history_number();
-  if( n > hisnum )
-    n= hisnum;
-  FILE *fout=param.open_stdout();
-  while( n-- ){
-    const char *s=Shell::get_nth_history(n);
-    if( s != NULL )
-      fprintf( fout , "%4d : %s\n",hisnum-n-1,s);
-  }
-  return 0;
-}
 
 volatile int ctrl_c=0;
 void ctrl_c_signal(int sig)
@@ -212,11 +195,11 @@ static int cmd_set( FILE *srcfil, Parse &params )
   char envname[1024],*dp=envname;
 
   /* 変数名の前の空白のスキップ */
-  while( *parameter!='\0' && isspace(*parameter) )
+  while( *parameter!='\0' && is_space(*parameter) )
     parameter++;
 
   /* 変数名のコピ－ */
-  while( *parameter != '=' && !isspace(*parameter & 255 ) ){
+  while( *parameter != '=' && !is_space(*parameter ) ){
     if(   *parameter=='\0' || *parameter=='&' 
        || *parameter=='>'  || *parameter=='|' ){
       /* 変数名がない ---> 画面表示のみ */
@@ -225,7 +208,13 @@ static int cmd_set( FILE *srcfil, Parse &params )
       fputs("You cannot input-redirect on command set.\n",stderr);
       return 1;
     }
-    *dp++ = toupper(*parameter) , parameter++;
+    if( is_kanji(*parameter) ){
+      *dp++ = *parameter++;
+      *dp++ = *parameter++;
+    }else{
+      *dp++ = to_upper(*parameter) ;
+      parameter++;
+    }
   }
 
   /* 変数名～「=」の空白のスキップ */
@@ -239,7 +228,7 @@ static int cmd_set( FILE *srcfil, Parse &params )
       return 1;
     }
 
-    if( !isspace(*parameter & 255) ){
+    if( !is_space(*parameter) ){
       fputs("Invalid Argument.\n",stderr);
       return -1;
     }
@@ -249,11 +238,19 @@ static int cmd_set( FILE *srcfil, Parse &params )
   *dp++ = *parameter++;
   
   /* 「=」～引数の空白を削除 */
-  while( *parameter != '\0'  && isspace(*parameter & 255 ) )
+  while( *parameter != '\0'  && is_space(*parameter ) )
     parameter++;
 
   /*  右辺値のコピ－ */
+  char *final_space=NULL;
   while( *parameter != '\0' ){
+    if( is_space(*parameter) ){
+      if( final_space==NULL )
+	final_space = dp;
+    }else{
+      final_space = NULL;
+    }
+
     if( *parameter == '%' ){
       char refenv[256] , *dp2=refenv;
       for(;;){
@@ -264,7 +261,7 @@ static int cmd_set( FILE *srcfil, Parse &params )
 	}else if( *parameter == '\0' ){
 	  break;
 	}else{
-	  *dp2++ = toupper(*parameter);
+	  *dp2++ = to_upper(*parameter);
 	}
 	if( dp2 >= refenv+sizeof(refenv)-2 )
 	  break;
@@ -276,16 +273,16 @@ static int cmd_set( FILE *srcfil, Parse &params )
 	  *dp++ = *sp2++;
       }
     }else{
+      if( is_kanji(*parameter) )
+	*dp++ = *parameter++;
       *dp++ = *parameter++;
     }
   }
-
   *dp = '\0';
   
-  /* 末尾の空白を除いておく */
-  while( isspace( *(dp-1) & 255 ) ){
-    *--dp = '\0';
-  }
+  if( final_space != NULL )
+    *final_space = '\0';
+  
   putenv( strdup(envname) );
   
   return 0;
@@ -306,7 +303,7 @@ static int cmd_source( FILE *srcfil, Parse &params )
   char *fname=(char*)alloca(params.get_length(1)+1);
   params.copy(1,fname);
 
-  char *cmdname=(char*)alloca(params.get_length(1)+5);
+  char *cmdname=(char*)alloca(params.get_length(1)+1);
   sprintf(cmdname,"%s.cmd",fname);
 
   FILE *fp;
@@ -376,7 +373,7 @@ static int cmd_echo(FILE *srcfil, Parse &params )
   const char *sp=params.get_argv(1);
   if( sp != NULL ){
     while( *sp != '\0'  &&  sp < params.get_tail() ){
-      if( _nls_is_dbcs_lead(*sp) ){
+      if( is_kanji(*sp) ){
 	putc(*sp++,fout);
 	putc(*sp,fout);
       }else if( *sp=='^' ){
@@ -402,9 +399,9 @@ static int cmd_echo(FILE *srcfil, Parse &params )
 	case 'c':
 	  return 0;
 	default:
-	  if( isdigit(*sp) ){
+	  if( is_digit(*sp) ){
 	    int n = (*sp++ - '0');
-	    for(int i=0 ; i<3 && isdigit(*sp) ; i++ ){
+	    for(int i=0 ; i<3 && is_digit(*sp) ; i++ ){
 	      n = n*8 + (*sp++ - '0');
 	    }
 	    putc( n , fout );
@@ -416,6 +413,11 @@ static int cmd_echo(FILE *srcfil, Parse &params )
       }else if( !quote && (*sp == '<' || *sp == '>') ){
 	break;
       }else if( *sp == '"' ){
+	if( *(sp+1) == '"' ){
+	  putc( '"' , fout );
+	  sp += 2;
+	  continue;
+	}
 	quote = !quote;
       }else{
 	putc( *sp , fout );
@@ -453,6 +455,7 @@ struct commandtable_tag jumptable[]={
   {"history",cmd_history },
   {"ls",     cmd_ls      },
   {"md",     cmd_mkdir   },
+  {"mode",   cmd_mode    },
   {"mkdir",  cmd_mkdir   },
   {"option", cmd_option  },
   {"pwd",    cmd_pwd     },
@@ -475,11 +478,11 @@ int wrdcmp(const char *s1,const char *s2)
    */
   
   while( *s1 != 0 ){
-    if( toupper(*s1 & 255) != toupper(*s2 & 255) )
+    if( to_upper(*s1) != to_upper(*s2) )
       return *s1-*s2;
 
     /* 漢字ならば、2byte目を toupper越しに比較してはいけない */
-    if( _nls_is_dbcs_lead( *s1 ) ){
+    if( is_kanji( *s1 ) ){
       if( *++s1 != *++s2 )
 	return *s1-*s2;
     }
@@ -491,7 +494,7 @@ int wrdcmp(const char *s1,const char *s2)
    * 同じと判定させない
    */
 
-  if( *s2 != 0  &&  !isspace(*s2 & 255) )
+  if( *s2 != 0  &&  !is_space(*s2) )
     return *s2;
   
   return 0;
@@ -537,9 +540,9 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
   for(;;){
     if( *cmdline == '\0' )
       return 0;
-    if( !isspace(*cmdline & 255) )
+    if( !is_space(*cmdline ) )
       break;
-    if( _nls_is_dbcs_lead(*cmdline & 255) )
+    if( is_kanji(*cmdline ) )
       ++cmdline;
     ++cmdline;
   }
@@ -550,17 +553,21 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
     return 0;
 
   /* カレントドライブの変更 */
-  if(   isalpha(cmdline[0]) && cmdline[1]==':' 
-     && (cmdline[2]=='\0' || isspace(cmdline[2])) )
+  if(   is_alpha(cmdline[0]) && cmdline[1]==':' 
+     && (cmdline[2]=='\0' || is_space(cmdline[2])) )
     {
       _chdrive(cmdline[0]);
       return 0;
     }
   
   /* エイリアスの置換処理 */
+  /* printf("original [%s]\n",cmdline); */
+
   char alias_replaced_buffer[1024];
   alias_replace( cmdline , alias_replaced_buffer );
   cmdline = alias_replaced_buffer;
+
+  /* printf("alias [%s]\n",cmdline); */
   
   /* 環境変数の置換処理 */
   char env_replaced_buffer[1024];
@@ -575,10 +582,8 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
   {/* ハッシュキーを計算する */
     int size=params.get_length(0);
     const char *sp=params.get_argv(0);
-    while( size-- ){
-      key += tolower(*sp);
-      sp++;
-    }
+    while( size-- )
+      key += to_lower(*sp++);
   }
 
   key %= numof(hashtable);
@@ -599,9 +604,11 @@ int execute( FILE *srcfil, const char *cmdline , int use_spawn =0 )
     if( ++key > numof(hashtable) )
       key = 0;
   }
+  /* printf("[%s]\n",cmdline); */
 
   replace_script( cmdline , alias_replaced_buffer );
   cmdline = alias_replaced_buffer;
+  /* printf("<%s>\n",cmdline); */
 
   if( echoflag )
     puts( cmdline );

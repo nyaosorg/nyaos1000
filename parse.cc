@@ -64,11 +64,14 @@ Parse::~Parse()
 int Parse::check_redirect()
 {
   int mark=*sp;
+  if( _nls_is_dbcs_lead(*sp & 255) )
+    ++sp;
+
   if( *++sp == '>' ){
     isappend = true;
     ++sp;
   }
-  while( isspace(*sp) )
+  while( isspace(*sp & 255) )
     ++sp;
 
   const char *top=sp;
@@ -82,6 +85,8 @@ int Parse::check_redirect()
     ++sp;
     if( *sp=='"' ){
       do{
+	if( _nls_is_dbcs_lead(*sp & 255 ) )
+	   ++sp;
 	++sp;
 	if( *sp == '\0' )
 	  goto exit;
@@ -113,7 +118,7 @@ int Parse::check()
 
   for(;;){
     /* 空白を読み飛ばす */
-    while( *sp != '\0'  &&  isspace(*sp) )
+    while( *sp != '\0'  &&  isspace(*sp & 255) )
       ++sp;
 
     if( *sp == '&' || *sp == '|' || *sp == '\0' )
@@ -144,8 +149,10 @@ int Parse::check()
 	goto exit;
       }else if( *sp == '^' && *(sp+1) != '\0' ){
 	/* キャレットはヌル以外の次の機能文字を無効化する。*/
-	if( _nls_is_dbcs_lead(*++sp & 255) )
+	if( _nls_is_dbcs_lead(*++sp & 255) ){
 	  sp++;
+	  assert(*sp != '\0');
+	}
 	sp++;
       }else if( *sp == '"' ){
 	/* クォ－トは次のクォ－トが来るまで、
@@ -153,8 +160,10 @@ int Parse::check()
 	 * キャレットも無効化される。
 	 */
 	do{
-	  if( _nls_is_dbcs_lead(*sp & 255) )
+	  if( _nls_is_dbcs_lead(*sp & 255) ){
 	    ++sp;
+	    assert(*sp != '\0' );
+	  }
 	  ++sp;
 	  if( *sp=='\0' )
 	    goto exit;
@@ -182,7 +191,7 @@ FILE *Parse::open_stdout()
     if( *sp == '|' )
       return NULL;
     
-    char *fname = (char*)alloca( output_redirect_length+1 );
+    char *fname = (char*)alloca( output_redirect_length+1 ); /* ! */
     memcpy(fname,output_redirect , output_redirect_length );
     fname[ output_redirect_length ] = '\0';
     pipemode = REDIRECT;
@@ -197,7 +206,7 @@ FILE *Parse::open_stdout()
 FILE *Parse::open_stdin()
 {
   if( input_redirect != NULL ){
-    char *fname = (char*)alloca( input_redirect_length+1 );
+    char *fname = (char*)alloca( input_redirect_length+1 ); /* ! */
     memcpy(fname,input_redirect, input_redirect_length );
     fname[ input_redirect_length ] = '\0';
 
@@ -209,9 +218,9 @@ FILE *Parse::open_stdin()
 int Parse::call_as_main(int (*routine)(int argc,char **argv) )
 {
   int i;
-  char **argv=(char**)alloca(sizeof(char*)*(argc+1));
+  char **argv=(char**)alloca(sizeof(char*)*(argc+3));
   for(i=0;i<argc;i++){
-    argv[i]=(char *)alloca(args[i].length+1);
+    argv[i]=(char *)alloca(args[i].length+5);
     copy(i,argv[i]);
   }
   argv[i] = NULL;
@@ -221,9 +230,9 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv) )
 int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
 {
   int i;
-  char **argv=(char**)alloca(sizeof(char*)*(argc+1));
+  char **argv=(char**)alloca(sizeof(char*)*(argc+5));
   for(i=0;i<argc;i++){
-    argv[i]=(char *)alloca(args[i].length+1);
+    argv[i]=(char *)alloca(args[i].length+5);
     copy(i,argv[i]);
   }
 
@@ -240,7 +249,7 @@ int Parse::call_as_main(int (*routine)(int argc,char **argv,FILE *fout))
   return (*routine)(argc,argv,fout);
 }
 
-char *Parse::copy(int n, char *dp, bool quote_copy_flag )
+char *Parse::copy(int n, char *dp, bool quote_copy_flag , bool replace_flag )
 {
   if( n < argc ){
     const char *sp   = args[n].pointor ;
@@ -253,24 +262,47 @@ char *Parse::copy(int n, char *dp, bool quote_copy_flag )
 
     bool quote=false;
 
+    /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
+     * (1) s|^-|/|;
+     */
+       
+    if( replace_flag  &&  *sp == '-' ){
+      *dp++ = '/';
+      ++sp;
+    }
+
     while( sp < tail ){
       
       if( *sp == '"' ){
 	/* 引用符の場合は、フラグを反転させて、ポインタを進めるだけ。*/
-	quote = !quote;
-	++sp;
-	if( quote_copy_flag )
+
+	if( !quote_copy_flag && *(sp+1) == '"' ){
+	  /* 連続する二つの引用符は、単一の引用符に変換する。*/
 	  *dp++ = '"';
+	  sp += 2;
+	}else{
+	  quote = !quote;
+	  ++sp;
+	  if( quote_copy_flag )
+	    *dp++ = '"';
+	}
 
       }else if( *sp == '^' && *(sp+1) != '\0' && !quote ){
 	/* 引用符の中ではない、キャレットは、ポインタを進めるだけ。
 	 * 二重キャレットは「^」としてコピーする。*/
 	if( *++sp == '^' )
 	  *dp++ = *sp++;
+      }else if( replace_flag == true && !quote && *sp == '/' ){
+	/* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
+	 * (2) s|/|\|g; (ただし引用符に囲まれていないもの)
+	 */
+	*dp++ = '\\';
+	sp++;
       }else{
 	/* それ以外はコピ－ */
 	if( _nls_is_dbcs_lead(*sp & 255 ) ){
 	  *dp++ = *sp++;
+	  assert(*sp != '\0' );
 	}
 	*dp++ = *sp++;
       }
@@ -280,7 +312,7 @@ char *Parse::copy(int n, char *dp, bool quote_copy_flag )
   return dp;
 }
 
-char *Parse::copyall(int n, char *dp, bool quote_copy_flag )
+char *Parse::copyall(int n, char *dp, bool quote_copy_flag,bool replace_flag )
 {
   if( n < argc ){
     
@@ -292,24 +324,45 @@ char *Parse::copyall(int n, char *dp, bool quote_copy_flag )
     const char *ssp=args[n].pointor;
     bool quote=false;
 
+    /* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
+     * (1) s|^-|/|;
+     */
+    if( replace_flag  &&  *ssp == '-' ){
+      *dp++ = '/';
+      ++ssp;
+    }
+
     while( ssp < sp ){
       if( *ssp == '"' ){
 	/* 引用符は、フラグを反転させる。*/
-	quote = !quote;
-	++ssp;
-	if( quote_copy_flag )
-	  *dp++ = '"';
 
+	if( !quote_copy_flag && *(ssp+1) == '"' ){
+	  /* 連続する二つの引用符は、単一の引用符に変換する。*/
+	  *dp++ = '"';
+	  ssp += 2;
+	}else{
+	  quote = !quote;
+	  ++ssp;
+	  if( quote_copy_flag )
+	    *dp++ = '"';
+	}
       }else if( *ssp=='^' && !quote ){
 	/* 引用符の中にないキャレットはポインタを進めるだけ。
 	 * ただし、二重キャレットは「^」としてコピーする。
 	 */
 	if( *++ssp == '^' )
 	  *dp++ = *ssp++;
+
+      }else if( replace_flag == true && !quote && *ssp == '/' ){
+	/* UNIXライクなパス/オプション指定法を OS/2 ライクに変換する処理
+	 * (2) s|/|\|g; (ただし引用符に囲まれていないもの)
+	 */
+	*dp++ = '\\';
+	ssp++;
 	
       }else{
 	/* それ以外はコピ－ */
-	if( _nls_is_dbcs_lead(*ssp & 256) ){
+	if( _nls_is_dbcs_lead(*ssp & 255) ){
 	  *dp++ = *ssp++;
 	}
 	*dp++ = *ssp++;

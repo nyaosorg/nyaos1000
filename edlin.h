@@ -22,8 +22,12 @@ protected:
   int max;         /* strbufのmax                      */
   int windowsize;  /* 表示領域のサイズ(スクロール機能) */
 
+  int msgsize;     /* 入力文字列以外のメッセージが表示されている場合、
+		    * その文字列の長さが入る。*/
+public:
   void after_repaint(int termclear=-1);   /* カーソル位置移行を repaint */
   void repaint(int termclear=-1);         /* 全行 repaint               */
+  void _repaint(int termclear);           /* カーソルを戻さない repaint */
   void right(int n=1);                    /* 右へスクロール             */
   void left(int n=1);                     /* 左へスクロール             */
   int  seek_word_top();
@@ -39,12 +43,14 @@ protected:
 	char *buffer, int max_, int windowsize_)
     : strbuf(buffer),atrbuf(new char[max_])
       ,top(top_),pos(pos_),len(len_),max(max_),windowsize(windowsize_)
+	,msgsize(0)
         { /* no-operation */ }
 
 public:
   Edlin(char *buffer , int max_ , int windowsize_)
     : strbuf(buffer),atrbuf(new char[max_])
       ,top(0),pos(0),len(0),max(max_),windowsize(windowsize_)
+	,msgsize(0)
         { buffer[0]='\0'; }
 
   virtual ~Edlin(){ delete atrbuf; }
@@ -74,7 +80,12 @@ public:
   
   /* カーソルを適切な位置に移動して入力待ち */
   virtual int getkey(int wait=1);
- 
+
+  /* 入力文字列以外のメッセージを表示するメソッド */
+  int message(const char *fmt,...);
+  void cleanmsg();
+  void locate(int x);
+
   /* リポート関数 */
   int length() const { return len; }    /* 現在入力されている文字列のbytes */
   int position() const { return pos; }  /* カーソルの位置(bytes) */
@@ -104,16 +115,21 @@ class EscEdlin : public Edlin {
     { cursor_on = on ; cursor_off = off; }
 };
 
+struct History{
+  History *prev,*next;
+  char buffer[1];
+};
+
 /* シェルに特化した Edlin クラス (shell.cc) */
 class ShellEdlin : public EscEdlin {
   const char *prompt;
   int promptlen;
- public:
+public:
   static int beep_ok;
   int using_i_mark;
- protected:
+protected:
   void alert(){ if( beep_ok ) putchr('\a'); }
- public:
+public:
   int setprompt(const char *prompt,int windowsize=32767);
 
   ShellEdlin(const char *pro,char *buffer,int max,
@@ -134,10 +150,6 @@ class ShellEdlin : public EscEdlin {
  */
 class Shell{
 public:
-  struct History{
-    History *prev,*next;
-    char buffer[1];
-  };
   enum Status { CONTINUE, TERMINATE, QUIT, CANCEL , FATAL };
 private:
   static History *history; /* ヒストリはグロ－バルにした。*/
@@ -151,6 +163,8 @@ private:
   static Status (Shell::*bindmap[0x200])();
   static const char *bindmap_usage_key[0x200];
   static const char *bindmap_usage_func[0x200];
+
+  Status search_engine(int isrev);
 public:
   static int get_history_number() { return nhistories; }
   static const char *get_nth_history(int n);
@@ -165,7 +179,9 @@ public:
   ~Shell();
   int line_input(const char *prompt,int window);
 
-  
+  Status i_search();
+  Status rev_i_search();
+
   Status self_insert();
   Status previous_history();
   Status next_history();

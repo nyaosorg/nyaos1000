@@ -4,9 +4,12 @@
 #include <dos.h>         /*** for _int86              ***/
 #include <sys/kbdscan.h> /*** for _read_kbd()         ***/
 #include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #include "Edlin.h"
 #include "complete.h"
+#include "macros.h"
 
 int Edlin::complete_tail_char='\\';
 
@@ -249,11 +252,8 @@ void Edlin::erase()
   after_repaint(ndels);
 }
 
-void Edlin::repaint(int termclear)
+void Edlin::_repaint(int termclear)
 {
-  /* 表示している一文字目までカーソルを戻す */
-  putbs( pos-top );
-
   int i=0;
   while( i<windowsize  &&  top+i < len )
     putchr( strbuf[top+i++] );
@@ -267,6 +267,13 @@ void Edlin::repaint(int termclear)
     putel();
   }
   putbs( i - (pos-top) );
+}
+
+void Edlin::repaint(int termclear)
+{
+  /* 表示している一文字目までカーソルを戻す */
+  putbs( pos-top );
+  _repaint(termclear);
 }
 
 void Edlin::after_repaint(int termclear)
@@ -360,9 +367,9 @@ void Edlin::backward_word()
 {
   int nextpos=pos;
   /* 空白の読み飛ばし */
-  while( nextpos > 0  &&  isspace(strbuf[--nextpos]) )
+  while( nextpos > 0  &&  is_space(strbuf[--nextpos]) )
     ;
-  while( nextpos > 0  &&  !isspace(strbuf[nextpos-1]) )
+  while( nextpos > 0  &&  !is_space(strbuf[nextpos-1]) )
     --nextpos;
 
   if( top <= nextpos ){
@@ -452,13 +459,23 @@ void Edlin::go_tail()
 
 void Edlin::clean_up()
 {
-  putbs( pos-top );
-  int i=0;
-  while( i < len  &&  i < windowsize ){
-    putchr(' ');
-    i++;
+  int cleaning_size;
+  if( msgsize != 0 ){
+    cleaning_size = msgsize;
+    putbs( msgsize );
+    msgsize = 0;
+  }else{
+    putbs( pos-top );
+    if( len < windowsize )
+      cleaning_size = len;
+    else
+      cleaning_size = windowsize;
   }
-  putbs( i );
+
+  for(int i=0; i<cleaning_size ; i++ )
+    putchr(' ');
+
+  putbs( cleaning_size );
   top = len = pos = 0;
   strbuf[ 0 ] = '\0';
   atrbuf[ 0 ] = SBC;
@@ -480,8 +497,75 @@ int Edlin::getkey(int wait)
   int ch = (get86key(wait) & 0xFF );
   if( ch == 0 )
     ch = (get86key(wait)|0x100);
-  else if( _nls_is_dbcs_lead(ch & 255) )
+  else if( is_kanji(ch) )
     ch = ((ch << 8)|(get86key(wait) & 0xFF));
 
   return ch;
 }
+
+int Edlin::message(const char *fmt,...) /* ウインドウモード未対応 */
+{
+  char msg[1024];
+  va_list vp;
+  va_start(vp,fmt);
+
+  /* msgsize は以前に表示したメッセージの長さ */
+  if( msgsize == 0 ){
+    putbs(pos-top);
+    msgsize = len-top;
+  }else{
+    putbs(msgsize);
+  }
+  int length=vsprintf(msg,fmt,vp);
+
+  int i=0;
+  while( i<length ){
+    putchr(msg[i++]);
+  }
+  if( msgsize > length ){
+    while( i<msgsize ){
+      putchr(' ');
+      i++;
+    }
+    putbs( msgsize - length );
+  }
+  msgsize = length;
+
+  va_end(vp);
+  return len;
+}
+
+void Edlin::cleanmsg() /* ウインドウモード未対応 */
+{
+  /* 一時的に表示していたメッセージを消去し、
+     本来表示すべき、入力文字列を再表示する */
+
+  if( msgsize > 0 ){
+    putbs( msgsize );
+    int i=0;
+    while( i < len ){
+      putchr( strbuf[i++] );
+    }
+    if( i < msgsize ){
+      do{
+	putchr(' ');
+      }while( ++i < msgsize );
+
+      putbs( msgsize - len );
+    }
+    putbs( len - pos );
+  }
+  msgsize = 0;
+}
+
+void Edlin::locate(int x)  /* WINDOWモード未対応 */
+{
+  if( x > pos ){
+    while( pos < x )
+      putchr(strbuf[pos++]);
+  }else if( x < pos ){
+    putbs( pos-x );
+  }
+  pos = x;
+}
+

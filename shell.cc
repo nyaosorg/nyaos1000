@@ -120,7 +120,7 @@ int ShellEdlin::setprompt(const char *sp , int window )
   while( *sp != '\0' ){
     /* エスケープシーケンスを除いた文字数を windowsize から引いておく */
     if( *sp++ == '\x1B' ){
-      while( *sp != '\0' && !isalpha(*sp) )
+      while( *sp != '\0' && !is_alpha(*sp) )
 	sp++;
       sp++;
     }else{

@@ -19,6 +19,8 @@
 #  include <sys/video.h>
 #endif
 
+extern int nhistories;
+
 int screen_width=80;
 int screen_height=25;
 int option_vio_cursor_control=1;
@@ -134,7 +136,7 @@ int main(int argc, char **argv)
 	   "\n"
 	   "     Free Software     ]]  ]] ]]  ]]  ]]]]   ]]]]   ]]]]] \n"
 	   "  Nihongo Yet Another  ]]] ]] ]]  ]] ]]  ]] ]]  ]] ]]    ]\n"
-	   "   Os/2 Shell 1.22     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
+	   "   Os/2 Shell 1.23     ]]]]]]  ]]]]  ]]]]]] ]]  ]]   ]]]  \n"
 	   "         (C)           ]] ]]]   ]]   ]]  ]] ]]  ]] ]    ]]\n"
 	   "  1996,97 HAYAMA,Kaoru ]]  ]]   ]]   ]]  ]]  ]]]]   ]]]]] \n"
 	   "                                                          \n"
@@ -161,7 +163,10 @@ int main(int argc, char **argv)
 
       while( *promptenv != '\0' ){
 	if( *promptenv == '$' ){
-	  switch( promptenv++ , toupper(*promptenv) ){
+	  switch( promptenv++ , to_upper(*promptenv) ){
+	  case '!':
+	    dp += sprintf(dp,"%d",nhistories );
+	    break;
 	  case '$':
 	    *dp++ = '$';
 	    break;
@@ -196,16 +201,20 @@ int main(int argc, char **argv)
 	    *dp++ = '\b';
 	    break;
 	  case 'I':
+	    int a;
+	    if( option_vio_cursor_control )
+	      a = v_getattr();
+
 	    dp += sprintf(dp,"\x1B[s\x1B[1;44;37m\x1B[H%-*s\x1B[m\x1B[u"
 			  , screen_width ,
-			  " Nihongo Yet Another Os/2 Shell 1.22 "
+			  " Nihongo Yet Another Os/2 Shell 1.23 "
 			  " (c) 1996,97 HAYAMA,Kaoru "
 			  );
 	    edlin.using_i_mark = 1;
+	    if( option_vio_cursor_control )
+	      v_attrib(a);
 	    break;
-	  case '!':
-	    dp += sprintf(dp,"%d",Shell::get_history_number() );
-	    break;
+
 	  case 'L':
 	    *dp++ = '<';
 	    break;
@@ -258,10 +267,6 @@ int main(int argc, char **argv)
 
       edlin.setcursor( cursor_on_color_str , cursor_off_color_str );
       
-      if( option_vio_cursor_control ){
-	v_getctype( &cursor_start , &cursor_end );
-	v_ctype( cursor_start , cursor_end );
-      }
       
       int rc=shell.line_input(promptstr,_osmode==OS2_MODE ? 32767 
 			      :screen_width-1 );
@@ -269,6 +274,11 @@ int main(int argc, char **argv)
       int rc=edlin.simple_input(promptstr,
 				_osmode==OS2_MODE ? 32767:screen_width-1 );
 #endif
+      /* カーソルを消去された場合にそなえ、カーソルのサイズを保存しておく */
+
+      if( option_vio_cursor_control )
+      	v_getctype( &cursor_start , &cursor_end );
+
       if( rc >= 0 ){
 	putchar('\n');
 	if( cmdlin[0] != '\0' && execute(stdin,cmdlin) == RC_QUIT ){
@@ -279,6 +289,9 @@ int main(int argc, char **argv)
 	fputs("\nGood bye!\n",stdout);
 	return 0;
       }
+      /* カーソルを元に戻す */
+      if( option_vio_cursor_control )
+	v_ctype( cursor_start , cursor_end );
     }
   }else{
     while( fgets_chop(cmdlin,sizeof(cmdlin),stdin) != NULL 

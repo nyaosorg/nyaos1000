@@ -1,19 +1,77 @@
+#include <assert.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/nls.h>
+#include "macros.h"
 
 int scriptflag=1;
 int option_amp_start=1;
 
+static int copyargs( const char *&sp , char *&dp )
+{
+  for(;;){
+    if( *sp == '"' ){
+      do{
+	if( is_kanji(*sp) ){
+	  *dp++ = *sp++;
+	  assert( *sp != '\0' );
+	}
+	*dp++ = *sp++;
+	if( *sp == '\0' ){
+	  *dp = '\0';
+	  return 1;
+	}
+      }while( *sp != '"' );
+    }
+    
+    if( *sp=='&' ){
+      while( is_space(*++sp) )
+	;
+      if( *sp =='&' ){  /* && の処理 */
+	const char *s="& if not errorlevel 1 ";
+	while( *s != '\0' )
+	  *dp++ = *s++;
+	sp++;
+      }else{
+	*dp++ = '&';
+      }
+      *dp = '\0';
+      return 0;
+    }
+    
+    if( *sp=='|' ){
+      while( is_space(*++sp) )
+	;
+      if( *sp == '|' ){
+	const char *s="& if errorlevel 1 ";
+	while( *s != '\0' )
+	  *dp++ = *s++;
+	sp++;
+      }else{
+	*dp++ = '|';
+      }
+      *dp = '\0';
+      return 0;
+    }
+
+    if( *sp=='\0' ){
+      *dp='\0';
+      return 1;
+    }
+    if( is_kanji(*sp) )
+      *dp++ = *sp++;
+    *dp++ = *sp++;
+  }
+}
+
 int replace_script( const char *sp , char *dp )
 {
   for(;;){ /* パイプで区切られた各コマンドに関するループ */
-    while( isspace(*sp) )
+    /* puts("1"); */
+    while( is_space(*sp) )
       *dp++ = *sp++;
 
-    char path[FILENAME_MAX];
-    char fname[FILENAME_MAX];
     FILE *fp;
     int ch;
 
@@ -25,17 +83,13 @@ int replace_script( const char *sp , char *dp )
       for(;;){
 	switch( *p ){
 	case '&':
-	  *dp++ = 's';
-	  *dp++ = 't';
-	  *dp++ = 'a';
-	  *dp++ = 'r';
-	  *dp++ = 't';
-	  *dp++ = ' ';
-#if 0
-	  *dp++ = '/';
-	  *dp++ = 'C';
-	  *dp++ = ' ';
-#endif
+	  while( is_space(*++p) )
+	    ;
+	  if( *p != '&' ){ /* 「&&」でない「&」なら start を挿入 */
+	    char *s = "start ";
+	    while( *s != '\0' )
+	      *dp++ = *s++;
+	  }
 	  goto check_script;
 
 	case '|':
@@ -52,17 +106,23 @@ int replace_script( const char *sp , char *dp )
 	  break;
 
 	default:
-	  if( _nls_is_dbcs_lead(*p) ){
+	  if( is_kanji(*p) ){
 	    p+=2;
 	  }else{
 	    ++p;
 	  }
-	}
-      }
-    }
+	  break;
+	}/* switch() */
+      }/* for(;;) */
+    } /* if option_amp... */
+
+    /* スクリプトかどうかを調べるため、
+     * まず、最初の単語を切り出している。
+     */
+    /* puts("3"); */
 
   check_script:
-
+    char fname[FILENAME_MAX];
     const char *ssp = sp;
     char *ddp = fname;
     for(;;){
@@ -71,15 +131,24 @@ int replace_script( const char *sp , char *dp )
 	  *ddp++ = *ssp++;
 	}while( *ssp != '\0' && *ssp != '"' );
       }
-      if( *ssp == '\0' || isspace(*ssp) )
+      if( *ssp == '\0' || is_space(*ssp) )
 	break;
+      if( is_kanji(*ssp) ){
+	*ddp++ = *ssp++;
+	assert(*ssp != '\0');
+      }
       *ddp++ = *ssp++;
     }
     *ddp = '\0';
 
+    char path[FILENAME_MAX];
+
+    /* puts("4"); */
     if(   scriptflag != 0
        && ( _searchenv(fname,"SCRIPTPATH",path) , path[0] != '\0' )
        &&  (fp=fopen(path,"r")) != NULL ){
+      
+      /* puts("4then"); */
       if( getc(fp) == '#' && getc(fp) == '!' ){
 
 	/* 環境変数 USRDRIVE の最初の一文字を複写 */
@@ -109,15 +178,7 @@ int replace_script( const char *sp , char *dp )
 	*dp++ = ' ';
 	
 	/* 引数の複写 */
-	do{
-	  if( *ssp=='"' ){
-	    do{
-	      *dp++ = *ssp++;
-	    }while( *ssp != '\0' && *ssp != '"' );
-	  }
-	  if( (ch=*dp++ = *ssp++)=='\0' )
-	    return 0;
-	}while( ch != '|'  &&  ch != '&' );
+	copyargs(ssp,dp);
 	sp = ssp;
 	continue; /* 次のコマンドへ */
       }
@@ -125,7 +186,8 @@ int replace_script( const char *sp , char *dp )
     }
     /******** スクリプトではない場合 *******/
 
-    while( *sp != '\0' && *sp != '|' && *sp != '&' && !isspace(*sp) ){
+    /* puts("4else"); */
+    while( *sp != '\0' && *sp != '|' && *sp != '&' && !is_space(*sp) ){
       /* コマンド名 : "/"-->"\\"に置換 */
       if( *sp == '"' ){
 	do{
@@ -140,22 +202,18 @@ int replace_script( const char *sp , char *dp )
 	*dp++ = '\\';
 	sp++;
       }else{
+	if( is_kanji(*sp) ){
+	  *dp++ = *sp++;
+	  assert(*sp != '\0');
+	}
 	*dp++ = *sp++;
       }
     }
-    do{ /* 引数 */
-      if( *sp == '"' ){
-	do{
-	  *dp++ = *sp++;
-	  if( *sp == '\0' ){
-	    *dp = '\0';
-	    return 0;
-	  }
-	}while( *sp != '"' );
-      }
-      if( (ch = *dp++ = *sp++)=='\0' )
-	return 0;
-    }while( ch != '|' && ch != '&' );
+    /* puts("copyargs"); */
+    if( copyargs( sp , dp ) == 1 ){
+      *dp = '\0';
+      return 0;
+    }
   }/* パイプで区切られた各コマンド毎のループ */
 }
 
