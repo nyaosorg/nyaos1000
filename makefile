@@ -2,10 +2,7 @@
 # Makefile for GNU Make.
 #
 # Free Software : Nihongo Yet Another Os/2 Shell
-# (c) 1996,97,98,99 HAYAMA,Kaoru
-#
-# D1xxx is dynamically linked, which supports CANNA.
-# S2xxx is statically  linked, which doesn't support CANNA.
+# (c) 1996-2000 HAYAMA,Kaoru
 #
 # If you don't have header file <canna/jrkanji.h>,
 # 	then add option `-DICANNA' to CFLAGS or D1CFLAGS.
@@ -51,10 +48,6 @@ NYAOS_SRC=alias.cc bindkey.cc chdirs.cc complete.cc command1.cc \
 	strbuffer.cc debugger.cc let.cc errmsg.cc yanyaos.cc shared.cc \
 	fnmatch.cc keynameseek.cc
 
-
-
-
-
 NYAOS_OBJ1=$(NYAOS_SRC:.cc=.o)
 NYAOS_OBJ2=$(NYAOS_SRC:.cc=.obj)
 
@@ -73,26 +66,31 @@ LZH=nyaos1$(VER).lzh
 SLZH=s2nya1$(VER).lzh
 TBZ=nyaos-1.$(VER).tar.bz2
 
+checkver:
+	@echo version is 1.$(VER)
+
 upload : package
 	cp $(LZH) $(SLZH) $(TBZ) nyaosdoc.html $(HOME)/www/warp/.
 	mv $(LZH) $(SLZH) $(TBZ) $(HOME)/src/package/nyaos/.
 
 package : $(LZH) $(SLZH) $(TBZ)
 
-$(LZH) :
+$(LZH) : nyaos.exe nyaos.doc nyaos.faq
+	lxlite nyaos.exe
 	cd .. && lha a $(foreach A,\
 		$(LZH) readme.1$(VER) nyaos.doc nyaos.faq \
 		nyaos.exe nyaos.rc nyaos1.ico nyaos2.ico \
 		nyaos-fc.ico nyaos-fo.ico sample.err install.cmd \
 		,nyaos/$(A))
 
-$(SLZH) :
+$(SLZH) : s2nyaos.exe
+	lxlite s2nyaos.exe
 	lha a $(SLZH) s2nyaos.exe
 
 $(TBZ) :
 	cd .. && tar cvf - $(foreach A,\
 	Makefile *.h $(NYAOS_SRC) mkbtable.cmd \
-	$(NYAOS_TBL) readme.1$(VER),nyaos/$(A)) | bzip2 > $(TBZ)
+	$(NYAOS_TBL) readme.1$(VER),nyaos/$(A)) | bzip2 > nyaos/$(TBZ)
 
 cleanpkg :
 	rm -rf $(LZH) $(SLZH) $(TBZ)
@@ -101,12 +99,9 @@ cleanpkg :
 
 nyaos.exe : $(NYAOS_OBJ1)
 	$(CC) $(D1CFLAGS) $^ -o $@ $(D1LDFLAGS)
-	lxlite $@
 
 s2nyaos.exe : $(NYAOS_OBJ2)
 	$(CC) $(S2CFLAGS) $^ nyaos.def -o $@ $(S2LDFLAGS)
-	lxlite $@
-
 
 # ------------ ソース用テーブル類の依存関係 ------
 

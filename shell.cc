@@ -476,7 +476,7 @@ Edlin::Status Shell::cancel()
 Edlin::Status Shell::erasebol()
 {
   if( getPos() > 0 ){
-    erasebol();
+    Edlin::erasebol();
     changed = true;
   }
   return CONTINUE;

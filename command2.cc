@@ -381,11 +381,8 @@ int cmd_echo(FILE *srcfil, Parse &params )
 
 int cmd_lecho(FILE *source, Parse &params )
 {
-  for(int i=0 ; i<params.get_argc() ; i++ ){
-    char argv[1024];
-    params[i] >> argv;
-    printf("[%s] ",argv);
-  }
+  for(int i=0 ; i<params.get_argc() ; i++ )
+    printf("[%.*s] " , params[i].len , params[i].ptr );
   putchar('\n');
   return 0;
 }

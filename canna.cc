@@ -20,10 +20,14 @@
 #  define CANNA 1
 #endif
 
+enum{ TIMEOUT_SECOND = 5 };
 #define CANNA_MODULE ((PUCHAR)"canna")
 /* マルチスレッド化する場合、"cannamt" にしなくてはいけない */
 
 typedef unsigned long u_long;
+
+#include <setjmp.h>
+#include <signal.h>
 #include <netdb.h>
 #include <sys/kbdscan.h>
 #include <stdlib.h>
@@ -153,7 +157,14 @@ static void print_warning( char **warning )
 }
 #endif
 
+static jmp_buf here;
+static void timeout(int)
+{
+  longjmp( here , 1 );
+}
+
 extern bool option_quite_mode;
+
 int canna_init()
 {
 #if CANNA
@@ -161,12 +172,22 @@ int canna_init()
    * を起こしてしまう。よって、canna.dll を呼び出す前に、ホスト名を参照
    * できるか否かをチェックしている */
 
-  char ownhost[40];
-  gethostname(ownhost,sizeof(ownhost));
-
-  struct hostent *hostinfo = gethostbyname(ownhost);
-  if( hostinfo == NULL )
+  if( setjmp(here) == 0 ){
+    char ownhost[40];
+    
+    signal( SIGALRM , &timeout );
+    alarm( TIMEOUT_SECOND );
+    gethostname(ownhost,sizeof(ownhost));
+    struct hostent *hostinfo = gethostbyname(ownhost);
+    if( hostinfo == NULL  ){
+      alarm(0);
+      return 0;
+    }
+  }else{
+    alarm( 0 );
     return 0;
+  }
+  alarm(0);
 
   /* ------- DLL Loading ------ */
 
@@ -188,41 +209,48 @@ int canna_init()
   /* -- かんな初期化の際に /usr/local/canna/lib のあるドライブに移動する--
    * set cannya=ドライブ[,初期化ファイル]
    * --------------------------------------------------------------------*/
-
-  const char *dotcanna=getShellEnv("CANNYA");
-  int orgdrv = _getdrive();
-
-  if( dotcanna != NULL  &&  *dotcanna != '\0' ){
-    if( *dotcanna != ',' ){
-      _chdrive( *dotcanna++ );
-      if( *dotcanna == ':' )
-	++dotcanna;
-    }
-    if( *dotcanna == ',' )
-      (*DLL_jrKanjiControl)(0 , KC_SETINITFILENAME , ++dotcanna);
-    
-  }else if( access_home_canna() != 0  ){
-    int drv=access_script_canna();
-    if( drv != -1 ){
-      /* ホームディレクトリに .canna が無くて、
-       * %SCRIPTDRIVE%:/usr/local/canna/lib/default.canna
-       * が存在する場合、ドライブを一次的に変更する。ああ、こそく...
-       */
-      _chdrive(drv);
-    }
-  }
   
-  DEBUG1( fputs("pass-1",stderr) );
-
-  int rc=(*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
+  int orgdrv = _getdrive();
+  int rc=0;
+  
+  if( setjmp(here) == 0 ){
+    const char *dotcanna=getShellEnv("CANNYA");
+    signal( SIGALRM , &timeout );
+    alarm( TIMEOUT_SECOND );
+    
+    if( dotcanna != NULL  &&  *dotcanna != '\0' ){
+      if( *dotcanna != ',' ){
+	_chdrive( *dotcanna++ );
+	if( *dotcanna == ':' )
+	  ++dotcanna;
+      }
+      if( *dotcanna == ',' )
+	(*DLL_jrKanjiControl)(0 , KC_SETINITFILENAME , ++dotcanna);
+      
+    }else if( access_home_canna() != 0  ){
+      int drv=access_script_canna();
+      if( drv != -1 ){
+	/* ホームディレクトリに .canna が無くて、
+	 * %SCRIPTDRIVE%:/usr/local/canna/lib/default.canna
+	 * が存在する場合、ドライブを一次的に変更する。ああ、こそく...
+	 */
+	_chdrive(drv);
+      }
+    }
+    rc=(*DLL_jrKanjiControl)( 0 , KC_INITIALIZE , (char*)&warning );
+    alarm( 0 );
+  }else{
+    alarm( 0 );
+    puts( "can not access to cannaserver in time." );
+    _chdrive(orgdrv);
+    return 0;
+  }
   _chdrive(orgdrv);
   if( rc == -1 ){
     print_warning(warning);
     return 1;
   }
 
-  DEBUG1( fputs("pass-2",stderr) );
-  
   if( warning != NULL ){
     print_warning(warning);
     return 1;
@@ -231,6 +259,8 @@ int canna_init()
 #endif
   return 0;
 }
+
+
 
 /* ------------------------------------- */
 

@@ -380,10 +380,14 @@ static void history_copy(const char *&sp, StrBuffer &buf)
 
     }else if( *sp == '?' ){
       char buffer[1024] , *bp = buffer;
-      ++sp; /* 最初の'?'のスキップ */
-      while( *sp != '?' &&  *sp != '\0' )
+      ++sp; /* skip '?' */
+      while( *sp != '\0' ){
+	if( *sp == '?' ){
+	  ++sp; /* skip '?' */
+	  break;
+	}
 	*bp++ = *sp++;
-      ++sp; /* 最後の'?'のスキップ */
+      }
       *bp = '\0';
 
       histring = seek_hist_mid(buffer);

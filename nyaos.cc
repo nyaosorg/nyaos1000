@@ -176,7 +176,7 @@ char *fgets_chop(char *dp, int max, FILE *fp)
  * あいにく「start nyaos.exe」で起動した時か、アイコンにタイトルが無い
  * 時しか、FCF_TASKLIST は立たない。
  */
-extern "C" void _THUNK_C_FUNCTION (WinSetTitle) (PSZ szTITLE);
+extern "C" void _THUNK_C_FUNCTION(WinSetTitle)(PSZ szTITLE);
 
 void set_win_title( const char *title )
 {
