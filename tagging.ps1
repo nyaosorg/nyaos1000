@@ -3,19 +3,20 @@ if ( $args.Length -lt 2 ){
     exit 0
 }
 
-$commit = $null
+$commits = @()
 git log --grep $args[0] | ForEach-Object {
     Write-Host $_
     if ( $_ -match "^commit" ){
         $fields = $_ -split " "
-        $commit = $fields[1]
+        $commits += $fields[1]
     }
 }
 
-if ($commit -ne $null ){
+foreach ($commit in $commits){
     $command = ("git tag {0} $commit" -f $args[1])
     $ans = (Read-host "$command [Y/N] ? ")
     if ( $ans -eq "y" ){
         Invoke-Expression $command
+        exit 0
     }
 }
